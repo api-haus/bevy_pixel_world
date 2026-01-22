@@ -117,6 +117,9 @@ The fundamental unit of the cellular automata simulation.
 
 ## Coordinate Systems
 
+All coordinate systems use the **Y+ up** convention. See [Coordinate System Convention](coordinates.md) for the full
+specification.
+
 Multiple coordinate systems operate at different levels:
 
 | Coordinate Type | Range                  | Usage                           |

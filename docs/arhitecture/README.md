@@ -43,6 +43,7 @@ flowchart TB
 | Component             | Purpose                                                          | Documentation                                |
 |-----------------------|------------------------------------------------------------------|----------------------------------------------|
 | **Glossary**          | Canonical definitions of technical terms                         | [glossary.md](glossary.md)                   |
+| **Coordinates**       | Canonical coordinate system convention (Y+ up)                   | [coordinates.md](coordinates.md)             |
 | **Spatial Hierarchy** | World, chunk, tile, pixel organization and coordinate systems    | [spatial-hierarchy.md](spatial-hierarchy.md) |
 | **Pixel Format**      | Data structure for individual pixels                             | [pixel-format.md](pixel-format.md)           |
 | **Materials**         | Material definitions, behavior types, tags, and interactions     | [materials.md](materials.md)                 |
