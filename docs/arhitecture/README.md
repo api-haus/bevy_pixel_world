@@ -15,20 +15,18 @@ A Bevy plugin for virtual infinite 2D pixel worlds with full cellular automata s
 flowchart TB
     subgraph Plugin["Pixel Sandbox Plugin"]
         direction TB
-
         Camera[Camera Position]
         Window[Streaming Window]
         Pool[Chunk Pool]
         Sim[Simulation Engine]
         Particles[Particle System]
         Seeder[Chunk Seeder]
-
-        Camera -->|"position changed"| Window
-        Window -->|"recycle chunks"| Pool
-        Pool -->|"assign to world position"| Seeder
-        Seeder -->|"initialized chunk"| Sim
-        Sim -->|"active chunks"| Window
-        Sim <-->|"emission/deposition"| Particles
+        Camera -->|" position changed "| Window
+        Window -->|" recycle chunks "| Pool
+        Pool -->|" assign to world position "| Seeder
+        Seeder -->|" initialized chunk "| Sim
+        Sim -->|" active chunks "| Window
+        Sim <-->|" emission/deposition "| Particles
     end
 
     subgraph External["External Systems"]
@@ -36,22 +34,26 @@ flowchart TB
         Disk[Disk Storage]
     end
 
-    Seeder -.->|"procedural"| Noise
-    Seeder -.->|"persistence"| Disk
+    Seeder -.->|" procedural "| Noise
+    Seeder -.->|" persistence "| Disk
 ```
 
 ## Component Overview
 
-| Component | Purpose | Documentation |
-|-----------|---------|---------------|
-| **Spatial Hierarchy** | World, chunk, tile, pixel organization and coordinate systems | [spatial-hierarchy.md](spatial-hierarchy.md) |
-| **Pixel Format** | Data structure for individual pixels | [pixel-format.md](pixel-format.md) |
-| **Chunk Pool** | Object pool pattern for zero-allocation chunk management | [chunk-pooling.md](chunk-pooling.md) |
-| **Simulation Engine** | Parallel cellular automata with checkerboard scheduling | [simulation.md](simulation.md) |
-| **Particle System** | Free-form particles for dynamic effects (debris, gases, pouring) | [particles.md](particles.md) |
-| **Streaming Window** | Camera-tracking active region management | [streaming-window.md](streaming-window.md) |
-| **Chunk Seeder** | Trait for procedural generation and disk persistence | [chunk-seeding.md](chunk-seeding.md) |
-| **Configuration** | Tunable parameters and constraints | [configuration.md](configuration.md) |
+| Component             | Purpose                                                          | Documentation                                |
+|-----------------------|------------------------------------------------------------------|----------------------------------------------|
+| **Glossary**          | Canonical definitions of technical terms                         | [glossary.md](glossary.md)                   |
+| **Spatial Hierarchy** | World, chunk, tile, pixel organization and coordinate systems    | [spatial-hierarchy.md](spatial-hierarchy.md) |
+| **Pixel Format**      | Data structure for individual pixels                             | [pixel-format.md](pixel-format.md)           |
+| **Materials**         | Material definitions, behavior types, tags, and interactions     | [materials.md](materials.md)                 |
+| **Chunk Pool**        | Object pool pattern for zero-allocation chunk management         | [chunk-pooling.md](chunk-pooling.md)         |
+| **Simulation Engine** | Parallel cellular automata with checkerboard scheduling          | [simulation.md](simulation.md)               |
+| **Particle System**   | Free-form particles for dynamic effects (debris, gases, pouring) | [particles.md](particles.md)                 |
+| **Streaming Window**  | Camera-tracking active region management                         | [streaming-window.md](streaming-window.md)   |
+| **Chunk Seeder**      | Trait for procedural generation and disk persistence             | [chunk-seeding.md](chunk-seeding.md)         |
+| **Rendering**         | Chunk texture upload and material identity textures              | [rendering.md](rendering.md)                 |
+| **Collision**         | Marching squares mesh generation from solid pixels               | [collision.md](collision.md)                 |
+| **Configuration**     | Tunable parameters and constraints                               | [configuration.md](configuration.md)         |
 
 ## Data Flow
 
@@ -59,11 +61,11 @@ flowchart TB
 flowchart LR
     subgraph Lifecycle["Chunk Lifecycle"]
         direction LR
-        A[Pool] -->|"assign"| B[Seeding]
-        B -->|"ready"| C[Active]
-        C -->|"simulate"| C
-        C -->|"camera moved"| D[Recycling]
-        D -->|"return"| A
+        A[Pool] -->|" assign "| B[Seeding]
+        B -->|" ready "| C[Active]
+        C -->|" simulate "| C
+        C -->|" camera moved "| D[Recycling]
+        D -->|" return "| A
     end
 ```
 

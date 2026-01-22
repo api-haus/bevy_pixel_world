@@ -4,7 +4,8 @@ Advanced procedural content generation concepts for richer world generation.
 
 ## Overview
 
-Beyond basic noise-based terrain, complex worlds benefit from a hierarchical generation approach where each layer adds detail while respecting constraints from the layer above.
+Beyond basic noise-based terrain, complex worlds benefit from a hierarchical generation approach where each layer adds
+detail while respecting constraints from the layer above.
 
 ## Hierarchical Generation
 
@@ -12,26 +13,27 @@ Beyond basic noise-based terrain, complex worlds benefit from a hierarchical gen
 flowchart TB
     subgraph Layers["Generation Layers"]
         direction TB
-        WFC["WFC Structure Layer"]
+        WFC["WFC (Wave Function Collapse) Structure Layer"]
         Stamps["Stamp Layer"]
         Materials["Material Layer"]
         Pixels["Pixel Buffer"]
-
-        WFC -->|"placement rules"| Stamps
-        Stamps -->|"stencil masks"| Materials
-        Materials -->|"pixel data"| Pixels
+        WFC -->|" placement rules "| Stamps
+        Stamps -->|" stencil masks "| Materials
+        Materials -->|" pixel data "| Pixels
     end
 ```
 
-| Layer | Responsibility | Output |
-|-------|----------------|--------|
-| WFC Structure | Macro-level layout and constraints | Stamp placement map |
-| Stamps | Preset formations with shape definitions | Stencil masks |
-| Materials | Fill stencils with noised materials | Pixel data |
+| Layer         | Responsibility                           | Output              |
+|---------------|------------------------------------------|---------------------|
+| WFC Structure | Macro-level layout and constraints       | Stamp placement map |
+| Stamps        | Preset formations with shape definitions | Stencil masks       |
+| Materials     | Fill stencils with noised materials      | Pixel data          |
 
-## WFC Structure Layer
+## WFC (Wave Function Collapse) Structure Layer
 
-Wave Function Collapse operates at a coarse grid level to determine macro-level structure.
+[needs clarification: WFC tile resolution and relationship to chunk size]
+
+WFC operates at a coarse grid level to determine macro-level structure.
 
 ### Role
 
@@ -43,6 +45,7 @@ Wave Function Collapse operates at a coarse grid level to determine macro-level 
 ### Output
 
 The WFC layer produces a **placement map** that tells the stamp layer:
+
 - Which stamp types are allowed at each location
 - Orientation and variation hints
 - Connection requirements between adjacent stamps
@@ -61,12 +64,12 @@ Stamps are preset formations that define world features at an intermediate scale
 
 ### Components
 
-| Component | Description |
-|-----------|-------------|
-| **Stamp** | A registered formation type (cave entrance, tree, building) |
-| **Stencil** | Shape mask defining where the stamp applies |
-| **Anchor** | World position and orientation of the stamp instance |
-| **Metadata** | Material hints, variation seed, blend priority |
+| Component    | Description                                                 |
+|--------------|-------------------------------------------------------------|
+| **Stamp**    | A registered formation type (cave entrance, tree, building) |
+| **Stencil**  | Shape mask defining where the stamp applies                 |
+| **Anchor**   | World position and orientation of the stamp instance        |
+| **Metadata** | Material hints, variation seed, blend priority              |
 
 ### Spatial Index
 
@@ -90,11 +93,11 @@ flowchart TB
 
 When multiple stamps overlap the same region:
 
-| Strategy | Behavior |
-|----------|----------|
-| Priority | Higher priority stamp overwrites lower |
-| Blend | Stamps blend at boundaries using falloff |
-| Composite | Stamps combine (e.g., vegetation on terrain) |
+| Strategy  | Behavior                                                                        |
+|-----------|---------------------------------------------------------------------------------|
+| Priority  | Higher priority stamp overwrites lower [needs clarification: priority scale]    |
+| Blend     | Stamps blend at boundaries using falloff [needs clarification: blend algorithm] |
+| Composite | Stamps combine (e.g., vegetation on terrain)                                    |
 
 ## Material & Coloration Layer
 
@@ -112,8 +115,8 @@ For each pixel within a stamp's stencil:
 ```mermaid
 flowchart LR
     Stencil["Stencil Mask"] --> Region{"In region?"}
-    Region -->|"yes"| Material["Material Type"]
-    Region -->|"no"| Fallback["Base Terrain"]
+    Region -->|" yes "| Material["Material Type"]
+    Region -->|" no "| Fallback["Base Terrain"]
     Material --> Noise["Material Noise"]
     Noise --> Color["Color Variation"]
     Color --> Pixel["Final Pixel"]
@@ -124,12 +127,12 @@ flowchart LR
 
 Different noise functions serve different purposes within material generation:
 
-| Noise Purpose | Effect |
-|---------------|--------|
-| Texture | Fine-grained surface detail |
-| Color shift | Subtle hue/saturation variation |
-| Weathering | Edge erosion, wear patterns |
-| Density | Sparse vs dense material placement |
+| Noise Purpose | Effect                             |
+|---------------|------------------------------------|
+| Texture       | Fine-grained surface detail        |
+| Color shift   | Subtle hue/saturation variation    |
+| Weathering    | Edge erosion, wear patterns        |
+| Density       | Sparse vs dense material placement |
 
 ## Integration with Seeder Trait
 
@@ -159,13 +162,14 @@ The stamp seeder fits into the seeder chain:
 ```mermaid
 flowchart TB
     Request["Seed Request"] --> P["Persistence Seeder"]
-    P -->|"found"| Done["Buffer Populated"]
-    P -->|"not found"| S["Stamp Seeder"]
-    S -->|"stamps applied"| N["Noise Seeder (gaps)"]
+    P -->|" found "| Done["Buffer Populated"]
+    P -->|" not found "| S["Stamp Seeder"]
+    S -->|" stamps applied "| N["Noise Seeder (gaps)"]
     N --> Done
 ```
 
 This enables:
+
 - Persisted player modifications take priority
 - Stamps provide structured content (buildings, caves, features)
 - Noise seeder fills remaining terrain
@@ -176,6 +180,7 @@ This enables:
 ### Determinism
 
 All layers must produce identical output for the same world seed:
+
 - WFC uses seeded random for constraint solving
 - Stamp placement derives from WFC output
 - Material noise uses world-position-based seeds
@@ -183,6 +188,7 @@ All layers must produce identical output for the same world seed:
 ### Chunk Independence
 
 Each chunk must be seedable independently:
+
 - Spatial index queries are bounded to chunk region (plus margin for overlap)
 - No chunk depends on another chunk's seeding state
 - Enables parallel chunk seeding
@@ -190,6 +196,7 @@ Each chunk must be seedable independently:
 ### Memory Efficiency
 
 Stamps exist as templates, not pre-rendered data:
+
 - Stencils are compact shape definitions
 - Materials are generated on-demand during seeding
 - Only active chunks hold pixel data

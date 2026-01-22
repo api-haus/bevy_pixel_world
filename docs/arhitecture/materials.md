@@ -4,7 +4,8 @@ Material definitions and interaction system.
 
 ## Overview
 
-Materials define how pixels behave in the simulation. Each pixel's Material field (u8) indexes into a material registry containing up to 256 material definitions.
+Materials define how pixels behave in the simulation. Each pixel's Material field (u8) indexes into a material registry
+containing up to 256 material definitions.
 
 Material ID 0 is reserved for **void** (empty space).
 
@@ -12,20 +13,21 @@ Material ID 0 is reserved for **void** (empty space).
 
 ### Identity & Rendering
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `name` | string | Display name for debugging and UI |
+| Property        | Type     | Description                                                     |
+|-----------------|----------|-----------------------------------------------------------------|
+| `name`          | string   | Display name for debugging and UI                               |
 | `palette_range` | (u8, u8) | Start and end indices in the color palette for visual variation |
 
 ### Physical State & Movement
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `state` | enum | `solid`, `powder`, `liquid`, `gas` - determines movement rules |
-| `density` | u8 | Relative weight; denser materials sink below lighter ones |
-| `dispersion` | u8 | How far liquids/powders spread horizontally per tick |
+| Property     | Type | Description                                                    |
+|--------------|------|----------------------------------------------------------------|
+| `state`      | enum | `solid`, `powder`, `liquid`, `gas` - determines movement rules |
+| `density`    | u8   | Relative weight; denser materials sink below lighter ones      |
+| `dispersion` | u8   | How far liquids/powders spread horizontally per tick           |
 
 **State behaviors:**
+
 - `solid` - Static, does not move, supports neighbors
 - `powder` - Falls, piles up, slides off slopes
 - `liquid` - Falls, flows horizontally to fill containers
@@ -35,30 +37,32 @@ Material ID 0 is reserved for **void** (empty space).
 
 Gases can be simulated as either particles or cellular automata pixels, depending on the desired behavior:
 
-| Approach | Use When | Examples |
-|----------|----------|----------|
-| **Particles** | Fast vertical movement, visual effects, transient | Steam plumes, smoke trails, vapor |
-| **CA with `gas` state** | Persistent clouds, material interactions needed | Fog, poison gas, settled smoke |
+| Approach                | Use When                                          | Examples                          |
+|-------------------------|---------------------------------------------------|-----------------------------------|
+| **Particles**           | Fast vertical movement, visual effects, transient | Steam plumes, smoke trails, vapor |
+| **CA with `gas` state** | Persistent clouds, material interactions needed   | Fog, poison gas, settled smoke    |
 
-Choose particles for rising/dispersing gases that should naturally leave the simulation bounds. Choose CA `gas` state for dense clouds that need to interact with other materials or persist over time.
+Choose particles for rising/dispersing gases that should naturally leave the simulation bounds. Choose CA `gas` state
+for dense clouds that need to interact with other materials or persist over time.
 
 See [Particles](particles.md) for detailed gas handling rationale.
 
 ### Durability
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `damage_threshold` | u8 | Damage value at which pixel is destroyed/transforms. `0` = indestructible |
-| `destruction_product` | MaterialId | What this becomes when destroyed (wood → ash, stone → rubite). Void = disappears |
+| Property              | Type       | Description                                                                      |
+|-----------------------|------------|----------------------------------------------------------------------------------|
+| `damage_threshold`    | u8         | Damage value at which pixel is destroyed/transforms. `0` = indestructible        |
+| `destruction_product` | MaterialId | What this becomes when destroyed (wood → ash, stone → rubble). Void = disappears |
 
 ### Decay
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `decay_chance` | f32 | Probability (0.0-1.0) of transformation per decay pass. `0.0` = never decays |
-| `decay_product` | MaterialId | What this becomes when decay triggers. Void = disappears (evaporation) |
+| Property        | Type       | Description                                                                  |
+|-----------------|------------|------------------------------------------------------------------------------|
+| `decay_chance`  | f32        | Probability (0.0-1.0) of transformation per decay pass. `0.0` = never decays |
+| `decay_product` | MaterialId | What this becomes when decay triggers. Void = disappears (evaporation)       |
 
 **Decay examples:**
+
 - Water with `decay_chance: 0.01`, `decay_product: void` → slow evaporation
 - Leaves with `decay_chance: 0.005`, `decay_product: mulch` → gradual decomposition
 - Corpse with `decay_chance: 0.02`, `decay_product: bone` → faster decay
@@ -68,31 +72,34 @@ See [Simulation](simulation.md) for how decay passes are scheduled.
 
 ### Thermal
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `ignition_threshold` | u8 | Heat level required to ignite. `0` = non-flammable. Lower = catches fire easier. Implies `flammable` tag when > 0 |
-| `melting_threshold` | u8 | Heat level at which material melts/transforms. `0` = cannot melt |
-| `melting_product` | MaterialId | What this becomes when melted (stone → lava, ice → water) |
-| `base_temperature` | u8 | Heat this material emits to the heat layer (lava = 255, ice = 0) |
+| Property             | Type       | Description                                                                                                       |
+|----------------------|------------|-------------------------------------------------------------------------------------------------------------------|
+| `ignition_threshold` | u8         | Heat level required to ignite. `0` = non-flammable. Lower = catches fire easier. Implies `flammable` tag when > 0 |
+| `melting_threshold`  | u8         | Heat level at which material melts/transforms. `0` = cannot melt                                                  |
+| `melting_product`    | MaterialId | What this becomes when melted (stone → lava, ice → water)                                                         |
+| `base_temperature`   | u8         | Heat this material emits to the heat layer (lava = 255, ice = 0)                                                  |
 
 **Thermal examples:**
+
 - Wood: `ignition_threshold: 40` (catches fire easily), no melting
 - Stone: `ignition_threshold: 0` (cannot burn), `melting_threshold: 240`, `melting_product: lava`
 - Metal: `ignition_threshold: 0` (cannot burn), `melting_threshold: 220`, `melting_product: molten_metal`
 - Ice: `ignition_threshold: 0`, `melting_threshold: 30`, `melting_product: water`
 - Lava: `base_temperature: 255` (emits maximum heat)
 
-**Note:** Non-flammable materials (stone, metal) don't ignite but still conduct heat and glow visually (orange → red → white) before melting. Rendering uses heat layer temperature to tint these materials.
+**Note:** Non-flammable materials (stone, metal) don't ignite but still conduct heat and glow visually (orange → red →
+white) before melting. Rendering uses heat layer temperature to tint these materials.
 
 See [Simulation](simulation.md) for heat layer propagation and effects.
 
 ### Particle Behavior
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `particle_gravity` | f32 | Gravity multiplier when this material is a particle. `1.0` = normal, `<0` = rises |
+| Property           | Type | Description                                                                       |
+|--------------------|------|-----------------------------------------------------------------------------------|
+| `particle_gravity` | f32  | Gravity multiplier when this material is a particle. `1.0` = normal, `<0` = rises |
 
 **Particle gravity examples:**
+
 - Stone/Metal: `particle_gravity: 1.0` (falls normally)
 - Water: `particle_gravity: 0.8` (slightly slower fall)
 - Steam: `particle_gravity: -0.3` (rises)
@@ -105,29 +112,74 @@ See [Particles](particles.md) for the full particle system documentation.
 
 Tags categorize materials for interaction targeting. A material can have multiple tags.
 
+### Behavior Type (Aggregate State)
+
+Materials have a **behavior type** that determines their movement rules in the cellular automata simulation. There are
+four behavior types:
+
+| Behavior Type | Movement Rules                                   | Examples                  |
+|---------------|--------------------------------------------------|---------------------------|
+| `solid`       | Static; does not move; supports neighbors        | Stone, metal, wood, brick |
+| `powder`      | Falls down; piles up; slides off slopes          | Sand, gravel, ash, soil   |
+| `liquid`      | Falls down; flows horizontally; fills containers | Water, oil, lava, acid    |
+| `gas`         | Rises; disperses in all directions               | Steam, smoke, fog         |
+
+**Important:** "Dust" is a specific material with behavior type `powder`, not a behavior type itself.
+
+### State Tag Convention (Dual Specification)
+
+The behavior type must be specified **twice** on every material:
+
+1. As the `state` property (for simulation engine dispatch)
+2. As the **first tag** (for tag-based interaction targeting)
+
+This dual specification enables:
+
+- **Simulation engine:** Reads `state` property directly for efficient movement rule dispatch
+- **Interaction system:** Uses tags for flexible targeting (e.g., "corrode all liquids")
+
+```
+# CORRECT - state property matches first tag
+water:
+  state: liquid
+  tags: [liquid, ...]
+
+verdite:  # fantasy mineral names use -ite suffix (e.g., manaite, celestite)
+  state: solid
+  tags: [solid, stone, ...]
+
+sand:
+  state: powder
+  tags: [powder, granular, ...]
+
+# INCORRECT - first tag must match state
+sand:
+  state: powder
+  tags: [granular, ...]  # ERROR: missing 'powder' as first tag
+```
+
 ### Composition Tags
 
-| Tag | Description | Examples |
-|-----|-------------|----------|
-| `stone` | Stone-like minerals | granite, basalt, marble |
-| `crystal` | Crystal structures | quartz, mana_crystal, diamond |
-| `metal` | Metallic materials | iron, copper, gold, enchanted_steel |
-| `organic` | Living or once-living matter | wood, flesh, leaves |
-| `granular` | Made from smaller particles | sand, soil, gravel |
+| Tag        | Description                  | Examples                            |
+|------------|------------------------------|-------------------------------------|
+| `stone`    | Stone-like minerals          | granite, basalt, marble             |
+| `crystal`  | Crystal structures           | quartz, mana_crystal, diamond       |
+| `metal`    | Metallic materials           | iron, copper, gold, enchanted_steel |
+| `organic`  | Living or once-living matter | wood, flesh, leaves                 |
+| `granular` | Made from smaller particles  | sand, soil, gravel                  |
 
 ### Property Tags
 
-| Tag | Description |
-|-----|-------------|
-| `flammable` | Can catch fire (implied by `ignition_threshold > 0`) |
-| `conductive` | Transmits electricity |
-| `magical` | Interacts with mana-based systems |
-
-**Note:** State tags (`solid`, `liquid`, `powder`, `gas`) are not needed - use the `state` property instead. Tags are for cross-cutting categories that don't map to physical state.
+| Tag          | Description                                          |
+|--------------|------------------------------------------------------|
+| `flammable`  | Can catch fire (implied by `ignition_threshold > 0`) |
+| `conductive` | Transmits electricity                                |
+| `magical`    | Interacts with mana-based systems                    |
 
 ## Material Interactions
 
-Interactions define what happens when materials contact each other. They use a tag-based system with specific material overrides.
+Interactions define what happens when materials contact each other. They use a tag-based system with specific material
+overrides.
 
 ### Interaction Definition
 
@@ -137,21 +189,21 @@ material_name:
   interactions:
     - target: <tag or material_id>
       effect: <effect_type>
-      rate: <optional, default 1>
+      rate: <optional, default 1>  # effect applications per interaction tick
     - target: specific_material   # override for edge cases
       effect: none
 ```
 
 ### Interaction Types
 
-| Effect | Description |
-|--------|-------------|
-| `diffuse` | Spread into target material, mixing or diluting |
-| `corrode` | Deal damage to target each tick |
-| `ignite` | Set target on fire if `ignition_threshold > 0` |
-| `transform` | Change target into another material |
-| `displace` | Swap positions (automatic from density, but can force) |
-| `none` | Explicitly no interaction (for overrides) |
+| Effect      | Description                                            |
+|-------------|--------------------------------------------------------|
+| `diffuse`   | Spread into target material, mixing or diluting        |
+| `corrode`   | Deal damage to target each tick                        |
+| `ignite`    | Set target on fire if `ignition_threshold > 0`         |
+| `transform` | Change target into another material                    |
+| `displace`  | Swap positions (automatic from density, but can force) |
+| `none`      | Explicitly no interaction (for overrides)              |
 
 ### Interaction Resolution
 
@@ -166,7 +218,7 @@ When pixel A contacts pixel B:
 
 ```
 concentrated_mana:
-  tags: [liquid, magical]
+  tags: [liquid, magical]  # state tag first per convention
   state: liquid
   density: 30
   dispersion: 4
@@ -200,7 +252,7 @@ burning_propagation:
 
 ```
 water:
-  tags: [liquid]
+  tags: [liquid]  # state tag first per convention
   state: liquid
   density: 50
   dispersion: 5
@@ -225,7 +277,8 @@ MaterialRegistry:
   tag_index: HashMap<Tag, Vec<MaterialId>>  # for fast tag lookups
 ```
 
-The tag index accelerates interaction checks - instead of iterating all tags on a material, look up which materials have a given tag.
+The tag index accelerates interaction checks - instead of iterating all tags on a material, look up which materials have
+a given tag.
 
 ## Related Documentation
 

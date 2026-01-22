@@ -4,7 +4,8 @@ Object pool pattern for zero-allocation chunk management.
 
 ## Design Goal
 
-Eliminate runtime memory allocations during gameplay. All chunk buffers are allocated once at startup and reused throughout the session. This prevents allocation spikes, fragmentation, and garbage collection pauses.
+Eliminate runtime memory allocations during gameplay. All chunk buffers are allocated once at startup and reused
+throughout the session. This prevents allocation spikes, fragmentation, and garbage collection pauses.
 
 ## Pool Structure
 
@@ -15,6 +16,19 @@ The pool consists of:
 - **Pre-allocated memory** - Total pool memory is chunk count × chunk buffer size
 
 See [Configuration Reference](configuration.md) for tunable parameters.
+
+## Chunk Memory Layout
+
+Each chunk stores its data as separate linear arrays, one per simulation layer:
+
+| Layer  | Element Type      | Size                                     |
+|--------|-------------------|------------------------------------------|
+| Pixels | 4 bytes per pixel | `chunk_width × chunk_height × 4`         |
+| Heat   | u8 per cell       | `(chunk_width / 4) × (chunk_height / 4)` |
+
+Future layers (moisture, pressure, etc.) follow the same
+pattern. [needs clarification: which additional layers are planned and their resolution factors] Each layer is a
+contiguous array stored alongside the chunk metadata.
 
 ## Chunk Lifecycle
 
@@ -31,22 +45,26 @@ stateDiagram-v2
 ## State Descriptions
 
 ### In Pool
+
 - Buffer memory is allocated but unassigned
 - No world position associated
 - Ready for immediate assignment without allocation
 
 ### Seeding
+
 - Assigned to a specific world coordinate (chunk position)
 - Chunk seeder is filling the buffer with initial data
 - May be async if loading from disk
 
 ### Active
+
 - Fully initialized and part of the active region
 - Participates in simulation each tick
 - Rendered to the screen
 - May be modified by player interaction
 
 ### Recycling
+
 - Camera has moved, chunk is no longer in active region
 - If modified, optionally persisted to disk
 - Buffer contents cleared (zeroed or marked invalid)
@@ -58,12 +76,12 @@ When a chunk is recycled:
 
 ```mermaid
 flowchart LR
-    A[Active Chunk] -->|"camera moves"| B{Modified?}
-    B -->|"yes"| C[Persist to Disk]
-    B -->|"no"| D[Clear Buffer]
+    A[Active Chunk] -->|" camera moves "| B{Modified?}
+    B -->|" yes "| C[Persist to Disk]
+    B -->|" no "| D[Clear Buffer]
     C --> D
     D --> E[Return to Pool]
-    E -->|"new assignment"| F[Seeding]
+    E -->|" new assignment "| F[Seeding]
 ```
 
 The buffer is never deallocated. Instead:
@@ -76,7 +94,6 @@ The buffer is never deallocated. Instead:
 
 - **Predictable memory usage** - No allocation spikes during exploration
 - **No fragmentation** - Fixed-size buffers prevent heap fragmentation
-- **Cache-friendly** - Buffers can be aligned and laid out optimally
 - **Deterministic performance** - No garbage collection or allocator latency
 
 ## Related Documentation

@@ -17,12 +17,12 @@ flowchart TB
     end
 ```
 
-| Level | Description | Role |
-|-------|-------------|------|
-| **World** | Infinite 2D coordinate space | Global addressing |
-| **Chunk** | Fixed-size pixel buffer | Unit of pooling, streaming, persistence |
-| **Tile** | Subdivision of chunk | Checkerboard scheduling + dirty rect tracking |
-| **Pixel** | Individual simulation unit | Cellular automata state |
+| Level     | Description                  | Role                                          |
+|-----------|------------------------------|-----------------------------------------------|
+| **World** | Infinite 2D coordinate space | Global addressing                             |
+| **Chunk** | Fixed-size pixel buffer      | Unit of pooling, streaming, persistence       |
+| **Tile**  | Subdivision of chunk         | Checkerboard scheduling + dirty rect tracking |
+| **Pixel** | Individual simulation unit   | Cellular automata state                       |
 
 ## World
 
@@ -73,34 +73,45 @@ flowchart LR
 
 ### Checkerboard Scheduling
 
-Tiles are assigned to one of four phases (A, B, C, D) in a checkerboard pattern. During simulation, tiles of the same phase can be processed in parallel because they are never adjacent. See [Simulation](simulation.md) for details.
+Tiles are assigned to one of four phases (A, B, C, D) in a checkerboard pattern. During simulation, tiles of the same
+phase can be processed in parallel because they are never adjacent. See [Simulation](simulation.md) for details.
 
 ### Dirty Rect Tracking
 
-Each tile maintains a dirty rectangle for rendering optimization:
+Each tile maintains a dirty rectangle for **simulation scheduling only**:
 
-- When a pixel moves or changes within a tile, the tile's dirty rect expands to encapsulate the change
-- Rendering uses tile dirty rects to determine which regions need texture re-upload
-- More efficient than per-pixel tracking, finer granularity than whole-chunk
+1. **Simulation boundary** - Determines which pixels are candidates for processing
+
+**Note:** Dirty rects do not drive rendering uploads. Rendering uses whole-chunk texture upload -
+see [Rendering](rendering.md).
+
+**Lifecycle per simulation pass:**
+
+1. The current dirty rect defines the scheduling boundary (which pixels to consider)
+2. Before processing begins, the dirty rect is **reset to empty**
+3. As pixels change during simulation, the dirty rect **grows to encapsulate** each change (AABB expansion)
+4. The resulting dirty rect becomes the scheduling boundary for the next pass
 
 ```
-Tile dirty rect growth example:
-
-Before:           After pixel at X moves:
-+------------+    +------------+
-|            |    |  +------+  |
-|            |    |  |  X   |  |  <- dirty rect expanded
-|            |    |  +------+  |
-+------------+    +------------+
+Pass N uses rect:     Reset before pass:    Pass N builds new rect:
++------------+        +------------+        +------------+
+|  +------+  |        |            |        |    +--+    |
+|  | proc |  |   →    |   empty    |   →    |    |X |    |  <- grows as pixels change
+|  +------+  |        |            |        |    +--+    |
++------------+        +------------+        +------------+
 ```
 
-**Note:** This is distinct from the per-pixel `dirty` flag. The pixel dirty flag indicates simulation activity (whether a pixel needs processing). Tile dirty rects track rendering regions that need re-upload.
+**Initial state:** New tiles start with dirty rect covering the entire tile, ensuring all pixels are processed on first
+pass.
+
+**Note:** This is distinct from the per-pixel `dirty` flag. The pixel dirty flag indicates whether a specific pixel
+needs evaluation. Tile dirty rects define the spatial bounds for simulation scheduling.
 
 ## Pixel
 
 The fundamental unit of the cellular automata simulation.
 
-- 4 bytes: material, color, health, flags
+- 4 bytes: material, color, damage, flags
 - Stores state needed for simulation and rendering
 - See [Pixel Format](pixel-format.md) for complete documentation
 
@@ -108,12 +119,12 @@ The fundamental unit of the cellular automata simulation.
 
 Multiple coordinate systems operate at different levels:
 
-| Coordinate Type | Range | Usage |
-|-----------------|-------|-------|
-| **World** | Infinite (signed) | Global pixel addressing |
-| **Chunk** | Infinite (signed) | Which chunk contains a position |
-| **Tile** | 0 to tiles_per_chunk-1 | Which tile within a chunk |
-| **Local** | 0 to chunk_size-1 | Pixel position within a chunk |
+| Coordinate Type | Range                  | Usage                           |
+|-----------------|------------------------|---------------------------------|
+| **World**       | Infinite (signed)      | Global pixel addressing         |
+| **Chunk**       | Infinite (signed)      | Which chunk contains a position |
+| **Tile**        | 0 to tiles_per_chunk-1 | Which tile within a chunk       |
+| **Local**       | 0 to chunk_size-1      | Pixel position within a chunk   |
 
 ### Coordinate Conversions
 
