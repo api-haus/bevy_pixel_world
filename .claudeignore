@@ -1,0 +1,13 @@
+# Build artifacts
+target/
+
+# Dependencies (if vendored)
+vendor/
+
+# IDE/Editor
+.idea/
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db

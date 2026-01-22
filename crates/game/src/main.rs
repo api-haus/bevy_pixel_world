@@ -6,7 +6,10 @@ mod player;
 mod visual_debug;
 mod world;
 
-use bevy::{prelude::*, window::{MonitorSelection, PresentMode, WindowMode, WindowResolution}};
+use bevy::{
+    prelude::*,
+    window::{MonitorSelection, PresentMode, WindowMode, WindowResolution},
+};
 
 fn main() {
   // Read config synchronously for initial window setup

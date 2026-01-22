@@ -2,8 +2,8 @@ use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
 
 use super::components::{
-  CharacterMovementConfig, CharacterVelocity, CurrentPosition, LocomotionState, Player,
-  PlayerVisual, PreviousPosition,
+    CharacterMovementConfig, CharacterVelocity, CurrentPosition, LocomotionState, Player,
+    PlayerVisual, PreviousPosition,
 };
 use crate::config::ConfigLoaded;
 use crate::core::CameraTarget;

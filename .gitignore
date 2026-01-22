@@ -1,1 +1,23 @@
-/target
+# Build artifacts
+target/
+
+# Cargo lock for libraries (keep for binaries/workspaces)
+# Cargo.lock
+
+# Backup files
+**/*.rs.bk
+
+# IDE/Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local

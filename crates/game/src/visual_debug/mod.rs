@@ -59,10 +59,7 @@ fn frame_step_control(
 /// Visual debug system - draws velocity (yellow) and input (green) vectors
 fn draw_debug_vectors(
   mut gizmos: Gizmos,
-  players: Query<
-    (&Transform, &CharacterVelocity, &Actions<PlayerInput>),
-    With<Player>,
-  >,
+  players: Query<(&Transform, &CharacterVelocity, &Actions<PlayerInput>), With<Player>>,
   move_actions: Query<(&Action<Move>, &ActionState)>,
 ) {
   const VELOCITY_SCALE: f32 = 0.5; // Scale factor for velocity visualization

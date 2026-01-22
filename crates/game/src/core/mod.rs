@@ -2,7 +2,7 @@ mod camera;
 mod physics;
 
 use bevy::prelude::*;
-pub use camera::{CameraTarget, GameCamera};
+pub use camera::CameraTarget;
 pub use physics::GravityConfig;
 
 pub struct CorePlugin;

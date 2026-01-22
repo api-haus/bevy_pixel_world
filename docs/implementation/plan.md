@@ -1,6 +1,7 @@
 # POC Implementation Plan: Pixel Sandbox
 
-A focused POC targeting an interactive infinite sandbox with cursor-based material painting, visual debugging, and procedural terrain.
+A focused POC targeting an interactive infinite sandbox with cursor-based material painting, visual debugging, and
+procedural terrain.
 
 ## POC Goal
 
@@ -19,21 +20,22 @@ See [methodology.md](methodology.md) for testing and API design principles.
 
 ## Implementation Phases
 
-| Phase | Focus                      | Visible Result                    |
-|-------|----------------------------|-----------------------------------|
-| 0     | Foundational Primitives    | UV quad rendered at 60 TPS        |
-| 1     | Core Data Structures       | -                                 |
-| 2     | Chunk Management           | Chunks stream as camera moves     |
-| 3     | Terrain Generation         | Layered procedural terrain        |
-| 4     | Rendering                  | Visible world                     |
-| 5     | Interaction                | Cursor painting works             |
-| 6     | Simulation                 | Falling sand physics              |
+| Phase | Focus                   | Visible Result                |
+|-------|-------------------------|-------------------------------|
+| 0     | Foundational Primitives | UV quad rendered at 60 TPS    |
+| 1     | Core Data Structures    | -                             |
+| 2     | Chunk Management        | Chunks stream as camera moves |
+| 3     | Terrain Generation      | Layered procedural terrain    |
+| 4     | Rendering               | Visible world                 |
+| 5     | Interaction             | Cursor painting works         |
+| 6     | Simulation              | Falling sand physics          |
 
 ---
 
 ## Phase 0: Foundational Primitives
 
-The foundation is a **Surface** (blittable pixel buffer) and a **Chunk** (container for surfaces). Validated by rendering a UV-colored quad at 60 TPS.
+The foundation is a **Surface** (blittable pixel buffer) and a **Chunk** (container for surfaces). Validated by
+rendering a UV-colored quad at 60 TPS.
 
 ### 0.1: Surface (Blittable Pixel Buffer)
 
@@ -91,7 +93,8 @@ pub struct Blitter<'a, T> {
 
 **API:**
 
-- `blit(rect, |x, y, u, v| -> T)` - iterate rect, call closure with absolute coords (x,y) and normalized coords (u,v 0.0-1.0)
+- `blit(rect, |x, y, u, v| -> T)` - iterate rect, call closure with absolute coords (x,y) and normalized coords (u,v
+  0.0-1.0)
 - `fill(rect, value)` - solid fill
 - `clear(value)` - clear entire surface
 
@@ -133,7 +136,8 @@ Bevy integration for GPU rendering.
 
 **Files:** `pixel_world/examples/uv_quad.rs`
 
-Bevy app that blits an animated UV-colored quad into a chunk at 60 TPS. The quad bounces around with a pulsing blue channel.
+Bevy app that blits an animated UV-colored quad into a chunk at 60 TPS. The quad bounces around with a pulsing blue
+channel.
 
 **Verification:** `cargo run -p pixel_world --example uv_quad`
 
@@ -252,7 +256,8 @@ Pre-allocates `pool_size` buffers at startup. Provides `acquire()` and `release(
 
 **Files:** `pixel_world/src/streaming.rs`
 
-Tracks camera position and maintains `active_chunks: HashMap<ChunkPos, ChunkHandle>`. Calculates which chunks to load/unload based on camera movement. Hysteresis prevents thrashing at boundaries.
+Tracks camera position and maintains `active_chunks: HashMap<ChunkPos, ChunkHandle>`. Calculates which chunks to
+load/unload based on camera movement. Hysteresis prevents thrashing at boundaries.
 
 ---
 
@@ -293,13 +298,13 @@ pub trait ChunkSeeder: Send + Sync {
 
 **Terrain layers (Y increases upward):**
 
-| Y Range | Material | Caves |
-|---------|----------|-------|
-| > surface | Air | - |
-| surface to -50 | Soil | yes |
-| -50 to -150 | Rock | yes |
-| -150 to -300 | Dense Rock | sparse |
-| < -300 | Bedrock | no |
+| Y Range        | Material   | Caves  |
+|----------------|------------|--------|
+| > surface      | Air        | -      |
+| surface to -50 | Soil       | yes    |
+| -50 to -150    | Rock       | yes    |
+| -150 to -300   | Dense Rock | sparse |
+| < -300         | Bedrock    | no     |
 
 **Algorithm:** Sample 2D height noise for surface, 3D noise for caves.
 
@@ -331,6 +336,7 @@ Spawn sprite when chunk becomes Active, despawn when recycled. Position at `chun
 **Files:** `pixel_world/src/render/debug_overlay.rs`
 
 Toggleable overlays:
+
 - Chunk boundaries (colored lines)
 - Chunk info (position text)
 - Dirty rects (simulation regions)
@@ -400,6 +406,7 @@ block-beta
 Process tiles phase-by-phase (A, then B, then C, then D).
 
 **Behaviors:**
+
 - **Powder:** falls down, piles at angle of repose
 - **Liquid:** falls down, flows sideways
 - **Solid:** doesn't move

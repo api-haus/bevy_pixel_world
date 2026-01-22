@@ -1,9 +1,4 @@
-use bevy::{
-  asset::AssetEvent,
-  ecs::message::MessageReader,
-  prelude::*,
-  window::PrimaryWindow,
-};
+use bevy::{asset::AssetEvent, ecs::message::MessageReader, prelude::*, window::PrimaryWindow};
 use bevy_common_assets::toml::TomlAssetPlugin;
 
 use super::{ConfigHandle, ConfigLoaded, GameConfig};
