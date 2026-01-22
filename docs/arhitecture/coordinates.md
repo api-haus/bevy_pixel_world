@@ -50,18 +50,18 @@ Global pixel addressing uses signed integers with Y+ up.
 
 ### Chunk Coordinates
 
-Chunks are identified by their position in chunk-space (world position divided by chunk size).
+Chunks are identified by their position in chunk-space (world position divided by `CHUNK_SIZE`).
 
-- Chunk (0, 0) covers world pixels (0, 0) to (chunk_width-1, chunk_height-1)
+- Chunk (0, 0) covers world pixels (0, 0) to (`CHUNK_SIZE`-1, `CHUNK_SIZE`-1)
 - Chunk (0, 1) is directly above chunk (0, 0)
 - Chunk (1, 0) is directly to the right of chunk (0, 0)
 
 ### Local Coordinates (Pixel within Chunk)
 
-Local coordinates range from (0, 0) to (chunk_width-1, chunk_height-1).
+Local coordinates range from (0, 0) to (`CHUNK_SIZE`-1, `CHUNK_SIZE`-1).
 
 - (0, 0) is the **bottom-left** pixel of the chunk
-- (width-1, height-1) is the **top-right** pixel
+- (`CHUNK_SIZE`-1, `CHUNK_SIZE`-1) is the **top-right** pixel
 
 ### Surface Storage
 
@@ -136,16 +136,16 @@ World Space (Y+ up)
 
 The coordinate convention flows cleanly through the entire system without runtime transformation:
 
-| Layer              | Convention | Transformation      |
-|--------------------|------------|---------------------|
-| World coordinates  | Y+ up      | None                |
-| Chunk coordinates  | Y+ up      | None                |
-| Local coordinates  | Y+ up      | None                |
-| Surface buffer     | Y+ up      | None                |
-| Texture upload     | Y+ up      | None                |
-| **Mesh UVs**       | Y+ up      | **Set at init**     |
-| Shader sampling    | Y+ up      | None                |
-| Screen output      | Y+ up      | None                |
+| Layer             | Convention | Transformation  |
+|-------------------|------------|-----------------|
+| World coordinates | Y+ up      | None            |
+| Chunk coordinates | Y+ up      | None            |
+| Local coordinates | Y+ up      | None            |
+| Surface buffer    | Y+ up      | None            |
+| Texture upload    | Y+ up      | None            |
+| **Mesh UVs**      | Y+ up      | **Set at init** |
+| Shader sampling   | Y+ up      | None            |
+| Screen output     | Y+ up      | None            |
 
 The UV correction is done once at mesh creation time via `create_chunk_quad()` in `render.rs`. The shader samples
 directly without any coordinate manipulation.

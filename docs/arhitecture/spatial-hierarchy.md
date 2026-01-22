@@ -122,27 +122,29 @@ specification.
 
 Multiple coordinate systems operate at different levels:
 
-| Coordinate Type | Range                  | Usage                           |
-|-----------------|------------------------|---------------------------------|
-| **World**       | Infinite (signed)      | Global pixel addressing         |
-| **Chunk**       | Infinite (signed)      | Which chunk contains a position |
-| **Tile**        | 0 to tiles_per_chunk-1 | Which tile within a chunk       |
-| **Local**       | 0 to chunk_size-1      | Pixel position within a chunk   |
+| Coordinate Type | Range                             | Usage                           |
+|-----------------|-----------------------------------|---------------------------------|
+| **World**       | Infinite (signed)                 | Global pixel addressing         |
+| **Chunk**       | Infinite (signed)                 | Which chunk contains a position |
+| **Tile**        | 0 to `CHUNK_SIZE/TILE_SIZE - 1`   | Which tile within a chunk       |
+| **Local**       | 0 to `CHUNK_SIZE - 1`             | Pixel position within a chunk   |
 
 ### Coordinate Conversions
 
+Uses compile-time constants `CHUNK_SIZE` and `TILE_SIZE` (see [Configuration](configuration.md)).
+
 ```
 World → Chunk:
-  chunk_x = floor(world_x / chunk_width)
-  chunk_y = floor(world_y / chunk_height)
+  chunk_x = floor(world_x / CHUNK_SIZE)
+  chunk_y = floor(world_y / CHUNK_SIZE)
 
 World → Local (within chunk):
-  local_x = world_x mod chunk_width
-  local_y = world_y mod chunk_height
+  local_x = world_x mod CHUNK_SIZE
+  local_y = world_y mod CHUNK_SIZE
 
 Local → Tile:
-  tile_x = floor(local_x / tile_width)
-  tile_y = floor(local_y / tile_height)
+  tile_x = floor(local_x / TILE_SIZE)
+  tile_y = floor(local_y / TILE_SIZE)
 ```
 
 ## Diagram: Hierarchy Nesting

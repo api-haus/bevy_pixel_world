@@ -1,44 +1,47 @@
 # Configuration Reference
 
-Tunable parameters for the pixel sandbox plugin.
+Parameters for the pixel sandbox plugin. **Architectural constants are compile-time values defined in code, not runtime
+configuration.**
 
-## Chunk Pool
+## Compile-Time Constants
 
-| Parameter         | Description                         | Constraints                                          |
-|-------------------|-------------------------------------|------------------------------------------------------|
-| `pool_size`       | Number of chunks in the object pool | Must match active region dimensions                  |
-| `chunk_width`     | Horizontal pixels per chunk         | Power of 2 recommended                               |
-| `chunk_height`    | Vertical pixels per chunk           | Power of 2 recommended                               |
-| `bytes_per_pixel` | Storage per pixel                   | Fixed at 4 bytes per [Pixel Format](pixel-format.md) |
+These values are hardcoded and never passed through function arguments.
 
-**Derived values:**
+### Primary Constants
 
-- `chunk_memory` = `chunk_width` × `chunk_height` × `bytes_per_pixel`
-- `total_pool_memory` = `pool_size` × `chunk_memory`
+| Constant        | Value | Description                                |
+|-----------------|-------|--------------------------------------------|
+| `CHUNK_SIZE`    | 512   | Pixels per chunk edge (square chunks)      |
+| `TILE_SIZE`     | 16    | Pixels per tile edge in checkerboard       |
+| `WINDOW_WIDTH`  | 6     | Chunks loaded horizontally                 |
+| `WINDOW_HEIGHT` | 4     | Chunks loaded vertically                   |
+| `PHASES`        | 4     | Checkerboard phases (fixed for 2×2 tiles)  |
 
-## Streaming Window
+The window dimensions (6×4) are sized for landscape orientation, covering the typical viewport without overshooting.
+The rolling grid maintains a fixed rectangular shape—chunks roll from one edge to the opposite as the camera moves,
+preserving internal positional consistency.
 
-| Parameter           | Description                                | Constraints                           |
-|---------------------|--------------------------------------------|---------------------------------------|
-| `window_width`      | Chunks loaded horizontally                 | Determines horizontal view distance   |
-| `window_height`     | Chunks loaded vertically                   | Determines vertical view distance     |
-| `hysteresis_frames` | Frames of stable movement before recycling | Higher = more stable, slower response |
+### Derived Constants
 
-**Derived values:**
+Derived values are expressed as formulas, not magic numbers:
 
-- `active_region_size` = `window_width` × `window_height` (must equal `pool_size`)
-- `world_coverage` = (`window_width` × `chunk_width`) × (`window_height` × `chunk_height`)
+| Constant          | Formula                         | Value     |
+|-------------------|---------------------------------|-----------|
+| `POOL_SIZE`       | `WINDOW_WIDTH * WINDOW_HEIGHT`  | 24 chunks |
+| `TILES_PER_CHUNK` | `CHUNK_SIZE / TILE_SIZE`        | 32 tiles  |
+| `CHUNK_MEMORY`    | `CHUNK_SIZE * CHUNK_SIZE * 4`   | 1 MB      |
 
-## Simulation
+**Constraint:** `CHUNK_SIZE` must be evenly divisible by `TILE_SIZE`. This ensures the checkerboard pattern aligns
+across chunk boundaries. See [Simulation](simulation.md) for details.
 
-| Parameter         | Description                          | Constraints                     |
-|-------------------|--------------------------------------|---------------------------------|
-| `tile_size`       | Pixels per tile edge in checkerboard | Affects parallelism granularity |
-| `phases_per_tick` | Number of checkerboard phases        | Fixed at 4 for 2×2 tile pattern |
+## Runtime Parameters
 
-**Constraint:** Chunk dimensions must be evenly divisible by `tile_size` (i.e., chunks must contain an even number of
-tiles in each dimension). This ensures the checkerboard pattern aligns across chunk boundaries.
-See [Simulation](simulation.md) for details.
+These may vary per session or be user-configurable:
+
+| Parameter           | Description                                | Default |
+|---------------------|--------------------------------------------|---------|
+| `world_seed`        | Base seed for deterministic generation     | random  |
+| `hysteresis_frames` | Frames of stable movement before recycling | 5       |
 
 ## Tick Rates
 
@@ -101,43 +104,13 @@ details.
 
 **Note:** See [Particles](particles.md) for particle system documentation.
 
-## Example Configuration
+## Memory Budget
 
-A typical configuration for reference (actual values depend on target platform and requirements):
-
-```
-Chunk Pool:
-  pool_size: 81              # 9×9 window
-  chunk_width: 512
-  chunk_height: 512
-  bytes_per_pixel: 4
-
-Streaming Window:
-  window_width: 9            # chunks
-  window_height: 9           # chunks
-  hysteresis_frames: 5
-
-Simulation:
-  tile_size: 16              # 16×16 pixels per tile
-  phases_per_tick: 4
-  ca_tps: 60                 # cellular automata ticks per second
-  decay_tps: 20              # decay pass ticks per second
-  heat_tps: 10               # heat propagation ticks per second
-
-Heat:
-  cooling_factor: 0.95
-  burning_heat: 50
-
-Particles:
-  air_drag: 0.1
-  pool_size: 10000
-```
-
-**Memory calculation for this example:**
+With the default constants:
 
 - Chunk memory: 512 × 512 × 4 = 1 MB per chunk
-- Total pool: 81 × 1 MB = 81 MB
-- World coverage: (9 × 512) × (9 × 512) = 4608 × 4608 pixels
+- Total pool: 24 × 1 MB = 24 MB
+- World coverage: (6 × 512) × (4 × 512) = 3072 × 2048 pixels
 
 ## Related Documentation
 

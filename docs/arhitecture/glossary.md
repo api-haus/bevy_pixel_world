@@ -28,10 +28,10 @@ Terms describing the four-level spatial organization.
 
 | Term                  | Range                  | Usage                                      |
 |-----------------------|------------------------|--------------------------------------------|
-| **World coordinates** | Infinite (signed)      | Global pixel addressing                    |
-| **Chunk coordinates** | Infinite (signed)      | Identifies which chunk contains a position |
-| **Tile coordinates**  | 0 to tiles_per_chunk-1 | Position within chunk's tile grid          |
-| **Local coordinates** | 0 to chunk_size-1      | Pixel position within a chunk              |
+| **World coordinates** | Infinite (signed)                 | Global pixel addressing                    |
+| **Chunk coordinates** | Infinite (signed)                 | Identifies which chunk contains a position |
+| **Tile coordinates**  | 0 to `CHUNK_SIZE/TILE_SIZE - 1`   | Position within chunk's tile grid          |
+| **Local coordinates** | 0 to `CHUNK_SIZE - 1`             | Pixel position within a chunk              |
 
 ---
 
@@ -107,7 +107,7 @@ Terms related to the multi-pass simulation system.
 
 | Term           | Definition                                                                                         | Documentation                  |
 |----------------|----------------------------------------------------------------------------------------------------|--------------------------------|
-| **Heat layer** | Downsampled thermal map (chunk_size/4 resolution). Stores u8 temperature values (0=cold, 255=hot). | [simulation.md](simulation.md) |
+| **Heat layer** | Downsampled thermal map (`CHUNK_SIZE`/4 resolution). Stores u8 temperature values (0=cold, 255=hot). | [simulation.md](simulation.md) |
 | **Decay**      | Probabilistic time-based material transformation independent of pixel activity.                    | [simulation.md](simulation.md) |
 
 ---

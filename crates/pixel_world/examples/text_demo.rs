@@ -10,7 +10,7 @@
 
 use bevy::prelude::*;
 use pixel_world::{
-    draw_text, spawn_static_chunk, Blitter, Chunk, ChunkMaterial, CpuFont, PixelWorldPlugin, Rgba,
+  draw_text, spawn_static_chunk, Blitter, Chunk, ChunkMaterial, CpuFont, PixelWorldPlugin, Rgba,
 };
 
 const CHUNK_SIZE: u32 = 256;

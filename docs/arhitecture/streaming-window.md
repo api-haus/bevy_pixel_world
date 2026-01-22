@@ -14,13 +14,16 @@ The terms "streaming window" and "active region" are used interchangeably throug
 
 ## Active Region Structure
 
-The active region (streaming window) is defined by:
+The active region (streaming window) is a fixed-size rectangular grid:
 
-- **Window dimensions** - Width and height in chunks
-- **Total chunk count** - Must match the chunk pool size
-- **World coverage** - Window dimensions × chunk dimensions in pixels
+- **Window dimensions** - `WINDOW_WIDTH` × `WINDOW_HEIGHT` chunks (6×4 for landscape)
+- **Total chunk count** - `POOL_SIZE` (= `WINDOW_WIDTH * WINDOW_HEIGHT`)
+- **World coverage** - (`WINDOW_WIDTH` × `CHUNK_SIZE`) × (`WINDOW_HEIGHT` × `CHUNK_SIZE`) pixels
 
-See [Configuration Reference](configuration.md) for tunable parameters.
+The grid maintains internal positional consistency—it always remains a complete rectangle. As the camera moves, chunks
+roll from one edge to the opposite edge rather than being individually loaded/unloaded.
+
+See [Configuration Reference](configuration.md) for compile-time constants.
 
 ## Camera Tracking
 
@@ -44,6 +47,19 @@ The window center is quantized to chunk coordinates. When the camera moves far e
 2. **Identify obsolete chunks** - Chunks that will fall outside the new window bounds
 3. **Determine new positions** - World coordinates for recycled chunks
 4. **Prioritize by direction** - Chunks ahead of camera movement load first
+
+### Center-Adjusted Repositioning
+
+By default, chunk membership is determined by floor division—a camera at position (100, 100) belongs to chunk (0, 0) whose corner is at the origin. This creates asymmetric streaming: the camera can move further toward the chunk's far edge before triggering a reposition than toward its near edge.
+
+To achieve symmetric repositioning, offset the camera position by half a chunk before computing chunk membership:
+
+```
+effective_position = camera_position + (CHUNK_SIZE / 2)
+chunk_position = floor(effective_position / CHUNK_SIZE)
+```
+
+This shifts effective chunk boundaries from corners (0, 512, 1024...) to centers (-256, 256, 768...). The camera now "belongs" to whichever chunk center it's closest to, and repositioning occurs at equal distances in all directions.
 
 ## Hysteresis Buffer
 
@@ -102,22 +118,22 @@ flowchart TB
         Camera movement →
 
     +---+---+---+---+---+---+
-    | L | L | . | . | . | N |  L = Low priority (recycle candidates)
-    +---+---+---+---+---+---+  N = New (high priority load)
-    | L | L | . | . | . | N |  . = Active chunks
+    | R | . | . | [C] | . | N |  R = Roll candidates (left edge)
+    +---+---+---+---+---+---+  N = New positions (right edge)
+    | R | . | . | . | . | N |  . = Active chunks
+    +---+---+---+---+---+---+  [C] = Camera position
+    | R | . | . | . | . | N |
     +---+---+---+---+---+---+
-    | L | L | . | [C] | . | N |  [C] = Camera position
+    | R | . | . | . | . | N |
     +---+---+---+---+---+---+
-    | L | L | . | . | . | N |
-    +---+---+---+---+---+---+
-
+          6 × 4 chunk grid
 ```
 
 As the camera moves right:
 
-- Left column (L) becomes candidates for recycling
-- Right column (N) represents new world positions to load
-- Center chunks remain active
+- Left column (R) rolls to become the new right column (N)
+- The grid shifts but maintains its 6×4 rectangular shape
+- Chunks are reassigned to new world positions and reseeded
 
 ## Related Documentation
 

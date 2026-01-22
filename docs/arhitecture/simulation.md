@@ -24,7 +24,7 @@ A downsampled thermal map stored per chunk.
 
 **Structure:**
 
-- Resolution: chunk_size / 4 (e.g., 64x64 chunk → 16x16 heat cells)
+- Resolution: `CHUNK_SIZE` / 4 (e.g., 512×512 chunk → 128×128 heat cells)
 - Each cell represents a 4x4 pixel region
 - Stored as `u8` temperature values (0 = cold, 255 = hot)
 

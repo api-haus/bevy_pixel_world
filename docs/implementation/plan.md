@@ -1,7 +1,6 @@
 # POC Implementation Plan: Pixel Sandbox
 
-A focused POC targeting an interactive infinite sandbox with cursor-based material painting, visual debugging, and
-procedural terrain.
+A demo-first approach delivering visual results at each phase.
 
 ## POC Goal
 
@@ -12,426 +11,195 @@ procedural terrain.
 - Sees comprehensive debug overlays (chunk boundaries, dirty rects, tile phases)
 - Explores procedurally generated terrain (FastNoise2: air/solid + caves + material layers)
 
-**UI:** egui panel with material selector, brush size slider, debug toggles
-
 See [methodology.md](methodology.md) for testing and API design principles.
+See [plan_history.md](plan_history.md) for archived phases.
 
 ---
 
-## Implementation Phases
+## Phase Roadmap
 
-| Phase | Focus                   | Visible Result                |
-|-------|-------------------------|-------------------------------|
-| 0     | Foundational Primitives | UV quad rendered at 60 TPS    |
-| 1     | Core Data Structures    | -                             |
-| 2     | Chunk Management        | Chunks stream as camera moves |
-| 3     | Terrain Generation      | Layered procedural terrain    |
-| 4     | Rendering               | Visible world                 |
-| 5     | Interaction             | Cursor painting works         |
-| 6     | Simulation              | Falling sand physics          |
+| Phase | Focus | Deliverable |
+|-------|-------|-------------|
+| 0 | Foundational Primitives | *Completed - see plan_history.md* |
+| 1 | Rolling Chunk Grid | Coherent supersimplex noise, WASD camera |
+| 2 | Material System | Distance-to-surface coloring (soil→stone) |
+| 3 | Interaction | Cursor painting materials |
+| 4 | Simulation | Cellular automata with 2x2 checkerboard scheduling |
 
 ---
 
-## Phase 0: Foundational Primitives
+## Phase 1: Rolling Chunk Grid
 
-The foundation is a **Surface** (blittable pixel buffer) and a **Chunk** (container for surfaces). Validated by
-rendering a UV-colored quad at 60 TPS.
+**Deliverable:** `cargo run -p pixel_world --example rolling_grid`
 
-### 0.1: Surface (Blittable Pixel Buffer)
-
-A generic 2D buffer of elements that can be written to.
-
-**Files:** `pixel_world/src/surface.rs`
-
-```rust
-pub struct Surface<T> {
-    data: Box<[T]>,
-    width: u32,
-    height: u32,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Default)]
-pub struct Rgba {
-    pub r: u8,
-    pub g: u8,
-    pub b: u8,
-    pub a: u8,
-}
-
-pub type RgbaSurface = Surface<Rgba>;
-```
-
-**API:** `new`, `get`, `set`, `width`, `height`, `as_bytes` (for GPU upload)
-
-**Acceptance Criteria:**
-
-- [ ] Index calculation: `y * width + x`
-- [ ] Out-of-bounds returns `None`/`false` (no panic)
-- [ ] `as_bytes()` returns contiguous slice for GPU upload
-
----
-
-### 0.2: Blitter (Surface Drawing API)
-
-Fragment-shader-style API for writing into surfaces.
-
-**Files:** `pixel_world/src/blitter.rs`
-
-```rust
-pub struct Rect {
-    pub x: u32,
-    pub y: u32,
-    pub width: u32,
-    pub height: u32,
-}
-
-pub struct Blitter<'a, T> {
-    surface: &'a mut Surface<T>,
-}
-```
-
-**API:**
-
-- `blit(rect, |x, y, u, v| -> T)` - iterate rect, call closure with absolute coords (x,y) and normalized coords (u,v
-  0.0-1.0)
-- `fill(rect, value)` - solid fill
-- `clear(value)` - clear entire surface
-
-**Acceptance Criteria:**
-
-- [ ] `blit()` provides correct (x, y, u, v) to closure
-- [ ] Rect outside bounds is clamped (partial draw, no panic)
-
----
-
-### 0.3: Chunk (Container)
-
-A spatial unit containing surfaces.
-
-**Files:** `pixel_world/src/chunk.rs`
-
-```rust
-pub struct Chunk {
-    pub pixels: RgbaSurface,
-}
-```
-
----
-
-### 0.4: Texture Upload & Display
-
-Bevy integration for GPU rendering.
-
-**Files:** `pixel_world/src/render.rs`
-
-**API:**
-
-- `create_texture(images, width, height)` - create RGBA8 texture with nearest-neighbor sampling
-- `upload_surface(surface, image)` - copy surface bytes to texture
-
----
-
-### 0.5: 60 TPS UV Quad Demo
-
-**Files:** `pixel_world/examples/uv_quad.rs`
-
-Bevy app that blits an animated UV-colored quad into a chunk at 60 TPS. The quad bounces around with a pulsing blue
-channel.
-
-**Verification:** `cargo run -p pixel_world --example uv_quad`
-
-- [ ] UV quad displays with correct gradient (red→right, green→down)
-- [ ] Animation runs at stable 60 TPS
-- [ ] Blue channel pulses over time
-
----
-
-## Phase 1: Core Data Structures
-
-### 1.1: Pixel Format
-
-**Files:** `pixel_world/src/pixel.rs`
-
-```rust
-#[repr(C)]
-pub struct Pixel {
-    pub material: u8,
-    pub color: u8,
-    pub damage: u8,
-    pub flags: PixelFlags,
-}
-
-bitflags! {
-    pub struct PixelFlags: u8 {
-        const DIRTY   = 0b00000001;
-        const SOLID   = 0b00000010;
-        const FALLING = 0b00000100;
-        const BURNING = 0b00001000;
-        const WET     = 0b00010000;
-    }
-}
-```
-
-- [ ] `size_of::<Pixel>() == 4`
-- [ ] `Pixel::VOID` constant (all zeros)
-
----
-
-### 1.2: Coordinate Types
+### 1.1 Constants & Coordinate Types
 
 **Files:** `pixel_world/src/coords.rs`
 
 ```rust
-pub struct WorldPos(pub i64, pub i64);   // global pixel coordinates
-pub struct ChunkPos(pub i32, pub i32);   // chunk grid coordinates
+// Compile-time constants - never passed as arguments
+pub const CHUNK_SIZE: u32 = 512;
+pub const TILE_SIZE: u32 = 16;
+pub const WINDOW_WIDTH: u32 = 6;   // chunks horizontally
+pub const WINDOW_HEIGHT: u32 = 4;  // chunks vertically (landscape orientation)
+
+// Derived constants - expressed as formulas, not magic numbers
+pub const POOL_SIZE: usize = (WINDOW_WIDTH * WINDOW_HEIGHT) as usize;
+pub const TILES_PER_CHUNK: u32 = CHUNK_SIZE / TILE_SIZE;
+
+pub struct WorldPos(pub i64, pub i64);   // global pixel
+pub struct ChunkPos(pub i32, pub i32);   // chunk grid
 pub struct LocalPos(pub u16, pub u16);   // pixel within chunk
-pub struct TilePos(pub u8, pub u8);      // tile within chunk
-```
 
-- [ ] `WorldPos::to_chunk_and_local()` handles negative coordinates correctly
-- [ ] Roundtrip: `world -> (chunk, local) -> world` is identity
-
----
-
-### 1.3: Configuration
-
-**Files:** `pixel_world/src/config.rs`
-
-```rust
-pub struct PixelWorldConfig {
-    pub chunk_size: u32,     // 512 default
-    pub tile_size: u32,      // 16 default
-    pub pool_size: u32,      // 81 default (9x9)
-    pub window_chunks: u32,  // 9 default
-    pub world_seed: u64,
+impl WorldPos {
+    pub fn to_chunk_and_local(self) -> (ChunkPos, LocalPos);
 }
 ```
 
-- [ ] `validate()` checks constraints (power-of-2, pool >= window²)
+Floor division for negative coords (not truncation).
 
----
-
-### 1.4: Material Registry
-
-**Files:** `pixel_world/src/material.rs`
-
-```rust
-pub struct Material {
-    pub name: &'static str,
-    pub state: MaterialState,
-    pub color_range: (u8, u8),
-    pub solid: bool,
-}
-
-pub enum MaterialState { Solid, Powder, Liquid, Gas }
-```
-
-POC materials: Void, Air, Soil, Rock, DenseRock, Bedrock, Sand, Water
-
----
-
-## Phase 2: Chunk Management
-
-### Chunk Lifecycle
-
-```mermaid
-stateDiagram-v2
-    [*] --> InPool: startup allocation
-    InPool --> Seeding: acquire for position
-    Seeding --> Active: seeding complete
-    Active --> Recycling: camera moved away
-    Recycling --> InPool: buffer cleared
-```
-
-### 2.1: Chunk Pool
+### 1.2 Chunk Pool
 
 **Files:** `pixel_world/src/chunk/pool.rs`
 
-Pre-allocates `pool_size` buffers at startup. Provides `acquire()` and `release()` for buffer lifecycle.
-
----
-
-### 2.2: Streaming Window
-
-**Files:** `pixel_world/src/streaming.rs`
-
-Tracks camera position and maintains `active_chunks: HashMap<ChunkPos, ChunkHandle>`. Calculates which chunks to
-load/unload based on camera movement. Hysteresis prevents thrashing at boundaries.
-
----
-
-### 2.3: Chunk Lifecycle System
-
-**Files:** `pixel_world/src/systems/lifecycle.rs`
-
-```mermaid
-flowchart LR
-    A[update_streaming_window] --> B[recycle_chunks]
-    B --> C[acquire_chunks]
-    C --> D[seed_chunks]
-```
-
-Systems run in `FixedUpdate` in this order. Fires `ChunkLoadedEvent` / `ChunkUnloadedEvent`.
-
----
-
-## Phase 3: Terrain Generation
-
-### 3.1: Chunk Seeder Trait
-
-**Files:** `pixel_world/src/chunk/seeder.rs`
-
 ```rust
-pub trait ChunkSeeder: Send + Sync {
-    fn seed(&self, pos: ChunkPos, buffer: &mut ChunkBuffer, config: &PixelWorldConfig);
+pub struct ChunkPool {
+    free: Vec<Chunk>,
+}
+
+impl ChunkPool {
+    pub fn new(count: usize) -> Self;
+    pub fn acquire(&mut self) -> Option<Chunk>;
+    pub fn release(&mut self, chunk: Chunk);
 }
 ```
 
----
+Uses `CHUNK_SIZE` constant for chunk allocation.
 
-### 3.2: FastNoise2 Terrain Seeder
+### 1.3 Streaming Window
 
-**Files:** `pixel_world/src/terrain/noise_seeder.rs`
+**Files:** `pixel_world/src/streaming.rs`
 
-**Dependencies:** `fastnoise2` crate
+```rust
+pub struct StreamingWindow {
+    active: HashMap<ChunkPos, ActiveChunk>,
+    center: ChunkPos,
+}
 
-**Terrain layers (Y increases upward):**
-
-| Y Range        | Material   | Caves  |
-|----------------|------------|--------|
-| > surface      | Air        | -      |
-| surface to -50 | Soil       | yes    |
-| -50 to -150    | Rock       | yes    |
-| -150 to -300   | Dense Rock | sparse |
-| < -300         | Bedrock    | no     |
-
-**Algorithm:** Sample 2D height noise for surface, 3D noise for caves.
-
-- [ ] Deterministic: same (seed, chunk_pos) = same terrain
-- [ ] No visible seams at chunk boundaries
-
----
-
-## Phase 4: Rendering
-
-### 4.1: Chunk Textures
-
-**Files:** `pixel_world/src/render/texture.rs`
-
-Each active chunk has a `Handle<Image>`. Full chunk upload on any change (POC simplicity).
-
----
-
-### 4.2: Chunk Sprites
-
-**Files:** `pixel_world/src/render/sprite.rs`
-
-Spawn sprite when chunk becomes Active, despawn when recycled. Position at `chunk_pos * chunk_size`.
-
----
-
-### 4.3: Debug Overlays
-
-**Files:** `pixel_world/src/render/debug_overlay.rs`
-
-Toggleable overlays:
-
-- Chunk boundaries (colored lines)
-- Chunk info (position text)
-- Dirty rects (simulation regions)
-- Tile phases (A=red, B=green, C=blue, D=yellow)
-
----
-
-## Phase 5: Interaction
-
-### 5.1: Camera Controller
-
-**Files:** `game/src/sandbox/camera.rs`
-
-WASD movement, Shift for speed boost, scroll wheel zoom. Camera position drives streaming window.
-
----
-
-### 5.2: Cursor World Position
-
-**Files:** `game/src/sandbox/cursor.rs`
-
-Convert screen cursor to world coordinates via camera transform. Update `CursorWorldPos` resource each frame.
-
----
-
-### 5.3: Material Brush
-
-**Files:** `game/src/sandbox/brush.rs`
-
-Left click paints selected material, right click erases (Air). Circular brush with configurable size.
-
----
-
-### 5.4: egui Sandbox UI
-
-**Files:** `game/src/sandbox/ui.rs`
-
-**Dependencies:** `bevy_egui`
-
-Side panel with: material selector grid, brush size slider, debug overlay toggles, chunk stats.
-
----
-
-## Phase 6: Simulation
-
-### 6.1: Tile Phase Assignment
-
-**Files:** `pixel_world/src/simulation/phase.rs`
-
-Checkerboard pattern (A/B/C/D) ensures adjacent tiles are never same phase, enabling parallel processing.
-
-```mermaid
-block-beta
-    columns 4
-    A:1 B:1 A:1 B:1
-    C:1 D:1 C:1 D:1
-    A:1 B:1 A:1 B:1
-    C:1 D:1 C:1 D:1
+pub struct ActiveChunk {
+    pub chunk: Chunk,
+    pub entity: Entity,
+    pub texture: Handle<Image>,
+}
 ```
 
+The grid maintains a fixed `WINDOW_WIDTH` × `WINDOW_HEIGHT` rectangle of chunks. As the camera moves, chunks roll from one edge to the opposite edge, preserving internal positional consistency.
+
+### 1.4 FastNoise2 Integration
+
+**Dependencies:** `fastnoise2 = "0.4"`
+
+Terrain fill using `SuperSimplex` node:
+- World coords = `chunk_pos * chunk_size + local`
+- Coherent across chunk boundaries (no seams)
+- Output: grayscale noise (threshold for solid/air)
+
+### 1.5 WASD Camera
+
+- WASD/Arrows: move camera
+- Shift: speed boost
+- Camera position drives StreamingWindow updates
+
+### Verification
+
+```bash
+cargo run -p pixel_world --example rolling_grid
+```
+
+- [ ] WASD moves camera smoothly
+- [ ] Chunks stream in/out at window edges
+- [ ] Noise coherent across boundaries (no seams)
+- [ ] Chunk labels visible for debugging
+
 ---
 
-### 6.2: Falling Sand CA
+## Phase 2: Material System
 
-**Files:** `pixel_world/src/simulation/automata.rs`
+Build on supersimplex noise with distance-based material coloring.
 
-Process tiles phase-by-phase (A, then B, then C, then D).
+**Concept:** Color pixels by distance to nearest air (surface)
+- Surface pixels → Soil (brown)
+- Deeper pixels → Stone (gray)
+- Air → transparent/sky blue
 
-**Behaviors:**
+**New files:**
+- `src/material.rs` - Material enum with color ranges
+- `src/pixel.rs` - Pixel struct (material + color variant)
 
-- **Powder:** falls down, piles at angle of repose
-- **Liquid:** falls down, flows sideways
-- **Solid:** doesn't move
+**Algorithm:**
+1. Generate noise, threshold to solid/air
+2. For each solid pixel, calculate distance to nearest air
+3. Map distance to material: 0-N = Soil, N+ = Stone
 
-- [ ] Dirty flag optimization: skip non-dirty pixels
-- [ ] Cross-chunk movement handled correctly
+### Verification
+
+```bash
+cargo run -p pixel_world --example rolling_grid
+```
+
+- [ ] Surface shows brown soil gradient
+- [ ] Interior shows gray stone
+- [ ] Smooth color transitions at material boundaries
 
 ---
 
-## Verification Strategy
+## Phase 3: Interaction
 
-After each phase:
+- Cursor world position from screen coords
+- Left click: paint selected material
+- Right click: erase (set to Air)
+- Circular brush with size control
+- Simple egui panel for material selection
 
-1. Run examples - visual verification
-2. `cargo run -p game` - integrated behavior works
-3. Manual QA - interact with the system
+### Verification
 
-**POC Complete When:**
+```bash
+cargo run -p pixel_world --example painting
+```
 
-- [ ] Camera moves smoothly with WASD
-- [ ] Terrain generates with visible layers and caves
-- [ ] Cursor painting places/removes materials
-- [ ] Debug overlays show chunk boundaries
-- [ ] Sand falls and piles realistically
-- [ ] Water flows and pools
+- [ ] Cursor position tracks correctly at all zoom levels
+- [ ] Painting materials updates chunk visuals immediately
+- [ ] Brush size slider works
+- [ ] Material selector shows available materials
+
+---
+
+## Phase 4: Simulation
+
+Cellular automata with 2x2 checkerboard parallel scheduling:
+
+```
+A B A B
+C D C D
+A B A B
+C D C D
+```
+
+- Process all A tiles, then B, then C, then D
+- Adjacent tiles never same phase (safe parallelism)
+- Behaviors: Powder falls, Liquid flows, Solid stays
+- Dirty flag optimization
+
+### Verification
+
+```bash
+cargo run -p pixel_world --example simulation
+```
+
+- [ ] Sand falls and piles at angle of repose
+- [ ] Water flows sideways and pools
+- [ ] No visible tile seams during simulation
+- [ ] Debug overlay shows tile phases
 
 ---
 
@@ -442,5 +210,4 @@ After each phase:
 - Material interactions (corrosion, ignition, transformation)
 - Decay system
 - Persistence/saving
-- Advanced materials beyond basic 8
 - Parallel simulation (rayon)

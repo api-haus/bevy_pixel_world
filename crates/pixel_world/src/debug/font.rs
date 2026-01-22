@@ -63,6 +63,85 @@ impl TextMask {
   }
 }
 
+/// Positions glyphs along the baseline for the given text.
+fn layout_glyphs<SF: ScaleFont<F>, F: Font>(
+  scaled_font: &SF,
+  text: &str,
+  scale: PxScale,
+  char_spacing: f32,
+) -> Vec<Glyph> {
+  let mut glyphs = Vec::new();
+  let mut cursor_x = 0.0f32;
+
+  for ch in text.chars() {
+    let glyph_id = scaled_font.glyph_id(ch);
+    let glyph =
+      glyph_id.with_scale_and_position(scale, ab_glyph::point(cursor_x, scaled_font.ascent()));
+    cursor_x += scaled_font.h_advance(glyph_id) + char_spacing;
+    glyphs.push(glyph);
+  }
+
+  glyphs
+}
+
+/// Computes the aggregate bounding box for a list of glyphs.
+///
+/// Returns `Some((min_x, min_y, max_x, max_y))` or `None` if bounds collapse.
+fn compute_glyph_bounds<SF: ScaleFont<F>, F: Font>(
+  scaled_font: &SF,
+  glyphs: &[Glyph],
+) -> Option<(i32, i32, i32, i32)> {
+  let mut min_x = i32::MAX;
+  let mut min_y = i32::MAX;
+  let mut max_x = i32::MIN;
+  let mut max_y = i32::MIN;
+
+  for glyph in glyphs {
+    if let Some(outlined) = scaled_font.outline_glyph(glyph.clone()) {
+      let bounds = outlined.px_bounds();
+      min_x = min_x.min(bounds.min.x.floor() as i32);
+      min_y = min_y.min(bounds.min.y.floor() as i32);
+      max_x = max_x.max(bounds.max.x.ceil() as i32);
+      max_y = max_y.max(bounds.max.y.ceil() as i32);
+    }
+  }
+
+  if min_x >= max_x || min_y >= max_y {
+    None
+  } else {
+    Some((min_x, min_y, max_x, max_y))
+  }
+}
+
+/// Rasterizes glyphs into a boolean coverage mask.
+fn rasterize_glyphs<SF: ScaleFont<F>, F: Font>(
+  scaled_font: &SF,
+  glyphs: Vec<Glyph>,
+  min_x: i32,
+  min_y: i32,
+  width: u32,
+  height: u32,
+) -> Vec<bool> {
+  let mut data = vec![false; (width * height) as usize];
+
+  for glyph in glyphs {
+    if let Some(outlined) = scaled_font.outline_glyph(glyph) {
+      let bounds = outlined.px_bounds();
+      outlined.draw(|px, py, coverage| {
+        if coverage > 0.5 {
+          let x = (bounds.min.x.floor() as i32 + px as i32 - min_x) as u32;
+          let y = (bounds.min.y.floor() as i32 + py as i32 - min_y) as u32;
+          if x < width && y < height {
+            data[(y as usize) * (width as usize) + (x as usize)] = true;
+          }
+        }
+      });
+    }
+  }
+
+  data
+}
+
 /// Rasterizes text into a coverage mask.
 ///
 /// - `font_scale`: Font size in pixels (e.g., 16.0 for 16px).
@@ -82,61 +161,16 @@ pub fn rasterize_text(
   let scale = PxScale::from(font_scale);
   let scaled_font = font.font.as_scaled(scale);
 
-  // Layout glyphs and compute bounding box
-  let mut glyphs: Vec<Glyph> = Vec::new();
-  let mut cursor_x = 0.0f32;
-
-  for ch in text.chars() {
-    let glyph_id = scaled_font.glyph_id(ch);
-    let glyph =
-      glyph_id.with_scale_and_position(scale, ab_glyph::point(cursor_x, scaled_font.ascent()));
-    cursor_x += scaled_font.h_advance(glyph_id) + char_spacing;
-    glyphs.push(glyph);
-  }
-
+  let glyphs = layout_glyphs(&scaled_font, text, scale, char_spacing);
   if glyphs.is_empty() {
     return None;
   }
 
-  // Compute bounding box
-  let mut min_x = i32::MAX;
-  let mut min_y = i32::MAX;
-  let mut max_x = i32::MIN;
-  let mut max_y = i32::MIN;
-
-  for glyph in &glyphs {
-    if let Some(outlined) = scaled_font.outline_glyph(glyph.clone()) {
-      let bounds = outlined.px_bounds();
-      min_x = min_x.min(bounds.min.x.floor() as i32);
-      min_y = min_y.min(bounds.min.y.floor() as i32);
-      max_x = max_x.max(bounds.max.x.ceil() as i32);
-      max_y = max_y.max(bounds.max.y.ceil() as i32);
-    }
-  }
-
-  if min_x >= max_x || min_y >= max_y {
-    return None;
-  }
+  let (min_x, min_y, max_x, max_y) = compute_glyph_bounds(&scaled_font, &glyphs)?;
 
   let width = (max_x - min_x) as u32;
   let height = (max_y - min_y) as u32;
-  let mut data = vec![false; (width * height) as usize];
-
-  // Rasterize each glyph
-  for glyph in glyphs {
-    if let Some(outlined) = scaled_font.outline_glyph(glyph) {
-      let bounds = outlined.px_bounds();
-      outlined.draw(|px, py, coverage| {
-        if coverage > 0.5 {
-          let x = (bounds.min.x.floor() as i32 + px as i32 - min_x) as u32;
-          let y = (bounds.min.y.floor() as i32 + py as i32 - min_y) as u32;
-          if x < width && y < height {
-            data[(y as usize) * (width as usize) + (x as usize)] = true;
-          }
-        }
-      });
-    }
-  }
+  let data = rasterize_glyphs(&scaled_font, glyphs, min_x, min_y, width, height);
 
   Some(TextMask {
     data,

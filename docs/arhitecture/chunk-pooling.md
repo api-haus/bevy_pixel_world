@@ -11,20 +11,20 @@ throughout the session. This prevents allocation spikes, fragmentation, and garb
 
 The pool consists of:
 
-- **Fixed chunk count** - Sized to match the active region dimensions
-- **Uniform chunk buffers** - Each chunk has identical pixel dimensions
-- **Pre-allocated memory** - Total pool memory is chunk count × chunk buffer size
+- **Fixed chunk count** - `POOL_SIZE` (= `WINDOW_WIDTH * WINDOW_HEIGHT`) chunks allocated at startup
+- **Uniform chunk buffers** - Each chunk is `CHUNK_SIZE` × `CHUNK_SIZE` pixels
+- **Pre-allocated memory** - `POOL_SIZE * CHUNK_SIZE * CHUNK_SIZE * 4` bytes total
 
-See [Configuration Reference](configuration.md) for tunable parameters.
+See [Configuration Reference](configuration.md) for compile-time constants.
 
 ## Chunk Memory Layout
 
 Each chunk stores its data as separate linear arrays, one per simulation layer:
 
-| Layer  | Element Type      | Size                                     |
-|--------|-------------------|------------------------------------------|
-| Pixels | 4 bytes per pixel | `chunk_width × chunk_height × 4`         |
-| Heat   | u8 per cell       | `(chunk_width / 4) × (chunk_height / 4)` |
+| Layer  | Element Type      | Size                                   |
+|--------|-------------------|----------------------------------------|
+| Pixels | 4 bytes per pixel | `CHUNK_SIZE × CHUNK_SIZE × 4`          |
+| Heat   | u8 per cell       | `(CHUNK_SIZE / 4) × (CHUNK_SIZE / 4)`  |
 
 Future layers (moisture, pressure, etc.) follow the same
 pattern. [needs clarification: which additional layers are planned and their resolution factors] Each layer is a
