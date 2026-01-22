@@ -7,3 +7,4 @@ description = "Infinite cellular automata simulation plugin for Bevy"
 [dependencies]
 bevy = { workspace = true }
 ab_glyph = "0.2"
+fastnoise2 = "0.4"
