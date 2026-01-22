@@ -1,0 +1,45 @@
+# Cargo configuration for rust_voxelframework
+
+# WASM build configuration with SIMD + threading support
+[target.wasm32-unknown-unknown]
+rustflags = [
+    "--cfg", "getrandom_backend=\"wasm_js\"",
+    "-C", "target-feature=+simd128,+atomics,+bulk-memory,+mutable-globals",
+    # Required for SharedArrayBuffer (wasm-bindgen-rayon)
+    "-C", "link-arg=--shared-memory",
+    "-C", "link-arg=--max-memory=1073741824",
+    "-C", "link-arg=--import-memory",
+    "-C", "link-arg=--export=__wasm_init_tls",
+    "-C", "link-arg=--export=__tls_size",
+    "-C", "link-arg=--export=__tls_align",
+    "-C", "link-arg=--export=__tls_base",
+]
+
+# Rebuild std with atomics support (requires nightly + rust-src)
+[unstable]
+build-std = ["std", "panic_abort"]
+codegen-backend = true
+
+# Use sparse registry protocol for faster dependency resolution
+[registries.crates-io]
+protocol = "sparse"
+
+# Linker configuration for faster native builds
+[target.x86_64-unknown-linux-gnu]
+linker = "clang"
+rustflags = [
+    "-C", "link-arg=-fuse-ld=lld",
+    # (Nightly) Make the current crate share its generic instantiations
+    "-Zshare-generics=y",
+    "-Z", "threads=0",
+]
+
+[profile.dev]
+codegen-backend = "cranelift"
+
+[profile.dev.package."*"]
+codegen-backend = "llvm"
+
+# for Windows
+[target.x86_64-pc-windows-msvc]
+linker = "rust-lld.exe"

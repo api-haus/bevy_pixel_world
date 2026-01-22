@@ -1,0 +1,13 @@
+# Stable options
+max_width = 100
+tab_spaces = 2
+hard_tabs = false
+wrap_comments = true
+comment_width = 80
+format_strings = true
+merge_derives = true
+group_imports = "StdExternalCrate" # Recommended for import grouping
+
+# Unstable options (requires nightly toolchain and unstable_features = true)
+unstable_features = true
+trailing_comma = "Vertical"

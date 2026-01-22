@@ -1,0 +1,5 @@
+[toolchain]
+# Pin nightly for atomics stability - floating nightly can break wasm-bindgen
+channel = "nightly-2025-11-15"
+components = ["rustfmt", "clippy", "rust-src"]
+targets = ["wasm32-unknown-unknown"]

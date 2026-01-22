@@ -1,0 +1,45 @@
+[package]
+name = "sim2d"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy = "0.17"
+bevy_rapier2d = "0.32"
+bevy_enhanced_input = "0.19"
+rand = "0.9"
+bevy_egui = "0.37"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+bevy_common_assets = { version = "0.14", features = ["toml"] }
+
+log = { version = "*", features = [
+    "max_level_debug",
+    "release_max_level_warn",
+] }
+rayon = "1.11.0"
+
+[features]
+default = ["dev"]
+dev = ["bevy/dynamic_linking", "bevy/file_watcher", "visual_debug"]
+visual_debug = []
+
+# Enable a small amount of optimization in the dev profile.
+[profile.dev]
+opt-level = 1
+#codegen-backend = "cranelift"
+incremental = true
+lto = "off"
+
+# Enable a large amount of optimization in the dev profile for dependencies.
+[profile.dev.package."*"]
+opt-level = 3
+
+# Enable more optimization in the release profile at the cost of compile time.
+[profile.release]
+# Compile the entire crate as one unit.
+# Slows compile times, marginal improvements.
+codegen-units = 1
+# Do a second optimization pass over the entire program, including dependencies.
+# Slows compile times, marginal improvements.
+lto = "thin"
