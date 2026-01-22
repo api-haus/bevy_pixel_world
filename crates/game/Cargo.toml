@@ -1,0 +1,21 @@
+[package]
+name = "game"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy = { workspace = true }
+bevy_rapier2d = "0.32"
+bevy_enhanced_input = "0.19"
+rand = "0.9"
+bevy_egui = "0.37"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+bevy_common_assets = { version = "0.14", features = ["toml"] }
+log = { version = "*", features = ["max_level_debug", "release_max_level_warn"] }
+rayon = "1.11.0"
+
+[features]
+default = ["dev"]
+dev = ["bevy/dynamic_linking", "bevy/file_watcher", "visual_debug"]
+visual_debug = []

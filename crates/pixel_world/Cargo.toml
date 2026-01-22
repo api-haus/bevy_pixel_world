@@ -1,0 +1,8 @@
+[package]
+name = "pixel_world"
+version.workspace = true
+edition.workspace = true
+description = "Infinite cellular automata simulation plugin for Bevy"
+
+[dependencies]
+bevy = { workspace = true }
