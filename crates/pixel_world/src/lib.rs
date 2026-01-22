@@ -10,9 +10,14 @@ pub mod core;
 pub mod debug;
 pub mod render;
 
-pub use core::{Blitter, Chunk, Rect, Rgba, RgbaSurface, Surface};
+pub use core::{Blitter, Chunk, Rgba, RgbaSurface, Surface};
+
 pub use debug::{draw_text, rasterize_text, stamp_text, CpuFont, TextMask};
-pub use render::{create_chunk_quad, create_texture, spawn_static_chunk, upload_surface, ChunkMaterial};
+pub use render::{
+    create_chunk_quad, create_texture, spawn_static_chunk, upload_surface, ChunkMaterial,
+};
+
+pub use self::core::rect::Rect;
 
 /// Plugin for infinite cellular automata simulation.
 pub struct PixelWorldPlugin;

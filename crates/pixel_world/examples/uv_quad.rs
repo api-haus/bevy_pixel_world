@@ -8,9 +8,10 @@
 //! Run with: `cargo run -p pixel_world --example uv_quad`
 
 use bevy::prelude::*;
+use pixel_world::core::rect::Rect;
 use pixel_world::{
-    create_chunk_quad, create_texture, upload_surface, Blitter, Chunk, ChunkMaterial, PixelWorldPlugin, Rect,
-    Rgba,
+  create_chunk_quad, create_texture, upload_surface, Blitter, Chunk, ChunkMaterial, PixelWorldPlugin,
+  Rgba,
 };
 
 /// Size of the chunk in pixels.

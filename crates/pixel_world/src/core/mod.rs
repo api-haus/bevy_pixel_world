@@ -1,7 +1,9 @@
 mod blitter;
 mod chunk;
+pub mod rect;
 mod surface;
 
-pub use blitter::{Blitter, Rect};
+pub use blitter::Blitter;
 pub use chunk::Chunk;
+pub use rect::Rect;
 pub use surface::{Rgba, RgbaSurface, Surface};

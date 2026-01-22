@@ -5,6 +5,7 @@
 - No trivial unit tests. Don't test that getters return what setters set.
 - Integration and E2E tests only. Tests should catch real bugs.
 - Visual verification via runnable examples is preferred for graphical systems.
+- Keep tests in `tests/` directory, not inline `#[cfg(test)]` modules.
 
 ## API Design
 

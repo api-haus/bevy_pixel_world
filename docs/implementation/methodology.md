@@ -39,6 +39,22 @@ verbose.
 
 Examples serve as both verification and documentation.
 
+### Test Location
+
+Keep tests in `tests/` directories, not inline `#[cfg(test)]` modules. This:
+
+- Keeps source files focused on implementation
+- Makes tests easier to find and navigate
+- Separates concerns cleanly
+
+For unit tests that need private access, use `#[path]` to reference external test files:
+
+```rust
+#[cfg(test)]
+#[path = "tests/mymodule.rs"]
+mod tests;
+```
+
 ---
 
 ## API Design
