@@ -10,7 +10,8 @@ use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::sprite_render::MeshMaterial2d;
 
-use crate::surface::RgbaSurface;
+use crate::RgbaSurface;
+use super::material::ChunkMaterial;
 
 /// Creates an RGBA8 texture with nearest-neighbor sampling.
 ///
@@ -89,7 +90,7 @@ pub fn spawn_static_chunk(
   commands: &mut Commands,
   images: &mut Assets<Image>,
   meshes: &mut Assets<Mesh>,
-  materials: &mut Assets<crate::ChunkMaterial>,
+  materials: &mut Assets<ChunkMaterial>,
   surface: &RgbaSurface,
   display_size: Vec2,
 ) -> Entity {
@@ -101,7 +102,7 @@ pub fn spawn_static_chunk(
 
   // Create mesh with Y+ up UVs
   let mesh_handle = meshes.add(create_chunk_quad(display_size.x, display_size.y));
-  let material_handle = materials.add(crate::ChunkMaterial {
+  let material_handle = materials.add(ChunkMaterial {
     texture: Some(texture_handle),
   });
 
