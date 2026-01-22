@@ -3,6 +3,10 @@ name = "game"
 version.workspace = true
 edition.workspace = true
 
+[[bin]]
+name = "sim2d"
+path = "src/main.rs"
+
 [dependencies]
 bevy = { workspace = true }
 bevy_rapier2d = "0.32"
