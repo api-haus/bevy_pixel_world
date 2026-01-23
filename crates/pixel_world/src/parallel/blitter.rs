@@ -9,35 +9,11 @@ use std::sync::Mutex;
 
 use rayon::prelude::*;
 
-use crate::coords::{ChunkPos, LocalPos, TilePos, WorldFragment, WorldPos, WorldRect, TILE_SIZE};
+use crate::coords::{ChunkPos, LocalPos, Phase, TilePos, WorldFragment, WorldPos, WorldRect, TILE_SIZE};
 use crate::debug_shim::{self, DebugGizmos};
 use crate::pixel::Pixel;
 use crate::primitives::Chunk;
 use crate::simulation::hash::hash21uu64;
-
-/// Phase assignment for 2x2 checkerboard scheduling.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Phase {
-  A, // (0, 1) - top-left of 2x2
-  B, // (1, 1) - top-right
-  C, // (0, 0) - bottom-left
-  D, // (1, 0) - bottom-right
-}
-
-impl Phase {
-  /// Determine the phase for a tile position.
-  fn from_tile(tile: TilePos) -> Self {
-    let x_mod = tile.x.rem_euclid(2);
-    let y_mod = tile.y.rem_euclid(2);
-    match (x_mod, y_mod) {
-      (0, 1) => Phase::A,
-      (1, 1) => Phase::B,
-      (0, 0) => Phase::C,
-      (1, 0) => Phase::D,
-      _ => unreachable!(),
-    }
-  }
-}
 
 /// Direct chunk access without locks.
 ///
@@ -79,6 +55,24 @@ impl<'a> ChunkAccess<'a> {
   pub fn get_mut(&self, pos: ChunkPos) -> Option<&mut Chunk> {
     self.chunks.get(&pos).map(|ptr| unsafe { &mut **ptr })
   }
+
+  /// Gets mutable references to two different chunks.
+  ///
+  /// Returns None if either chunk is not found. Panics if `a == b`
+  /// (use `get_mut` for same-chunk access).
+  ///
+  /// # Safety
+  /// This is safe because the positions are guaranteed to be different,
+  /// so the raw pointers point to distinct memory locations.
+  #[inline]
+  pub fn get_two_mut(&self, a: ChunkPos, b: ChunkPos) -> Option<(&mut Chunk, &mut Chunk)> {
+    debug_assert_ne!(a, b, "get_two_mut requires different chunk positions");
+    let ptr_a = self.chunks.get(&a)?;
+    let ptr_b = self.chunks.get(&b)?;
+    // SAFETY: a != b guarantees these are distinct memory locations.
+    // Checkerboard scheduling guarantees no overlapping pixel access.
+    Some(unsafe { (&mut **ptr_a, &mut **ptr_b) })
+  }
 }
 
 /// Executes a blit operation across tiles in parallel using 2x2 checkerboard
@@ -98,13 +92,7 @@ pub fn parallel_blit<F>(
 
   for tile in tiles {
     let phase = Phase::from_tile(tile);
-    let idx = match phase {
-      Phase::A => 0,
-      Phase::B => 1,
-      Phase::C => 2,
-      Phase::D => 3,
-    };
-    phases[idx].push(tile);
+    phases[phase.index()].push(tile);
   }
 
   // Precompute UV scaling
@@ -382,13 +370,8 @@ fn swap_pixels(chunks: &ChunkAccess<'_>, a: WorldPos, b: WorldPos) -> Option<[Ch
     chunk.pixels[lb] = pixel_a;
     Some([chunk_a, chunk_a])
   } else {
-    // Different chunks - get both
-    // SAFETY: Checkerboard scheduling guarantees no overlapping access
-    let chunk_ptr_a = chunks.chunks.get(&chunk_a)?;
-    let chunk_ptr_b = chunks.chunks.get(&chunk_b)?;
-
-    let chunk_ref_a = unsafe { &mut **chunk_ptr_a };
-    let chunk_ref_b = unsafe { &mut **chunk_ptr_b };
+    // Different chunks - get both via encapsulated method
+    let (chunk_ref_a, chunk_ref_b) = chunks.get_two_mut(chunk_a, chunk_b)?;
 
     let pixel_a = chunk_ref_a.pixels[la];
     let pixel_b = chunk_ref_b.pixels[lb];

@@ -25,6 +25,49 @@ pub(crate) const POOL_SIZE: usize = (WINDOW_WIDTH * WINDOW_HEIGHT) as usize;
 /// Number of tiles per chunk edge (derived from chunk/tile sizes).
 pub const TILES_PER_CHUNK: u32 = CHUNK_SIZE / TILE_SIZE;
 
+/// Phase assignment for 2x2 checkerboard scheduling.
+///
+/// Tiles are assigned to phases based on position modulo 2:
+/// - A = (0, 1) - top-left of 2x2 block (Y+ up coordinate system)
+/// - B = (1, 1) - top-right
+/// - C = (0, 0) - bottom-left
+/// - D = (1, 0) - bottom-right
+///
+/// This mapping ensures tiles in the same phase are never adjacent,
+/// allowing safe parallel execution within a phase.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Phase {
+  A, // (0, 1) - top-left
+  B, // (1, 1) - top-right
+  C, // (0, 0) - bottom-left
+  D, // (1, 0) - bottom-right
+}
+
+impl Phase {
+  /// Returns the phase for a tile at the given position.
+  pub fn from_tile(tile: TilePos) -> Phase {
+    let px = tile.x.rem_euclid(2);
+    let py = tile.y.rem_euclid(2);
+    match (px, py) {
+      (0, 1) => Phase::A,
+      (1, 1) => Phase::B,
+      (0, 0) => Phase::C,
+      (1, 0) => Phase::D,
+      _ => unreachable!(),
+    }
+  }
+
+  /// Returns the index (0-3) for this phase.
+  pub const fn index(self) -> usize {
+    match self {
+      Phase::A => 0,
+      Phase::B => 1,
+      Phase::C => 2,
+      Phase::D => 3,
+    }
+  }
+}
+
 /// Absolute pixel position in the world.
 ///
 /// Uses i64 for effectively infinite worlds without overflow concerns.
@@ -181,11 +224,6 @@ impl TileDirtyRect {
       }
     }
     self.cooldown = 2;
-  }
-
-  /// No-op for backwards compatibility. Use tick() instead.
-  pub fn reset(&mut self) {
-    // Intentionally empty - cooldown system handles clearing
   }
 
   /// Advances to next frame: merges next into current, decrements cooldown.

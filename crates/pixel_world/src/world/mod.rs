@@ -257,6 +257,37 @@ impl PixelWorld {
     self.active.iter().map(|(&pos, &idx)| (pos, idx))
   }
 
+  /// Collects mutable references to all seeded chunks for parallel access.
+  ///
+  /// # Safety
+  /// This method uses raw pointers to work around the borrow checker.
+  /// It is safe because:
+  /// - Each slot appears at most once in `self.active` (unique SlotIndex values)
+  /// - Slots are stored in a Vec with distinct indices
+  /// - The resulting mutable references are non-overlapping
+  pub(crate) fn collect_seeded_chunks(&mut self) -> HashMap<ChunkPos, &mut Chunk> {
+    let seeded_positions: Vec<_> = self
+      .active
+      .iter()
+      .filter_map(|(&pos, &idx)| {
+        if self.slots[idx.0].seeded {
+          Some((pos, idx))
+        } else {
+          None
+        }
+      })
+      .collect();
+
+    let mut chunks: HashMap<ChunkPos, &mut Chunk> = HashMap::new();
+    for (pos, idx) in seeded_positions {
+      // SAFETY: seeded_positions contains unique SlotIndex values.
+      let chunk = &mut self.slots[idx.0].chunk;
+      let chunk_ptr = chunk as *mut Chunk;
+      chunks.insert(pos, unsafe { &mut *chunk_ptr });
+    }
+    chunks
+  }
+
   /// Returns the number of active chunks.
   pub fn active_count(&self) -> usize {
     self.active.len()
@@ -491,33 +522,7 @@ impl PixelWorld {
   where
     F: Fn(WorldFragment) -> Option<Pixel> + Sync,
   {
-    // Collect mutable references to seeded chunks
-    let mut chunks: HashMap<ChunkPos, &mut Chunk> = HashMap::new();
-
-    // We need to collect handles first to avoid borrow issues
-    let seeded_positions: Vec<_> = self
-      .active
-      .iter()
-      .filter_map(|(&pos, &idx)| {
-        if self.slots[idx.0].seeded {
-          Some((pos, idx))
-        } else {
-          None
-        }
-      })
-      .collect();
-
-    for (pos, idx) in seeded_positions {
-      // SAFETY: `seeded_positions` contains unique SlotIndex values (each slot
-      // appears at most once in `self.active`). Since slots are stored in a Vec
-      // and we access each by distinct index, the resulting mutable references
-      // are non-overlapping. The raw pointer cast is used to work around the
-      // borrow checker's inability to prove this statically.
-      let chunk = &mut self.slots[idx.0].chunk;
-      let chunk_ptr = chunk as *mut Chunk;
-      chunks.insert(pos, unsafe { &mut *chunk_ptr });
-    }
-
+    let chunks = self.collect_seeded_chunks();
     let chunk_access = ChunkAccess::new(chunks);
     let dirty_chunks = std::sync::Mutex::new(std::collections::HashSet::new());
     let dirty_tiles = std::sync::Mutex::new(std::collections::HashSet::<TilePos>::new());
