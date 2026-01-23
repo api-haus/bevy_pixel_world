@@ -11,7 +11,7 @@
 pub const CHUNK_SIZE: u32 = 512;
 
 /// Size of a tile in pixels.
-pub const TILE_SIZE: u32 = 16;
+pub const TILE_SIZE: u32 = 32;
 
 /// Width of the streaming window in chunks.
 pub(crate) const WINDOW_WIDTH: u32 = 6;

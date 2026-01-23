@@ -9,3 +9,15 @@ bevy = { workspace = true }
 ab_glyph = "0.2"
 fastnoise2 = "0.4"
 rayon = "1.10"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "pixel_world_benchmarks"
+harness = false
+
+[features]
+default = ["dev"]
+dev = ["bevy/dynamic_linking", "visual-debug"]
+visual-debug = []
