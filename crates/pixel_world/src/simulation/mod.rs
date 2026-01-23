@@ -80,6 +80,7 @@ pub fn simulate_tick(world: &mut PixelWorld, materials: &Materials, debug_gizmos
     |pos, chunks| rules::compute_swap(pos, chunks, materials, ctx),
     &dirty,
     debug_gizmos,
+    ctx.tick,
   );
 
   // Mark dirty chunks for GPU upload

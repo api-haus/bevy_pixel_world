@@ -2,7 +2,7 @@
 //!
 //! Implements movement behavior for different material states.
 
-use super::hash::{chance, coin_flip};
+use super::hash::hash41uu64;
 use super::SimContext;
 use crate::coords::WorldPos;
 use crate::material::{Materials, PhysicsState};
@@ -34,8 +34,8 @@ pub fn compute_swap(
 }
 
 // Hash channels for independent random streams
-const CH_AIR_RESISTANCE: u64 = 1;
-const CH_AIR_DRIFT: u64 = 2;
+const CH_AIR_RESISTANCE: u64 = 0x9e37_79b9_7f4a_7c15;
+const CH_AIR_DRIFT: u64 = 0x3c6e_f372_fe94_f82a;
 
 /// Computes swap target for powder (sand, soil) behavior.
 fn compute_powder_swap(
@@ -50,31 +50,25 @@ fn compute_powder_swap(
 
   // Air resistance: 1/N chance to skip this tick (particle "floats")
   if src_material.air_resistance > 0
-    && chance(
-      ctx.seed,
-      ctx.tick,
-      pos.x,
-      pos.y,
-      CH_AIR_RESISTANCE,
-      src_material.air_resistance as u64,
-    )
+    && hash41uu64(ctx.seed ^ CH_AIR_RESISTANCE, ctx.tick, pos.x as u64, pos.y as u64)
+      % src_material.air_resistance as u64
+      == 0
   {
     return None;
   }
 
   // Direction flip for diagonal movement
-  let flip: i64 = if coin_flip(ctx.seed, ctx.tick, pos.x, pos.y) { -1 } else { 1 };
+  let flip: i64 = if hash41uu64(ctx.seed, ctx.tick, pos.x as u64, pos.y as u64) & 1 == 0 {
+    -1
+  } else {
+    1
+  };
 
   // Air drift: 1/N chance to drift horizontally while falling
   let drift: i64 = if src_material.air_drift > 0
-    && chance(
-      ctx.seed,
-      ctx.tick,
-      pos.x,
-      pos.y,
-      CH_AIR_DRIFT,
-      src_material.air_drift as u64,
-    )
+    && hash41uu64(ctx.seed ^ CH_AIR_DRIFT, ctx.tick, pos.x as u64, pos.y as u64)
+      % src_material.air_drift as u64
+      == 0
   {
     flip
   } else {
@@ -121,15 +115,45 @@ fn compute_liquid_swap(
   let src_material = materials.get(src_pixel.material);
   let src_density = src_material.density;
 
-  let down = WorldPos::new(pos.x, pos.y - 1);
+  // Air resistance: 1/N chance to skip this tick
+  if src_material.air_resistance > 0
+    && hash41uu64(ctx.seed ^ CH_AIR_RESISTANCE, ctx.tick, pos.x as u64, pos.y as u64)
+      % src_material.air_resistance as u64
+      == 0
+  {
+    return None;
+  }
 
-  // Try falling straight down
+  // Direction flip - uniform per tick for smooth flow across tile boundaries
+  let flip: i64 = if hash41uu64(ctx.seed, ctx.tick, 0, 0) & 1 == 0 { -1 } else { 1 };
+
+  // Air drift: 1/N chance to drift horizontally while falling
+  let drift: i64 = if src_material.air_drift > 0
+    && hash41uu64(ctx.seed ^ CH_AIR_DRIFT, ctx.tick, pos.x as u64, pos.y as u64)
+      % src_material.air_drift as u64
+      == 0
+  {
+    flip
+  } else {
+    0
+  };
+
+  let down = WorldPos::new(pos.x + drift, pos.y - 1);
+
+  // Try falling (possibly with horizontal drift)
   if can_swap_into(chunks, materials, src_density, down) {
     return Some(down);
   }
 
-  // Try sliding diagonally (randomize direction using hash)
-  let flip: i64 = if coin_flip(ctx.seed, ctx.tick, pos.x, pos.y) { -1 } else { 1 };
+  // If drift failed, try straight down
+  if drift != 0 {
+    let straight_down = WorldPos::new(pos.x, pos.y - 1);
+    if can_swap_into(chunks, materials, src_density, straight_down) {
+      return Some(straight_down);
+    }
+  }
+
+  // Try sliding diagonally
   let first = WorldPos::new(pos.x + flip, pos.y - 1);
   let second = WorldPos::new(pos.x - flip, pos.y - 1);
 
@@ -182,6 +206,12 @@ fn can_swap_into(
   }
 
   let dst_material = materials.get(dst_pixel.material);
-  // Can displace if source is denser and target is movable
+
+  // Powders cannot be displaced - they stack on each other
+  if dst_material.state == PhysicsState::Powder {
+    return false;
+  }
+
+  // Can displace non-solid, non-powder if source is denser
   dst_material.state != PhysicsState::Solid && src_density > dst_material.density
 }
