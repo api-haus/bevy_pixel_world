@@ -144,26 +144,34 @@ pub struct TileDirtyRect {
 impl TileDirtyRect {
   /// Creates an empty dirty rect (no pixels need simulation).
   pub const fn empty() -> Self {
-    Self { bounds: None }
+    Self {
+      next: None,
+      current: None,
+      cooldown: 0,
+    }
   }
 
   /// Creates a dirty rect covering the entire tile.
   pub const fn full() -> Self {
+    let full_bounds = Some((0, 0, (TILE_SIZE - 1) as u8, (TILE_SIZE - 1) as u8));
     Self {
-      bounds: Some((0, 0, (TILE_SIZE - 1) as u8, (TILE_SIZE - 1) as u8)),
+      next: full_bounds,
+      current: full_bounds,
+      cooldown: 2,
     }
   }
 
-  /// Returns true if no pixels need simulation.
+  /// Returns true if no pixels need simulation this frame.
   pub fn is_empty(&self) -> bool {
-    self.bounds.is_none()
+    self.cooldown == 0
   }
 
   /// Expands the dirty rect to include the given local coordinate.
+  /// Resets cooldown to 2 frames.
   pub fn expand(&mut self, x: u8, y: u8) {
-    match &mut self.bounds {
+    match &mut self.next {
       None => {
-        self.bounds = Some((x, y, x, y));
+        self.next = Some((x, y, x, y));
       }
       Some((min_x, min_y, max_x, max_y)) => {
         *min_x = (*min_x).min(x);
@@ -172,16 +180,52 @@ impl TileDirtyRect {
         *max_y = (*max_y).max(y);
       }
     }
+    self.cooldown = 2;
   }
 
-  /// Resets the dirty rect to empty.
+  /// No-op for backwards compatibility. Use tick() instead.
   pub fn reset(&mut self) {
-    self.bounds = None;
+    // Intentionally empty - cooldown system handles clearing
   }
 
-  /// Returns the bounds as (min_x, min_y, max_x, max_y), or None if empty.
+  /// Advances to next frame: merges next into current, decrements cooldown.
+  /// Call this at the start of tile simulation before bounds().
+  pub fn tick(&mut self) {
+    // Merge next into current (union of both rects)
+    self.current = match (self.current, self.next) {
+      (None, next) => next,
+      (current, None) => current,
+      (Some((c_min_x, c_min_y, c_max_x, c_max_y)), Some((n_min_x, n_min_y, n_max_x, n_max_y))) => {
+        Some((
+          c_min_x.min(n_min_x),
+          c_min_y.min(n_min_y),
+          c_max_x.max(n_max_x),
+          c_max_y.max(n_max_y),
+        ))
+      }
+    };
+
+    // Decrement cooldown if no new activity
+    if self.next.is_none() && self.cooldown > 0 {
+      self.cooldown -= 1;
+    }
+
+    // Clear next for this frame's expand() calls
+    self.next = None;
+
+    // Sleep if cooldown expired
+    if self.cooldown == 0 {
+      self.current = None;
+    }
+  }
+
+  /// Returns the bounds as (min_x, min_y, max_x, max_y), or None if sleeping.
   pub fn bounds(&self) -> Option<(u8, u8, u8, u8)> {
-    self.bounds
+    if self.cooldown > 0 {
+      self.current
+    } else {
+      None
+    }
   }
 }
 
