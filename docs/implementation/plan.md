@@ -99,6 +99,14 @@ The grid maintains a fixed `WINDOW_WIDTH` × `WINDOW_HEIGHT` rectangle of chunks
 
 **Dependencies:** `fastnoise2 = "0.4"`
 
+**Files:** `pixel_world/src/coords.rs` (add `Seed` type)
+
+```rust
+/// World generation seed.
+/// See `docs/arhitecture/chunk-seeding.md` for seeding system.
+pub struct Seed(pub i64);
+```
+
 Terrain fill using `SuperSimplex` node:
 - World coords = `chunk_pos * chunk_size + local`
 - Coherent across chunk boundaries (no seams)
@@ -135,6 +143,18 @@ Build on supersimplex noise with distance-based material coloring.
 **New files:**
 - `src/material.rs` - Material enum with color ranges
 - `src/pixel.rs` - Pixel struct (material + color variant)
+
+**New types in `pixel_world/src/coords.rs`:**
+
+```rust
+/// Material registry index (0-255).
+/// See `docs/arhitecture/materials.md` for the material system.
+pub struct MaterialId(pub u8);
+
+/// Palette color index (0-255).
+/// See `docs/arhitecture/pixel-format.md` for color field usage.
+pub struct ColorIndex(pub u8);
+```
 
 **Algorithm:**
 1. Generate noise, threshold to solid/air

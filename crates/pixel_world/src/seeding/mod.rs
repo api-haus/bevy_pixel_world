@@ -2,6 +2,8 @@
 //!
 //! The [`ChunkSeeder`] trait provides a pluggable interface for generating
 //! initial pixel data when chunks enter the streaming window.
+//!
+//! See `docs/architecture/chunk-seeding.md` for the seeder trait design.
 
 mod noise;
 

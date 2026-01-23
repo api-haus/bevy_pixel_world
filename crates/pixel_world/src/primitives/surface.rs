@@ -3,6 +3,8 @@
 //! A [`Surface`] is a generic 2D buffer that can hold any element type.
 //! The primary use case is [`RgbaSurface`] for GPU-uploadable pixel data.
 //!
+//! See `docs/architecture/pixel-format.md` for the 4-byte pixel structure.
+//!
 //! # Coordinate System
 //!
 //! Surfaces use a Y+ up coordinate system consistent with world coordinates:

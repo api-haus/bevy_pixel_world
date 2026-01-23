@@ -2,6 +2,8 @@
 //!
 //! Manages a rectangular window of active chunks centered on the camera.
 //! As the camera moves, chunks are released and acquired from the pool.
+//!
+//! See `docs/architecture/streaming-window.md` for the active region concept.
 
 use std::collections::HashMap;
 

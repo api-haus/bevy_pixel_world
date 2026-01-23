@@ -7,14 +7,14 @@ use bevy::prelude::*;
 use bevy::sprite_render::Material2dPlugin;
 
 pub mod coords;
-pub mod core;
 pub mod debug;
+pub mod primitives;
 pub mod render;
 pub mod seeding;
 pub mod streaming;
 
 pub use coords::{ChunkPos, LocalPos, WorldPos, CHUNK_SIZE, POOL_SIZE, WINDOW_HEIGHT, WINDOW_WIDTH};
-pub use core::{Blitter, Chunk, Rgba, RgbaSurface, Surface};
+pub use primitives::{Blitter, Chunk, Fragment, Rgba, RgbaSurface, Surface};
 
 pub use debug::{draw_text, rasterize_text, stamp_text, CpuFont, TextMask};
 pub use render::{
@@ -23,7 +23,7 @@ pub use render::{
 pub use seeding::{ChunkSeeder, NoiseSeeder};
 pub use streaming::{ActiveChunk, ChunkPool, PoolHandle, StreamingWindow, WindowDelta};
 
-pub use self::core::rect::Rect;
+pub use self::primitives::rect::Rect;
 
 /// Plugin for infinite cellular automata simulation.
 pub struct PixelWorldPlugin;

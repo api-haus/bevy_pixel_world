@@ -121,8 +121,9 @@ fn spawn_chunk(
     }
   };
 
-  // Seed with noise
+  // Set position and seed with noise
   let chunk = window.pool.get_mut(handle);
+  chunk.set_pos(pos);
   seeder.seed(pos, chunk);
 
   // Create texture
@@ -229,8 +230,9 @@ fn update_streaming(
       }
     };
 
-    // Seed with noise
+    // Set position and seed with noise
     let chunk = window.pool.get_mut(handle);
+    chunk.set_pos(pos);
     seeder.seed(pos, chunk);
 
     // Create texture

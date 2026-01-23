@@ -8,7 +8,7 @@
 //! Run with: `cargo run -p pixel_world --example uv_quad`
 
 use bevy::prelude::*;
-use pixel_world::core::rect::Rect;
+use pixel_world::primitives::rect::Rect;
 use pixel_world::{
   create_chunk_quad, create_texture, upload_surface, Blitter, Chunk, ChunkMaterial, PixelWorldPlugin,
   Rgba,
@@ -137,11 +137,11 @@ fn update_quad(mut state: ResMut<UvQuadState>, time: Res<Time<Fixed>>) {
 
   // Blit UV quad
   let rect = Rect::new(pos_x, pos_y, QUAD_SIZE, QUAD_SIZE);
-  blitter.blit(rect, |_x, _y, u, v| {
+  blitter.blit(rect, |frag| {
     Rgba::new(
-      (u * 255.0) as u8, // Red increases right
-      (v * 255.0) as u8, // Green increases up
-      blue,              // Blue pulses
+      (frag.u * 255.0) as u8, // Red increases right
+      (frag.v * 255.0) as u8, // Green increases up
+      blue,                   // Blue pulses
       255,
     )
   });

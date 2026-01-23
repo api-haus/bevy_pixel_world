@@ -10,7 +10,22 @@
 //! - `v` increases from 0.0 (bottom) to 1.0 (top)
 
 use super::surface::Surface;
-use crate::core::rect::Rect;
+use crate::primitives::rect::Rect;
+
+/// Fragment data passed to blit callbacks.
+///
+/// See `docs/architecture/glossary.md` for coordinate system conventions.
+#[derive(Clone, Copy, Debug)]
+pub struct Fragment {
+    /// Absolute X coordinate on the surface.
+    pub x: u32,
+    /// Absolute Y coordinate on the surface (Y+ up).
+    pub y: u32,
+    /// Normalized U coordinate (0.0 at left, 1.0 at right).
+    pub u: f32,
+    /// Normalized V coordinate (0.0 at bottom, 1.0 at top).
+    pub v: f32,
+}
 
 /// Drawing API for surfaces.
 pub struct Blitter<'a, T> {
@@ -23,17 +38,17 @@ impl<'a, T> Blitter<'a, T> {
     Self { surface }
   }
 
-  /// Fills a rectangle with a closure that receives coordinates.
+  /// Fills a rectangle with a closure that receives a [`Fragment`].
   ///
-  /// For each pixel in `rect`, calls `f(x, y, u, v)` where:
-  /// - `x, y` are absolute surface coordinates (Y+ up)
-  /// - `u` is normalized X within the rect (0.0 at left, 1.0 at right)
-  /// - `v` is normalized Y within the rect (0.0 at bottom, 1.0 at top)
+  /// For each pixel in `rect`, calls `f(fragment)` where fragment contains:
+  /// - `x, y`: absolute surface coordinates (Y+ up)
+  /// - `u`: normalized X within the rect (0.0 at left, 1.0 at right)
+  /// - `v`: normalized Y within the rect (0.0 at bottom, 1.0 at top)
   ///
   /// The rect is clamped to surface bounds; out-of-bounds portions are skipped.
   pub fn blit<F>(&mut self, rect: Rect, mut f: F)
   where
-    F: FnMut(u32, u32, f32, f32) -> T,
+    F: FnMut(Fragment) -> T,
   {
     let rect = rect.clamped(self.surface.width(), self.surface.height());
     if rect.width == 0 || rect.height == 0 {
@@ -57,7 +72,8 @@ impl<'a, T> Blitter<'a, T> {
       for dx in 0..rect.width {
         let x = rect.x + dx;
         let u = dx as f32 * w_recip;
-        let value = f(x, y, u, v);
+        let frag = Fragment { x, y, u, v };
+        let value = f(frag);
         // We know (x, y) is in bounds due to clamping
         self.surface.set(x, y, value);
       }

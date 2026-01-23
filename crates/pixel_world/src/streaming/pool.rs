@@ -2,6 +2,8 @@
 //!
 //! Pre-allocates [`POOL_SIZE`] chunks to avoid runtime allocations
 //! when chunks enter or leave the streaming window.
+//!
+//! See `docs/architecture/chunk-pooling.md` for the design rationale.
 
 use crate::coords::{CHUNK_SIZE, POOL_SIZE};
 use crate::Chunk;
@@ -57,6 +59,7 @@ impl ChunkPool {
   pub fn release(&mut self, handle: PoolHandle) {
     let slot = &mut self.slots[handle.0];
     assert!(slot.in_use, "double release of pool handle");
+    slot.chunk.clear_pos();
     slot.in_use = false;
   }
 
