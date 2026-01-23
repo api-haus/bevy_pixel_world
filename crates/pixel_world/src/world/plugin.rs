@@ -7,7 +7,7 @@ use bevy::tasks::{AsyncComputeTaskPool, Task};
 
 use super::{PixelWorld, SlotIndex};
 use crate::coords::{ChunkPos, WorldPos, CHUNK_SIZE};
-use crate::debug_shim::{self, DebugGizmos};
+use crate::debug_shim;
 use crate::material::Materials;
 use crate::primitives::Chunk;
 use crate::render::{
@@ -157,52 +157,74 @@ fn tick_pixel_worlds(
 
         // Spawn entities for chunks entering the window
         for (pos, slot_idx) in delta.to_spawn {
-            let slot = world.slot_mut(slot_idx);
-
-            // Create or reuse pixel texture (Rgba8Uint for raw pixel data)
-            let texture = if let Some(tex) = slot.texture.take() {
-                tex
-            } else {
-                create_pixel_texture(&mut images, CHUNK_SIZE, CHUNK_SIZE)
-            };
-
-            // Create or reuse material
-            let material = if let Some(mat) = slot.material.take() {
-                mat
-            } else {
-                materials.add(ChunkMaterial {
-                    pixel_texture: Some(texture.clone()),
-                    palette_texture: palette_handle.clone(),
-                })
-            };
-
-            // Update material textures if reusing
-            if let Some(mat) = materials.get_mut(&material) {
-                mat.pixel_texture = Some(texture.clone());
-                mat.palette_texture = palette_handle.clone();
-            }
-
-            // Spawn entity at chunk world position
-            let world_pos = pos.to_world();
-            let transform = Transform::from_xyz(
-                world_pos.0 as f32 + CHUNK_SIZE as f32 / 2.0,
-                world_pos.1 as f32 + CHUNK_SIZE as f32 / 2.0,
-                0.0,
+            spawn_chunk_entity(
+                &mut commands,
+                &mut world,
+                &mut images,
+                &mut materials,
+                palette_handle.clone(),
+                pos,
+                slot_idx,
             );
-
-            let entity = commands
-                .spawn((
-                    Mesh2d(world.mesh().clone()),
-                    transform,
-                    Visibility::default(),
-                    MeshMaterial2d(material.clone()),
-                ))
-                .id();
-
-            // Register entity and render resources in slot
-            world.register_slot_entity(slot_idx, entity, texture, material);
         }
     }
+}
+
+/// Spawns a chunk entity with texture and material setup.
+fn spawn_chunk_entity(
+    commands: &mut Commands,
+    world: &mut PixelWorld,
+    images: &mut Assets<Image>,
+    materials: &mut Assets<ChunkMaterial>,
+    palette_handle: Option<Handle<Image>>,
+    pos: ChunkPos,
+    slot_idx: SlotIndex,
+) {
+    let slot = world.slot_mut(slot_idx);
+
+    // Create or reuse pixel texture (Rgba8Uint for raw pixel data)
+    let texture = if let Some(tex) = slot.texture.take() {
+        tex
+    } else {
+        create_pixel_texture(images, CHUNK_SIZE, CHUNK_SIZE)
+    };
+
+    // Create or reuse material
+    let material = if let Some(mat) = slot.material.take() {
+        mat
+    } else {
+        materials.add(ChunkMaterial {
+            pixel_texture: Some(texture.clone()),
+            palette_texture: palette_handle.clone(),
+        })
+    };
+
+    // Update material textures if reusing
+    if let Some(mat) = materials.get_mut(&material) {
+        mat.pixel_texture = Some(texture.clone());
+        mat.palette_texture = palette_handle;
+    }
+
+    // Spawn entity at chunk world position
+    let world_pos = pos.to_world();
+    let transform = Transform::from_xyz(
+        world_pos.0 as f32 + CHUNK_SIZE as f32 / 2.0,
+        world_pos.1 as f32 + CHUNK_SIZE as f32 / 2.0,
+        0.0,
+    );
+
+    let mesh = world.mesh().clone();
+    let entity = commands
+        .spawn((
+            Mesh2d(mesh),
+            transform,
+            Visibility::default(),
+            MeshMaterial2d(material.clone()),
+        ))
+        .id();
+
+    // Register entity and render resources in slot
+    world.register_slot_entity(slot_idx, entity, texture, material);
 }
 
 /// System: Dispatches async seeding tasks for unseeded chunks.
@@ -269,60 +291,37 @@ fn dispatch_seeding(
 }
 
 /// System: Polls completed seeding tasks and swaps in seeded chunks.
-#[cfg(feature = "visual-debug")]
 fn poll_seeding_tasks(
     mut seeding_tasks: ResMut<SeedingTasks>,
     mut worlds: Query<&mut PixelWorld>,
-    debug_gizmos: Res<crate::visual_debug::PendingDebugGizmos>,
+    gizmos: debug_shim::GizmosParam,
 ) {
-    poll_seeding_tasks_inner(&mut seeding_tasks, &mut worlds, Some(&*debug_gizmos));
-}
+    let debug_gizmos = gizmos.get();
 
-/// System: Polls completed seeding tasks and swaps in seeded chunks.
-#[cfg(not(feature = "visual-debug"))]
-fn poll_seeding_tasks(
-    mut seeding_tasks: ResMut<SeedingTasks>,
-    mut worlds: Query<&mut PixelWorld>,
-) {
-    poll_seeding_tasks_inner(&mut seeding_tasks, &mut worlds, ());
-}
+    seeding_tasks.tasks.retain_mut(|task| {
+        if !task.task.is_finished() {
+            return true; // keep pending tasks
+        }
 
-/// Shared implementation for poll_seeding_tasks.
-fn poll_seeding_tasks_inner(
-    seeding_tasks: &mut SeedingTasks,
-    worlds: &mut Query<&mut PixelWorld>,
-    debug_gizmos: DebugGizmos<'_>,
-) {
-    let mut completed_indices = Vec::new();
+        let seeded_chunk = bevy::tasks::block_on(&mut task.task);
 
-    for (i, task) in seeding_tasks.tasks.iter_mut().enumerate() {
-        // Poll the task - if it's ready, we get the result
-        if task.task.is_finished() {
-            let seeded_chunk = bevy::tasks::block_on(&mut task.task);
-            // Task completed
-            if let Ok(mut world) = worlds.get_mut(task.world_entity) {
-                // Verify slot is still active for this position
-                if let Some(current_idx) = world.get_slot_index(task.pos) {
-                    if current_idx == task.slot_index {
-                        let slot = world.slot_mut(task.slot_index);
-                        // Swap in the seeded chunk data
-                        slot.chunk.pixels = seeded_chunk.pixels;
-                        slot.seeded = true;
-                        slot.dirty = true;
+        if let Ok(mut world) = worlds.get_mut(task.world_entity) {
+            // Slot may have been recycled if camera moved while task was in flight.
+            // Both checks are needed: position mapping and slot index must match.
+            if let Some(current_idx) = world.get_slot_index(task.pos) {
+                if current_idx == task.slot_index {
+                    let slot = world.slot_mut(task.slot_index);
+                    slot.chunk.pixels = seeded_chunk.pixels;
+                    slot.seeded = true;
+                    slot.dirty = true;
 
-                        // Emit chunk gizmo for newly seeded chunk
-                        debug_shim::emit_chunk(debug_gizmos, task.pos);
-                    }
+                    debug_shim::emit_chunk(debug_gizmos, task.pos);
                 }
             }
-            completed_indices.push(i);
         }
-    }
 
-    // Remove completed tasks (in reverse order to preserve indices)
-    for i in completed_indices.into_iter().rev() {
-        seeding_tasks.tasks.swap_remove(i);
-    }
+        false // remove completed task
+    });
 }
 
 /// System: Uploads dirty chunks to GPU.
