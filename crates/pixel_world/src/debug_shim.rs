@@ -28,10 +28,10 @@ pub struct GizmosParam<'w>(Res<'w, crate::visual_debug::PendingDebugGizmos>);
 
 #[cfg(feature = "visual-debug")]
 impl GizmosParam<'_> {
-    /// Extracts gizmos as `DebugGizmos` for passing to functions.
-    pub fn get(&self) -> DebugGizmos<'_> {
-        Some(&*self.0)
-    }
+  /// Extracts gizmos as `DebugGizmos` for passing to functions.
+  pub fn get(&self) -> DebugGizmos<'_> {
+    Some(&*self.0)
+  }
 }
 
 #[cfg(not(feature = "visual-debug"))]
@@ -40,19 +40,19 @@ pub struct GizmosParam;
 
 #[cfg(not(feature = "visual-debug"))]
 impl GizmosParam {
-    /// Returns unit type when visual-debug is disabled.
-    pub fn get(&self) -> DebugGizmos<'static> {
-        ()
-    }
+  /// Returns unit type when visual-debug is disabled.
+  pub fn get(&self) -> DebugGizmos<'static> {
+    ()
+  }
 }
 
 /// Emit a chunk dirty gizmo.
 #[cfg(feature = "visual-debug")]
 #[inline]
 pub fn emit_chunk(gizmos: DebugGizmos<'_>, pos: ChunkPos) {
-    if let Some(g) = gizmos {
-        g.push(crate::visual_debug::PendingGizmo::chunk(pos));
-    }
+  if let Some(g) = gizmos {
+    g.push(crate::visual_debug::PendingGizmo::chunk(pos));
+  }
 }
 
 #[cfg(not(feature = "visual-debug"))]
@@ -63,9 +63,9 @@ pub fn emit_chunk(_: DebugGizmos<'_>, _: ChunkPos) {}
 #[cfg(feature = "visual-debug")]
 #[inline]
 pub fn emit_tile(gizmos: DebugGizmos<'_>, pos: TilePos) {
-    if let Some(g) = gizmos {
-        g.push(crate::visual_debug::PendingGizmo::tile(pos));
-    }
+  if let Some(g) = gizmos {
+    g.push(crate::visual_debug::PendingGizmo::tile(pos));
+  }
 }
 
 #[cfg(not(feature = "visual-debug"))]
@@ -76,9 +76,9 @@ pub fn emit_tile(_: DebugGizmos<'_>, _: TilePos) {}
 #[cfg(feature = "visual-debug")]
 #[inline]
 pub fn emit_blit_rect(gizmos: DebugGizmos<'_>, rect: WorldRect) {
-    if let Some(g) = gizmos {
-        g.push(crate::visual_debug::PendingGizmo::blit_rect(rect));
-    }
+  if let Some(g) = gizmos {
+    g.push(crate::visual_debug::PendingGizmo::blit_rect(rect));
+  }
 }
 
 #[cfg(not(feature = "visual-debug"))]
@@ -89,9 +89,9 @@ pub fn emit_blit_rect(_: DebugGizmos<'_>, _: WorldRect) {}
 #[cfg(feature = "visual-debug")]
 #[inline]
 pub fn emit_dirty_rect(gizmos: DebugGizmos<'_>, tile: TilePos, bounds: (u8, u8, u8, u8)) {
-    if let Some(g) = gizmos {
-        g.push(crate::visual_debug::PendingGizmo::dirty_rect(tile, bounds));
-    }
+  if let Some(g) = gizmos {
+    g.push(crate::visual_debug::PendingGizmo::dirty_rect(tile, bounds));
+  }
 }
 
 #[cfg(not(feature = "visual-debug"))]

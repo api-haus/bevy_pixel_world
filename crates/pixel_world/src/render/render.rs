@@ -11,10 +11,10 @@ use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::sprite_render::MeshMaterial2d;
 
 use super::material::ChunkMaterial;
+use crate::RgbaSurface;
 use crate::material::Materials;
 use crate::pixel::PixelSurface;
 use crate::render::Rgba;
-use crate::RgbaSurface;
 
 /// Creates an RGBA8 texture with nearest-neighbor sampling.
 ///
@@ -52,8 +52,8 @@ pub fn upload_surface(surface: &RgbaSurface, image: &mut Image) {
 
 /// Creates a 256x1 palette texture for GPU-side color lookup.
 ///
-/// Each material occupies 8 consecutive RGBA entries (material 0 uses indices 0-7,
-/// material 1 uses 8-15, etc). Supports up to 32 materials.
+/// Each material occupies 8 consecutive RGBA entries (material 0 uses indices
+/// 0-7, material 1 uses 8-15, etc). Supports up to 32 materials.
 pub fn create_palette_texture(images: &mut Assets<Image>) -> Handle<Image> {
   let size = Extent3d {
     width: 256,
@@ -130,7 +130,8 @@ pub fn create_pixel_texture(images: &mut Assets<Image>, width: u32, height: u32)
 
 /// Uploads raw pixel data to a pixel texture.
 ///
-/// Copies PixelSurface bytes directly (material, color, damage, flags per pixel).
+/// Copies PixelSurface bytes directly (material, color, damage, flags per
+/// pixel).
 pub fn upload_pixels(pixels: &PixelSurface, image: &mut Image) {
   let bytes = pixels.as_bytes();
   if let Some(ref mut data) = image.data {

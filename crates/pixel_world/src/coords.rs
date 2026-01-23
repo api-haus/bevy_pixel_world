@@ -92,51 +92,51 @@ pub struct TilePos(pub i64, pub i64);
 /// Used to skip simulation of pixels that haven't changed.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct TileDirtyRect {
-    bounds: Option<(u8, u8, u8, u8)>, // (min_x, min_y, max_x, max_y)
+  bounds: Option<(u8, u8, u8, u8)>, // (min_x, min_y, max_x, max_y)
 }
 
 impl TileDirtyRect {
-    /// Creates an empty dirty rect (no pixels need simulation).
-    pub const fn empty() -> Self {
-        Self { bounds: None }
-    }
+  /// Creates an empty dirty rect (no pixels need simulation).
+  pub const fn empty() -> Self {
+    Self { bounds: None }
+  }
 
-    /// Creates a dirty rect covering the entire tile.
-    pub const fn full() -> Self {
-        Self {
-            bounds: Some((0, 0, (TILE_SIZE - 1) as u8, (TILE_SIZE - 1) as u8)),
-        }
+  /// Creates a dirty rect covering the entire tile.
+  pub const fn full() -> Self {
+    Self {
+      bounds: Some((0, 0, (TILE_SIZE - 1) as u8, (TILE_SIZE - 1) as u8)),
     }
+  }
 
-    /// Returns true if no pixels need simulation.
-    pub fn is_empty(&self) -> bool {
-        self.bounds.is_none()
-    }
+  /// Returns true if no pixels need simulation.
+  pub fn is_empty(&self) -> bool {
+    self.bounds.is_none()
+  }
 
-    /// Expands the dirty rect to include the given local coordinate.
-    pub fn expand(&mut self, x: u8, y: u8) {
-        match &mut self.bounds {
-            None => {
-                self.bounds = Some((x, y, x, y));
-            }
-            Some((min_x, min_y, max_x, max_y)) => {
-                *min_x = (*min_x).min(x);
-                *min_y = (*min_y).min(y);
-                *max_x = (*max_x).max(x);
-                *max_y = (*max_y).max(y);
-            }
-        }
+  /// Expands the dirty rect to include the given local coordinate.
+  pub fn expand(&mut self, x: u8, y: u8) {
+    match &mut self.bounds {
+      None => {
+        self.bounds = Some((x, y, x, y));
+      }
+      Some((min_x, min_y, max_x, max_y)) => {
+        *min_x = (*min_x).min(x);
+        *min_y = (*min_y).min(y);
+        *max_x = (*max_x).max(x);
+        *max_y = (*max_y).max(y);
+      }
     }
+  }
 
-    /// Resets the dirty rect to empty.
-    pub fn reset(&mut self) {
-        self.bounds = None;
-    }
+  /// Resets the dirty rect to empty.
+  pub fn reset(&mut self) {
+    self.bounds = None;
+  }
 
-    /// Returns the bounds as (min_x, min_y, max_x, max_y), or None if empty.
-    pub fn bounds(&self) -> Option<(u8, u8, u8, u8)> {
-        self.bounds
-    }
+  /// Returns the bounds as (min_x, min_y, max_x, max_y), or None if empty.
+  pub fn bounds(&self) -> Option<(u8, u8, u8, u8)> {
+    self.bounds
+  }
 }
 
 /// World-coordinate axis-aligned bounding box.

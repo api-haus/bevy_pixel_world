@@ -1,12 +1,12 @@
 //! Noise-based chunk seeding using fastnoise2.
 
+use fastnoise2::SafeNode;
 use fastnoise2::generator::prelude::{Generator, GeneratorWrapper};
 use fastnoise2::generator::simplex::supersimplex_scaled;
-use fastnoise2::SafeNode;
 
-use super::sdf::distance_to_air;
 use super::ChunkSeeder;
-use crate::coords::{ColorIndex, CHUNK_SIZE};
+use super::sdf::distance_to_air;
+use crate::coords::{CHUNK_SIZE, ColorIndex};
 use crate::material::ids as material_ids;
 use crate::pixel::Pixel;
 use crate::primitives::Surface;

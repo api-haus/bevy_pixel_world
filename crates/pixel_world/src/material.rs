@@ -120,14 +120,14 @@ impl Materials {
         Material {
           name: "Water",
           palette: [
-            Rgba::new(64, 164, 223, 180),  // surface - lighter blue, semi-transparent
+            Rgba::new(64, 164, 223, 180), // surface - lighter blue, semi-transparent
             Rgba::new(55, 145, 205, 190),
             Rgba::new(46, 126, 187, 200),
             Rgba::new(37, 107, 169, 210),
             Rgba::new(28, 88, 151, 220),
             Rgba::new(19, 69, 133, 230),
             Rgba::new(10, 50, 115, 240),
-            Rgba::new(5, 35, 100, 250),   // deep - darker blue
+            Rgba::new(5, 35, 100, 250), // deep - darker blue
           ],
           state: PhysicsState::Liquid,
           density: 100,
