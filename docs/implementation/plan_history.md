@@ -116,3 +116,115 @@ channel.
 - [x] UV quad displays with correct gradient (red→right, green→down)
 - [x] Animation runs at stable 60 TPS
 - [x] Blue channel pulses over time
+
+---
+
+## Phase 1: Rolling Chunk Grid (Completed)
+
+**Deliverable:** `cargo run -p pixel_world --example rolling_grid`
+
+### 1.1 Constants & Coordinate Types
+
+**Files:** `pixel_world/src/coords.rs`
+
+```rust
+// Compile-time constants - never passed as arguments
+pub const CHUNK_SIZE: u32 = 512;
+pub const TILE_SIZE: u32 = 16;
+pub const WINDOW_WIDTH: u32 = 6;   // chunks horizontally
+pub const WINDOW_HEIGHT: u32 = 4;  // chunks vertically (landscape orientation)
+
+// Derived constants - expressed as formulas, not magic numbers
+pub const POOL_SIZE: usize = (WINDOW_WIDTH * WINDOW_HEIGHT) as usize;
+pub const TILES_PER_CHUNK: u32 = CHUNK_SIZE / TILE_SIZE;
+
+pub struct WorldPos(pub i64, pub i64);   // global pixel
+pub struct ChunkPos(pub i32, pub i32);   // chunk grid
+pub struct LocalPos(pub u16, pub u16);   // pixel within chunk
+
+impl WorldPos {
+    pub fn to_chunk_and_local(self) -> (ChunkPos, LocalPos);
+}
+```
+
+Floor division for negative coords (not truncation).
+
+### 1.2 Chunk Pool
+
+**Files:** `pixel_world/src/streaming/pool.rs`
+
+```rust
+pub struct ChunkPool {
+    slots: Vec<PoolSlot>,
+}
+
+impl ChunkPool {
+    pub fn new() -> Self;
+    pub fn acquire(&mut self) -> Option<PoolHandle>;
+    pub fn release(&mut self, handle: PoolHandle);
+    pub fn get(&self, handle: PoolHandle) -> &Chunk;
+    pub fn get_mut(&mut self, handle: PoolHandle) -> &mut Chunk;
+}
+```
+
+Uses `POOL_SIZE` constant for pre-allocation.
+
+### 1.3 Streaming Window
+
+**Files:** `pixel_world/src/streaming/window.rs`
+
+```rust
+pub struct StreamingWindow {
+    active: HashMap<ChunkPos, ActiveChunk>,
+    center: ChunkPos,
+    pool: ChunkPool,
+}
+
+pub struct ActiveChunk {
+    pub handle: PoolHandle,
+    pub entity: Entity,
+    pub texture: Handle<Image>,
+    pub dirty: bool,
+}
+```
+
+The grid maintains a fixed `WINDOW_WIDTH` × `WINDOW_HEIGHT` rectangle of chunks. As the camera moves, chunks roll from one edge to the opposite edge, preserving internal positional consistency.
+
+### 1.4 FastNoise2 Integration
+
+**Dependencies:** `fastnoise2 = "0.4"`
+
+**Files:** `pixel_world/src/seeding/mod.rs`, `pixel_world/src/seeding/noise.rs`
+
+```rust
+pub trait ChunkSeeder {
+    fn seed(&self, pos: ChunkPos, chunk: &mut Chunk);
+}
+
+pub struct NoiseSeeder {
+    node: SafeNode,
+    scale: f32,
+}
+```
+
+Terrain fill using `SuperSimplex` node:
+- World coords = `chunk_pos * chunk_size + local`
+- Coherent across chunk boundaries (no seams)
+- Output: grayscale noise (threshold for solid/air)
+
+### 1.5 WASD Camera
+
+- WASD/Arrows: move camera
+- Shift: speed boost
+- Camera position drives StreamingWindow updates
+
+### Verification
+
+```bash
+cargo run -p pixel_world --example rolling_grid
+```
+
+- [x] WASD moves camera smoothly
+- [x] Chunks stream in/out at window edges
+- [x] Noise coherent across boundaries (no seams)
+- [x] Chunk labels visible for debugging
