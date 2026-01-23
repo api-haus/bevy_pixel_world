@@ -82,31 +82,59 @@ pub struct MaterialSeeder {
 }
 
 impl MaterialSeeder {
-  /// Creates a new material seeder.
+  /// Default feature scale (controls primary terrain feature size).
+  const DEFAULT_FEATURE_SCALE: f32 = 200.0;
+  /// Default solid/air threshold.
+  const DEFAULT_THRESHOLD: f32 = 0.0;
+  /// Default soil depth in pixels.
+  const DEFAULT_SOIL_DEPTH: u8 = 8;
+  /// Default secondary noise influence.
+  const DEFAULT_FEATHER_SCALE: f32 = 3.0;
+
+  /// Creates a new material seeder with the given seed and default parameters.
   ///
-  /// - `seed`: Deterministic seed for noise generation.
-  /// - `feature_scale`: Controls primary feature size (larger = larger
-  ///   features).
-  /// - `threshold`: Noise threshold for solid/air boundary (e.g., 0.0).
-  /// - `soil_depth`: Pixels of soil before transitioning to stone (e.g., 8).
-  /// - `feather_scale`: Secondary noise influence on boundaries (e.g., 3.0).
-  pub fn new(
-    seed: i32,
-    feature_scale: f32,
-    threshold: f32,
-    soil_depth: u8,
-    feather_scale: f32,
-  ) -> Self {
+  /// Use builder methods to customize:
+  /// - `feature_scale(f32)`: Controls terrain feature size (default: 200.0)
+  /// - `threshold(f32)`: Noise cutoff for solid/air (default: 0.0)
+  /// - `soil_depth(u8)`: Pixels of soil before stone (default: 8)
+  /// - `feather_scale(f32)`: Edge noise influence (default: 3.0)
+  pub fn new(seed: i32) -> Self {
+    let feature_scale = Self::DEFAULT_FEATURE_SCALE;
     let primary = supersimplex_scaled(feature_scale).build();
     let secondary = supersimplex_scaled(feature_scale * 0.5).build();
     Self {
       primary,
       secondary,
       seed,
-      threshold,
-      soil_depth,
-      feather_scale,
+      threshold: Self::DEFAULT_THRESHOLD,
+      soil_depth: Self::DEFAULT_SOIL_DEPTH,
+      feather_scale: Self::DEFAULT_FEATHER_SCALE,
     }
+  }
+
+  /// Sets the primary feature scale (larger = larger terrain features).
+  pub fn feature_scale(mut self, scale: f32) -> Self {
+    self.primary = supersimplex_scaled(scale).build();
+    self.secondary = supersimplex_scaled(scale * 0.5).build();
+    self
+  }
+
+  /// Sets the solid/air threshold (noise values below this are solid).
+  pub fn threshold(mut self, threshold: f32) -> Self {
+    self.threshold = threshold;
+    self
+  }
+
+  /// Sets the soil depth in pixels before transitioning to stone.
+  pub fn soil_depth(mut self, depth: u8) -> Self {
+    self.soil_depth = depth;
+    self
+  }
+
+  /// Sets the secondary noise influence on material boundaries.
+  pub fn feather_scale(mut self, scale: f32) -> Self {
+    self.feather_scale = scale;
+    self
   }
 }
 

@@ -24,7 +24,7 @@ pub enum Phase {
 
 impl Phase {
   /// Determine the phase for a tile position.
-  pub fn from_tile(tile: TilePos) -> Self {
+  fn from_tile(tile: TilePos) -> Self {
     let x_mod = tile.0.rem_euclid(2);
     let y_mod = tile.1.rem_euclid(2);
     match (x_mod, y_mod) {
@@ -34,11 +34,6 @@ impl Phase {
       (1, 0) => Phase::D,
       _ => unreachable!(),
     }
-  }
-
-  /// Returns all phases in execution order.
-  pub const fn all() -> [Phase; 4] {
-    [Phase::A, Phase::B, Phase::C, Phase::D]
   }
 }
 

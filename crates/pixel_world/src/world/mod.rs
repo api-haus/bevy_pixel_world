@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use bevy::prelude::*;
 
-use crate::canvas::blitter::{parallel_blit, LockedChunks};
+use crate::parallel::blitter::{parallel_blit, LockedChunks};
 use crate::coords::{ChunkPos, WorldFragment, WorldPos, WorldRect, CHUNK_SIZE, POOL_SIZE, WINDOW_HEIGHT, WINDOW_WIDTH};
 use crate::pixel::Pixel;
 use crate::primitives::Chunk;
@@ -22,7 +22,7 @@ use crate::seeding::ChunkSeeder;
 
 /// Index into the slots array.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct SlotIndex(pub usize);
+pub(crate) struct SlotIndex(pub usize);
 
 /// A slot in the chunk storage.
 ///
@@ -141,17 +141,17 @@ impl PixelWorld {
     }
 
     /// Gets a reference to a slot by index.
-    pub fn slot(&self, index: SlotIndex) -> &ChunkSlot {
+    pub(crate) fn slot(&self, index: SlotIndex) -> &ChunkSlot {
         &self.slots[index.0]
     }
 
     /// Gets a mutable reference to a slot by index.
-    pub fn slot_mut(&mut self, index: SlotIndex) -> &mut ChunkSlot {
+    pub(crate) fn slot_mut(&mut self, index: SlotIndex) -> &mut ChunkSlot {
         &mut self.slots[index.0]
     }
 
     /// Gets the slot index for an active chunk position.
-    pub fn get_slot_index(&self, pos: ChunkPos) -> Option<SlotIndex> {
+    pub(crate) fn get_slot_index(&self, pos: ChunkPos) -> Option<SlotIndex> {
         self.active.get(&pos).copied()
     }
 
@@ -168,7 +168,7 @@ impl PixelWorld {
     }
 
     /// Returns an iterator over active chunk positions and their slot indices.
-    pub fn active_chunks(&self) -> impl Iterator<Item = (ChunkPos, SlotIndex)> + '_ {
+    pub(crate) fn active_chunks(&self) -> impl Iterator<Item = (ChunkPos, SlotIndex)> + '_ {
         self.active.iter().map(|(&pos, &idx)| (pos, idx))
     }
 
@@ -183,7 +183,7 @@ impl PixelWorld {
     ///
     /// Used for initial spawn when there are no active chunks yet.
     /// Returns all visible positions as chunks to spawn.
-    pub fn initialize_at(&mut self, center: ChunkPos) -> StreamingDelta {
+    pub(crate) fn initialize_at(&mut self, center: ChunkPos) -> StreamingDelta {
         self.center = center;
 
         // Collect positions first to avoid borrow issues
@@ -217,7 +217,7 @@ impl PixelWorld {
     /// - Releasing slots for departing chunks
     /// - Acquiring slots for arriving chunks
     /// - Marking new chunks as unseeded
-    pub fn update_center(&mut self, new_center: ChunkPos) -> StreamingDelta {
+    pub(crate) fn update_center(&mut self, new_center: ChunkPos) -> StreamingDelta {
         if new_center == self.center {
             return StreamingDelta {
                 to_despawn: vec![],
@@ -266,7 +266,7 @@ impl PixelWorld {
     }
 
     /// Registers entity and render resources for a slot.
-    pub fn register_slot_entity(
+    pub(crate) fn register_slot_entity(
         &mut self,
         index: SlotIndex,
         entity: Entity,
@@ -367,7 +367,7 @@ impl PixelWorld {
 }
 
 /// Changes from updating the streaming window center.
-pub struct StreamingDelta {
+pub(crate) struct StreamingDelta {
     /// Chunks that left the window (position, entity to despawn).
     pub to_despawn: Vec<(ChunkPos, Entity)>,
     /// Chunks that entered the window (position, slot index).

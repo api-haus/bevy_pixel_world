@@ -77,8 +77,8 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
     // Create shared mesh for chunks
     let mesh = meshes.add(create_chunk_quad(CHUNK_SIZE as f32, CHUNK_SIZE as f32));
 
-    // Create material seeder for terrain generation
-    let seeder = MaterialSeeder::new(42, 200.0, 0.0, 8, 3.0);
+    // Create material seeder for terrain generation (using defaults)
+    let seeder = MaterialSeeder::new(42);
 
     // Spawn the pixel world
     commands.spawn(PixelWorldBundle::new(seeder, mesh));

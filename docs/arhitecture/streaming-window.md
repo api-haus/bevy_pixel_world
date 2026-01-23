@@ -50,7 +50,9 @@ The window center is quantized to chunk coordinates. When the camera moves far e
 
 ### Center-Adjusted Repositioning
 
-By default, chunk membership is determined by floor division—a camera at position (100, 100) belongs to chunk (0, 0) whose corner is at the origin. This creates asymmetric streaming: the camera can move further toward the chunk's far edge before triggering a reposition than toward its near edge.
+By default, chunk membership is determined by floor division—a camera at position (100, 100) belongs to chunk (0, 0)
+whose corner is at the origin. This creates asymmetric streaming: the camera can move further toward the chunk's far
+edge before triggering a reposition than toward its near edge.
 
 To achieve symmetric repositioning, offset the camera position by half a chunk before computing chunk membership:
 
@@ -59,7 +61,8 @@ effective_position = camera_position + (CHUNK_SIZE / 2)
 chunk_position = floor(effective_position / CHUNK_SIZE)
 ```
 
-This shifts effective chunk boundaries from corners (0, 512, 1024...) to centers (-256, 256, 768...). The camera now "belongs" to whichever chunk center it's closest to, and repositioning occurs at equal distances in all directions.
+This shifts effective chunk boundaries from corners (0, 512, 1024...) to centers (-256, 256, 768...). The camera now "
+belongs" to whichever chunk center it's closest to, and repositioning occurs at equal distances in all directions.
 
 ## Hysteresis Buffer
 
@@ -118,7 +121,7 @@ flowchart TB
         Camera movement →
 
     +---+---+---+---+---+---+
-    | R | . | . | [C] | . | N |  R = Roll candidates (left edge)
+    | R | . | . |[C]| . | N |  R = Roll candidates (left edge)
     +---+---+---+---+---+---+  N = New positions (right edge)
     | R | . | . | . | . | N |  . = Active chunks
     +---+---+---+---+---+---+  [C] = Camera position

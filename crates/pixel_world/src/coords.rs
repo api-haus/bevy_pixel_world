@@ -14,13 +14,13 @@ pub const CHUNK_SIZE: u32 = 512;
 pub const TILE_SIZE: u32 = 16;
 
 /// Width of the streaming window in chunks.
-pub const WINDOW_WIDTH: u32 = 6;
+pub(crate) const WINDOW_WIDTH: u32 = 6;
 
 /// Height of the streaming window in chunks.
-pub const WINDOW_HEIGHT: u32 = 4;
+pub(crate) const WINDOW_HEIGHT: u32 = 4;
 
 /// Number of chunks in the pool (derived from window size).
-pub const POOL_SIZE: usize = (WINDOW_WIDTH * WINDOW_HEIGHT) as usize;
+pub(crate) const POOL_SIZE: usize = (WINDOW_WIDTH * WINDOW_HEIGHT) as usize;
 
 /// Number of tiles per chunk edge (derived from chunk/tile sizes).
 pub const TILES_PER_CHUNK: u32 = CHUNK_SIZE / TILE_SIZE;
@@ -123,6 +123,35 @@ impl WorldRect {
       && pos.0 < self.x + self.width as i64
       && pos.1 >= self.y
       && pos.1 < self.y + self.height as i64
+  }
+
+  /// Returns the intersection of two rectangles, or None if they don't overlap.
+  pub fn intersection(&self, other: &WorldRect) -> Option<WorldRect> {
+    let x1 = self.x.max(other.x);
+    let y1 = self.y.max(other.y);
+    let x2 = (self.x + self.width as i64).min(other.x + other.width as i64);
+    let y2 = (self.y + self.height as i64).min(other.y + other.height as i64);
+
+    if x1 < x2 && y1 < y2 {
+      Some(WorldRect {
+        x: x1,
+        y: y1,
+        width: (x2 - x1) as u32,
+        height: (y2 - y1) as u32,
+      })
+    } else {
+      None
+    }
+  }
+
+  /// Returns a new rectangle translated by the given offset.
+  pub fn translate(&self, dx: i64, dy: i64) -> WorldRect {
+    WorldRect {
+      x: self.x + dx,
+      y: self.y + dy,
+      width: self.width,
+      height: self.height,
+    }
   }
 
   /// Returns the range of tile positions that overlap this rect.
