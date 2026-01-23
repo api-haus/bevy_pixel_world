@@ -23,10 +23,14 @@ pub struct Material {
   pub palette: [Rgba; 8],
   /// Physics behavior.
   pub state: PhysicsState,
-  /// Density (higher sinks below lower).
+  /// Density for liquid displacement (higher sinks into lower-density liquids).
   pub density: u8,
   /// Horizontal spread per tick (liquids).
   pub dispersion: u8,
+  /// Air resistance: 1/N chance to skip falling (0 = disabled).
+  pub air_resistance: u8,
+  /// Air drift: 1/N chance to drift horizontally while falling (0 = disabled).
+  pub air_drift: u8,
 }
 
 impl Material {
@@ -64,6 +68,8 @@ impl Materials {
           state: PhysicsState::Gas,
           density: 0,
           dispersion: 0,
+          air_resistance: 0,
+          air_drift: 0,
         },
         // SOIL (brown gradient) - powder that falls and piles
         Material {
@@ -81,6 +87,8 @@ impl Materials {
           state: PhysicsState::Powder,
           density: 150,
           dispersion: 0,
+          air_resistance: 12, // heavier, less floaty
+          air_drift: 6,
         },
         // STONE (gray gradient) - solid, does not move
         Material {
@@ -98,6 +106,8 @@ impl Materials {
           state: PhysicsState::Solid,
           density: 200,
           dispersion: 0,
+          air_resistance: 0,
+          air_drift: 0,
         },
         // SAND (tan/yellow gradient) - powder that falls and piles
         Material {
@@ -115,6 +125,8 @@ impl Materials {
           state: PhysicsState::Powder,
           density: 160,
           dispersion: 0,
+          air_resistance: 8,  // light particles float a bit
+          air_drift: 4,       // blown around by wind
         },
         // WATER (blue gradient) - liquid that flows
         Material {
@@ -132,6 +144,8 @@ impl Materials {
           state: PhysicsState::Liquid,
           density: 100,
           dispersion: 5, // flows horizontally
+          air_resistance: 16, // subtle splash effect
+          air_drift: 12,
         },
       ],
     }
