@@ -84,3 +84,16 @@ pub fn emit_blit_rect(gizmos: DebugGizmos<'_>, rect: WorldRect) {
 #[cfg(not(feature = "visual-debug"))]
 #[inline]
 pub fn emit_blit_rect(_: DebugGizmos<'_>, _: WorldRect) {}
+
+/// Emit a dirty rect gizmo.
+#[cfg(feature = "visual-debug")]
+#[inline]
+pub fn emit_dirty_rect(gizmos: DebugGizmos<'_>, tile: TilePos, bounds: (u8, u8, u8, u8)) {
+    if let Some(g) = gizmos {
+        g.push(crate::visual_debug::PendingGizmo::dirty_rect(tile, bounds));
+    }
+}
+
+#[cfg(not(feature = "visual-debug"))]
+#[inline]
+pub fn emit_dirty_rect(_: DebugGizmos<'_>, _: TilePos, _: (u8, u8, u8, u8)) {}

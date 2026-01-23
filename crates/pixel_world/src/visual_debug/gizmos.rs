@@ -16,6 +16,8 @@ pub enum GizmoKind {
     Tile,
     /// Blit rect (coral, 0.02s).
     BlitRect,
+    /// Dirty rect (mint, 1/60s - synced to simulation tick rate).
+    DirtyRect,
 }
 
 impl GizmoKind {
@@ -24,6 +26,7 @@ impl GizmoKind {
         match self {
             GizmoKind::Chunk | GizmoKind::Tile => 0.1,
             GizmoKind::BlitRect => 0.02,
+            GizmoKind::DirtyRect => 1.0 / 60.0,
         }
     }
 
@@ -33,6 +36,7 @@ impl GizmoKind {
             GizmoKind::Chunk => colors::GOLD,
             GizmoKind::Tile => colors::PURPLE,
             GizmoKind::BlitRect => colors::CORAL,
+            GizmoKind::DirtyRect => colors::MINT,
         }
     }
 }
@@ -68,6 +72,27 @@ impl PendingGizmo {
         Self {
             kind: GizmoKind::BlitRect,
             rect,
+        }
+    }
+
+    /// Creates a gizmo for a tile's dirty rect.
+    ///
+    /// Takes the tile position and the dirty rect bounds (min_x, min_y, max_x, max_y)
+    /// relative to the tile origin.
+    pub fn dirty_rect(tile: TilePos, bounds: (u8, u8, u8, u8)) -> Self {
+        let tile_size = TILE_SIZE as i64;
+        let tile_origin_x = tile.0 * tile_size;
+        let tile_origin_y = tile.1 * tile_size;
+
+        let (min_x, min_y, max_x, max_y) = bounds;
+        let x = tile_origin_x + min_x as i64;
+        let y = tile_origin_y + min_y as i64;
+        let width = (max_x - min_x + 1) as u32;
+        let height = (max_y - min_y + 1) as u32;
+
+        Self {
+            kind: GizmoKind::DirtyRect,
+            rect: WorldRect::new(x, y, width, height),
         }
     }
 }

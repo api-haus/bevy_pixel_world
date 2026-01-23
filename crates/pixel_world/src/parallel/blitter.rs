@@ -9,7 +9,8 @@ use std::sync::Mutex;
 
 use rayon::prelude::*;
 
-use crate::coords::{ChunkPos, TilePos, WorldFragment, WorldPos, WorldRect, TILE_SIZE};
+use crate::coords::{ChunkPos, LocalPos, TilePos, WorldFragment, WorldPos, WorldRect, TILE_SIZE};
+use crate::debug_shim::{self, DebugGizmos};
 use crate::pixel::Pixel;
 use crate::primitives::Chunk;
 
@@ -105,80 +106,255 @@ pub fn parallel_blit<F>(
   }
 }
 
-/// Process a single tile, writing pixels that pass the filter.
-fn process_tile<F>(
-  chunks: &LockedChunks<'_>,
-  tile: TilePos,
-  rect: &WorldRect,
-  f: &F,
-  w_recip: f32,
-  h_recip: f32,
-  dirty_chunks: &Mutex<HashSet<ChunkPos>>,
-  dirty_tiles: Option<&Mutex<HashSet<TilePos>>>,
+/// Executes a simulation step across tiles in parallel using 2x2 checkerboard
+/// scheduling.
+///
+/// For each pixel in each tile, calls `f(pos, chunks)` which returns:
+/// - `Some(target)` to swap pos with target
+/// - `None` to leave pixel unchanged
+pub fn parallel_simulate<F>(
+    chunks: &LockedChunks<'_>,
+    tiles_by_phase: [Vec<TilePos>; 4],
+    f: F,
+    dirty_chunks: &Mutex<HashSet<ChunkPos>>,
+    debug_gizmos: DebugGizmos<'_>,
 ) where
-  F: Fn(WorldFragment) -> Option<Pixel> + Sync,
+    F: Fn(WorldPos, &LockedChunks<'_>) -> Option<WorldPos> + Sync,
 {
-  let tile_size = TILE_SIZE as i64;
-  let tile_x_start = tile.0 * tile_size;
-  let tile_y_start = tile.1 * tile_size;
+    for phase_tiles in tiles_by_phase {
+        phase_tiles.par_iter().for_each(|&tile| {
+            simulate_tile(chunks, tile, &f, dirty_chunks, debug_gizmos);
+        });
+        // Implicit barrier between phases due to sequential for loop
+    }
+}
 
-  // Track which chunks we've dirtied in this tile
-  let mut local_dirty: HashSet<ChunkPos> = HashSet::new();
+/// Process a single tile for simulation, iterating bottom-to-top.
+///
+/// Only processes pixels within the tile's dirty rect bounds.
+/// Resets the dirty rect before processing, then expands it as pixels change.
+fn simulate_tile<F>(
+    chunks: &LockedChunks<'_>,
+    tile: TilePos,
+    f: &F,
+    dirty_chunks: &Mutex<HashSet<ChunkPos>>,
+    debug_gizmos: DebugGizmos<'_>,
+) where
+    F: Fn(WorldPos, &LockedChunks<'_>) -> Option<WorldPos> + Sync,
+{
+    let tile_size = TILE_SIZE as i64;
+    let base_x = tile.0 * tile_size;
+    let base_y = tile.1 * tile_size;
 
-  for dy in 0..TILE_SIZE {
-    let world_y = tile_y_start + dy as i64;
+    // Get chunk and tile-local coordinates for this tile
+    let (chunk_pos, local_pos) = WorldPos(base_x, base_y).to_chunk_and_local();
+    let tx = (local_pos.0 as u32) / TILE_SIZE;
+    let ty = (local_pos.1 as u32) / TILE_SIZE;
 
-    // Skip if outside rect bounds
-    if world_y < rect.y || world_y >= rect.y + rect.height as i64 {
-      continue;
+    // Read and reset dirty rect
+    let bounds = if let Some(mutex) = chunks.get(chunk_pos) {
+        if let Ok(mut chunk) = mutex.lock() {
+            let rect = chunk.tile_dirty_rect_mut(tx, ty);
+            let b = rect.bounds();
+            rect.reset();
+            b
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    // Skip if no dirty pixels
+    let Some((min_x, min_y, max_x, max_y)) = bounds else {
+        return;
+    };
+
+    // Emit debug gizmo for this dirty rect
+    debug_shim::emit_dirty_rect(debug_gizmos, tile, (min_x, min_y, max_x, max_y));
+
+    // Track which chunks we've dirtied in this tile
+    let mut local_dirty: HashSet<ChunkPos> = HashSet::new();
+    // Track pixels to mark dirty for next pass
+    let mut dirty_pixels: Vec<(ChunkPos, LocalPos)> = Vec::new();
+
+    // Process pixels bottom-to-top so falling sand settles correctly
+    // Only iterate within dirty bounds
+    for local_y in (min_y as i64)..=(max_y as i64) {
+        // Alternate left-to-right and right-to-left per row for more natural flow
+        let go_left = (tile.0 + local_y) % 2 == 0;
+
+        let x_range: Box<dyn Iterator<Item = i64>> = if go_left {
+            Box::new((min_x as i64..=max_x as i64).rev())
+        } else {
+            Box::new(min_x as i64..=max_x as i64)
+        };
+
+        for local_x in x_range {
+            let pos = WorldPos(base_x + local_x, base_y + local_y);
+
+            if let Some(target) = f(pos, chunks)
+                && let Some(dirty) = swap_pixels(chunks, pos, target)
+            {
+                local_dirty.extend(dirty);
+
+                // Collect pixel positions for dirty rect expansion
+                let (chunk_a, local_a) = pos.to_chunk_and_local();
+                let (chunk_b, local_b) = target.to_chunk_and_local();
+                dirty_pixels.push((chunk_a, local_a));
+                dirty_pixels.push((chunk_b, local_b));
+            }
+        }
     }
 
-    for dx in 0..TILE_SIZE {
-      let world_x = tile_x_start + dx as i64;
+    // Mark swapped pixels dirty for next pass
+    for (pixel_chunk_pos, local) in dirty_pixels {
+        if let Some(mutex) = chunks.get(pixel_chunk_pos) {
+            if let Ok(mut chunk) = mutex.lock() {
+                chunk.mark_pixel_dirty(local.0 as u32, local.1 as u32);
+            }
+        }
+    }
 
-      // Skip if outside rect bounds
-      if world_x < rect.x || world_x >= rect.x + rect.width as i64 {
-        continue;
-      }
+    // Merge local dirty set into global
+    if !local_dirty.is_empty()
+        && let Ok(mut global_dirty) = dirty_chunks.lock()
+    {
+        global_dirty.extend(local_dirty);
+    }
+}
 
-      // Compute normalized coordinates
-      let u = (world_x - rect.x) as f32 * w_recip;
-      let v = (world_y - rect.y) as f32 * h_recip;
+/// Swaps two pixels at the given world positions.
+///
+/// Returns the chunk positions that were modified, or None if swap failed.
+fn swap_pixels(
+  chunks: &LockedChunks<'_>,
+  a: WorldPos,
+  b: WorldPos,
+) -> Option<[ChunkPos; 2]> {
+  let (chunk_a, local_a) = a.to_chunk_and_local();
+  let (chunk_b, local_b) = b.to_chunk_and_local();
 
-      let frag = WorldFragment {
-        x: world_x,
-        y: world_y,
-        u,
-        v,
+  let la = (local_a.0 as u32, local_a.1 as u32);
+  let lb = (local_b.0 as u32, local_b.1 as u32);
+
+  if chunk_a == chunk_b {
+    // Same chunk - single lock
+    let mutex = chunks.get(chunk_a)?;
+    let mut guard = mutex.lock().ok()?;
+    let pixel_a = guard.pixels[la];
+    let pixel_b = guard.pixels[lb];
+    guard.pixels[la] = pixel_b;
+    guard.pixels[lb] = pixel_a;
+    Some([chunk_a, chunk_a])
+  } else {
+    // Different chunks - need to lock both
+    // Lock in consistent order to prevent deadlocks
+    let (mutex_first, mutex_second, la_first, lb_second, chunk_first, chunk_second) =
+      if (chunk_a.0, chunk_a.1) < (chunk_b.0, chunk_b.1) {
+        (chunks.get(chunk_a)?, chunks.get(chunk_b)?, la, lb, chunk_a, chunk_b)
+      } else {
+        (chunks.get(chunk_b)?, chunks.get(chunk_a)?, lb, la, chunk_b, chunk_a)
       };
 
-      // Call the shader function
-      if let Some(pixel) = f(frag) {
-        // Convert world pos to chunk + local
-        let (chunk_pos, local_pos) = WorldPos(world_x, world_y).to_chunk_and_local();
+    let mut guard_first = mutex_first.lock().ok()?;
+    let mut guard_second = mutex_second.lock().ok()?;
 
-        // Try to write the pixel
-        if let Some(chunk_mutex) = chunks.get(chunk_pos) {
-          if let Ok(mut chunk) = chunk_mutex.lock() {
-            chunk.pixels[(local_pos.0 as u32, local_pos.1 as u32)] = pixel;
-            local_dirty.insert(chunk_pos);
-          }
+    let pixel_a = guard_first.pixels[la_first];
+    let pixel_b = guard_second.pixels[lb_second];
+    guard_first.pixels[la_first] = pixel_b;
+    guard_second.pixels[lb_second] = pixel_a;
+
+    Some([chunk_first, chunk_second])
+  }
+}
+
+/// Process a single tile, writing pixels that pass the filter.
+fn process_tile<F>(
+    chunks: &LockedChunks<'_>,
+    tile: TilePos,
+    rect: &WorldRect,
+    f: &F,
+    w_recip: f32,
+    h_recip: f32,
+    dirty_chunks: &Mutex<HashSet<ChunkPos>>,
+    dirty_tiles: Option<&Mutex<HashSet<TilePos>>>,
+) where
+    F: Fn(WorldFragment) -> Option<Pixel> + Sync,
+{
+    let tile_size = TILE_SIZE as i64;
+    let tile_x_start = tile.0 * tile_size;
+    let tile_y_start = tile.1 * tile_size;
+
+    // Track which chunks we've dirtied in this tile
+    let mut local_dirty: HashSet<ChunkPos> = HashSet::new();
+    // Track pixels to mark dirty for simulation
+    let mut dirty_pixels: Vec<(ChunkPos, LocalPos)> = Vec::new();
+
+    for dy in 0..TILE_SIZE {
+        let world_y = tile_y_start + dy as i64;
+
+        // Skip if outside rect bounds
+        if world_y < rect.y || world_y >= rect.y + rect.height as i64 {
+            continue;
         }
-      }
-    }
-  }
 
-  // Merge local dirty set into global
-  if !local_dirty.is_empty() {
-    if let Ok(mut global_dirty) = dirty_chunks.lock() {
-      global_dirty.extend(local_dirty);
+        for dx in 0..TILE_SIZE {
+            let world_x = tile_x_start + dx as i64;
+
+            // Skip if outside rect bounds
+            if world_x < rect.x || world_x >= rect.x + rect.width as i64 {
+                continue;
+            }
+
+            // Compute normalized coordinates
+            let u = (world_x - rect.x) as f32 * w_recip;
+            let v = (world_y - rect.y) as f32 * h_recip;
+
+            let frag = WorldFragment {
+                x: world_x,
+                y: world_y,
+                u,
+                v,
+            };
+
+            // Call the shader function
+            if let Some(pixel) = f(frag) {
+                // Convert world pos to chunk + local
+                let (chunk_pos, local_pos) = WorldPos(world_x, world_y).to_chunk_and_local();
+
+                // Try to write the pixel
+                if let Some(chunk_mutex) = chunks.get(chunk_pos) {
+                    if let Ok(mut chunk) = chunk_mutex.lock() {
+                        chunk.pixels[(local_pos.0 as u32, local_pos.1 as u32)] = pixel;
+                        local_dirty.insert(chunk_pos);
+                        dirty_pixels.push((chunk_pos, local_pos));
+                    }
+                }
+            }
+        }
     }
 
-    // Track this tile as dirty
-    if let Some(tiles_mutex) = dirty_tiles {
-      if let Ok(mut tiles) = tiles_mutex.lock() {
-        tiles.insert(tile);
-      }
+    // Mark painted pixels dirty for simulation
+    for (pixel_chunk_pos, local) in dirty_pixels {
+        if let Some(mutex) = chunks.get(pixel_chunk_pos) {
+            if let Ok(mut chunk) = mutex.lock() {
+                chunk.mark_pixel_dirty(local.0 as u32, local.1 as u32);
+            }
+        }
     }
-  }
+
+    // Merge local dirty set into global
+    if !local_dirty.is_empty() {
+        if let Ok(mut global_dirty) = dirty_chunks.lock() {
+            global_dirty.extend(local_dirty);
+        }
+
+        // Track this tile as dirty
+        if let Some(tiles_mutex) = dirty_tiles {
+            if let Ok(mut tiles) = tiles_mutex.lock() {
+                tiles.insert(tile);
+            }
+        }
+    }
 }

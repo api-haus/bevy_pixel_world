@@ -14,6 +14,7 @@ use crate::render::{
     create_chunk_quad, create_palette_texture, create_pixel_texture, upload_palette, upload_pixels,
     ChunkMaterial,
 };
+use crate::simulation;
 
 /// Marker component for the main camera that controls streaming.
 #[derive(Component)]
@@ -57,6 +58,7 @@ impl Plugin for PixelWorldStreamingPlugin {
                     tick_pixel_worlds,
                     dispatch_seeding,
                     poll_seeding_tasks,
+                    run_simulation,
                     upload_dirty_chunks,
                 )
                     .chain(),
@@ -312,6 +314,7 @@ fn poll_seeding_tasks(
                 if current_idx == task.slot_index {
                     let slot = world.slot_mut(task.slot_index);
                     slot.chunk.pixels = seeded_chunk.pixels;
+                    slot.chunk.set_all_dirty_rects_full();
                     slot.seeded = true;
                     slot.dirty = true;
 
@@ -322,6 +325,23 @@ fn poll_seeding_tasks(
 
         false // remove completed task
     });
+}
+
+/// System: Runs cellular automata simulation on all pixel worlds.
+fn run_simulation(
+    mut worlds: Query<&mut PixelWorld>,
+    mat_registry: Option<Res<Materials>>,
+    gizmos: debug_shim::GizmosParam,
+) {
+    let Some(materials) = mat_registry else {
+        return;
+    };
+
+    let debug_gizmos = gizmos.get();
+
+    for mut world in worlds.iter_mut() {
+        simulation::simulate_tick(&mut world, &materials, debug_gizmos);
+    }
 }
 
 /// System: Uploads dirty chunks to GPU.
