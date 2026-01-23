@@ -517,3 +517,43 @@ impl PixelWorldBundle {
         }
     }
 }
+
+/// Command to spawn a PixelWorld using the shared chunk mesh.
+///
+/// This is the simplest way to create a PixelWorld - just provide a seeder
+/// and queue this command. The plugin's SharedChunkMesh is used automatically.
+///
+/// # Example
+/// ```ignore
+/// fn setup(mut commands: Commands) {
+///     commands.queue(SpawnPixelWorld::new(MaterialSeeder::new(42)));
+/// }
+/// ```
+///
+/// # Panics
+/// Panics if `PixelWorldPlugin` hasn't been added (SharedChunkMesh not found).
+pub struct SpawnPixelWorld {
+    seeder: Arc<dyn ChunkSeeder + Send + Sync>,
+}
+
+impl SpawnPixelWorld {
+    pub fn new(seeder: impl ChunkSeeder + Send + Sync + 'static) -> Self {
+        Self { seeder: Arc::new(seeder) }
+    }
+}
+
+impl bevy::ecs::system::Command for SpawnPixelWorld {
+    fn apply(self, world: &mut bevy::ecs::world::World) {
+        let mesh = world
+            .get_resource::<plugin::SharedChunkMesh>()
+            .expect("SharedChunkMesh not found - add PixelWorldPlugin first")
+            .0
+            .clone();
+
+        world.spawn(PixelWorldBundle {
+            world: PixelWorld::new(self.seeder, mesh),
+            transform: Transform::default(),
+            global_transform: GlobalTransform::default(),
+        });
+    }
+}

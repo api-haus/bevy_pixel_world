@@ -1,14 +1,15 @@
-//! Brush Painting Demo - PixelWorld modification example.
+//! Brush Painting Demo - PixelWorld painting and simulation.
 //!
-//! Demonstrates using the PixelWorld API for pixel modification.
-//! Paint across chunk boundaries seamlessly.
+//! Demonstrates using the PixelWorld API for pixel modification with
+//! cellular automata physics simulation.
 //!
 //! Controls:
-//! - LMB: Paint with stone material
+//! - LMB: Paint with selected material
 //! - RMB: Erase (paint with air)
 //! - Scroll wheel: Adjust brush radius
 //! - WASD/Arrow keys: Move camera
 //! - Shift: Speed boost (5x)
+//! - Side panel: Material selection, brush size slider
 //!
 //! Run with: `cargo run -p pixel_world --example painting`
 
@@ -16,17 +17,17 @@ use bevy::camera::ScalingMode;
 use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
+use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
 use pixel_world::{
-    create_chunk_quad, material_ids, ColorIndex, MaterialSeeder, Materials, Pixel,
-    PixelWorld, PixelWorldBundle, PixelWorldPlugin, StreamingCamera, WorldRect,
-    CHUNK_SIZE,
+    material_ids, ColorIndex, MaterialId, MaterialSeeder, Materials, Pixel, PixelWorld,
+    PixelWorldPlugin, SpawnPixelWorld, StreamingCamera, WorldRect,
 };
 
 const CAMERA_SPEED: f32 = 500.0;
 const SPEED_BOOST: f32 = 5.0;
-const MIN_RADIUS: u32 = 5;
-const MAX_RADIUS: u32 = 200;
-const DEFAULT_RADIUS: u32 = 20;
+const MIN_RADIUS: u32 = 2;
+const MAX_RADIUS: u32 = 100;
+const DEFAULT_RADIUS: u32 = 15;
 
 fn main() {
     App::new()
@@ -39,8 +40,10 @@ fn main() {
             ..default()
         }))
         .add_plugins(PixelWorldPlugin)
+        .add_plugins(EguiPlugin::default())
         .insert_resource(BrushState::default())
         .add_systems(Startup, setup)
+        .add_systems(EguiPrimaryContextPass, ui_system)
         .add_systems(
             Update,
             (input_system, camera_input, paint_system).chain(),
@@ -54,6 +57,7 @@ struct BrushState {
     painting: bool,
     erasing: bool,
     world_pos: Option<(i64, i64)>,
+    material: MaterialId,
 }
 
 impl Default for BrushState {
@@ -63,11 +67,12 @@ impl Default for BrushState {
             painting: false,
             erasing: false,
             world_pos: None,
+            material: material_ids::SAND,
         }
     }
 }
 
-fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
+fn setup(mut commands: Commands) {
     // Spawn camera with StreamingCamera marker
     commands.spawn((
         Camera2d,
@@ -85,18 +90,45 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
         }),
     ));
 
-    // Create materials registry
-    let mat_registry = Materials::new();
-    commands.insert_resource(mat_registry);
+    // Spawn the pixel world (Materials and mesh are handled by the plugin)
+    commands.queue(SpawnPixelWorld::new(MaterialSeeder::new(42)));
+}
 
-    // Create shared mesh for chunks
-    let mesh = meshes.add(create_chunk_quad(CHUNK_SIZE as f32, CHUNK_SIZE as f32));
+fn ui_system(mut contexts: EguiContexts, mut brush: ResMut<BrushState>, materials: Res<Materials>) {
+    let Ok(ctx) = contexts.ctx_mut() else {
+        return;
+    };
+    egui::SidePanel::left("brush_panel")
+        .resizable(false)
+        .show(ctx, |ui| {
+            ui.heading("Brush");
+            ui.separator();
 
-    // Create material seeder for terrain generation (using defaults)
-    let seeder = MaterialSeeder::new(42);
+            // Material picker (skip AIR)
+            for id in [
+                material_ids::SOIL,
+                material_ids::STONE,
+                material_ids::SAND,
+                material_ids::WATER,
+            ] {
+                let mat = materials.get(id);
+                if ui
+                    .selectable_label(brush.material == id, mat.name)
+                    .clicked()
+                {
+                    brush.material = id;
+                }
+            }
 
-    // Spawn the pixel world
-    commands.spawn(PixelWorldBundle::new(seeder, mesh));
+            ui.separator();
+
+            // Brush size slider
+            let mut radius = brush.radius as f32;
+            ui.add(
+                egui::Slider::new(&mut radius, MIN_RADIUS as f32..=MAX_RADIUS as f32).text("Size"),
+            );
+            brush.radius = radius as u32;
+        });
 }
 
 fn input_system(
@@ -112,7 +144,7 @@ fn input_system(
     // Handle scroll wheel for radius
     for event in scroll_events.read() {
         let delta = match event.unit {
-            MouseScrollUnit::Line => event.y as i32 * 5,
+            MouseScrollUnit::Line => event.y as i32 * 3,
             MouseScrollUnit::Pixel => (event.y / 10.0) as i32,
         };
         let new_radius = (brush.radius as i32 + delta).clamp(MIN_RADIUS as i32, MAX_RADIUS as i32);
@@ -173,11 +205,10 @@ fn camera_input(
     }
 }
 
-#[cfg(feature = "visual-debug")]
 fn paint_system(
     brush: Res<BrushState>,
     mut worlds: Query<&mut PixelWorld>,
-    debug_gizmos: Res<pixel_world::visual_debug::PendingDebugGizmos>,
+    gizmos: pixel_world::debug_shim::GizmosParam,
 ) {
     if !brush.painting && !brush.erasing {
         return;
@@ -191,11 +222,11 @@ fn paint_system(
         return;
     };
 
-    // Use STONE material for painting, AIR for erasing
-    let (material, color) = if brush.painting {
-        (material_ids::STONE, ColorIndex(128))
-    } else {
+    // Use selected material for painting, AIR for erasing
+    let (material, color) = if brush.erasing {
         (material_ids::AIR, ColorIndex(0))
+    } else {
+        (brush.material, ColorIndex(128))
     };
     let brush_pixel = Pixel::new(material, color);
 
@@ -219,52 +250,7 @@ fn paint_system(
                 None
             }
         },
-        Some(&debug_gizmos),
+        gizmos.get(),
     );
 }
 
-#[cfg(not(feature = "visual-debug"))]
-fn paint_system(brush: Res<BrushState>, mut worlds: Query<&mut PixelWorld>) {
-    if !brush.painting && !brush.erasing {
-        return;
-    }
-
-    let Some((center_x, center_y)) = brush.world_pos else {
-        return;
-    };
-
-    let Ok(mut world) = worlds.single_mut() else {
-        return;
-    };
-
-    // Use STONE material for painting, AIR for erasing
-    let (material, color) = if brush.painting {
-        (material_ids::STONE, ColorIndex(128))
-    } else {
-        (material_ids::AIR, ColorIndex(0))
-    };
-    let brush_pixel = Pixel::new(material, color);
-
-    let radius = brush.radius;
-    let radius_i64 = radius as i64;
-    let radius_sq = (radius_i64 * radius_i64) as f32;
-
-    // Use the blit API for parallel painting
-    let rect = WorldRect::centered(center_x, center_y, radius);
-
-    world.blit(
-        rect,
-        |frag| {
-            let dx = frag.x - center_x;
-            let dy = frag.y - center_y;
-            let dist_sq = (dx * dx + dy * dy) as f32;
-
-            if dist_sq <= radius_sq {
-                Some(brush_pixel)
-            } else {
-                None
-            }
-        },
-        (),
-    );
-}

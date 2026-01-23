@@ -8,7 +8,7 @@ use bevy::sprite_render::Material2dPlugin;
 
 pub mod coords;
 pub mod debug;
-mod debug_shim;
+pub mod debug_shim;
 pub(crate) mod parallel;
 pub mod material;
 pub mod pixel;
@@ -34,7 +34,7 @@ pub use render::{
 };
 pub use seeding::{ChunkSeeder, MaterialSeeder, NoiseSeeder};
 pub use simulation::simulate_tick;
-pub use world::{PixelWorld, PixelWorldBundle};
+pub use world::{PixelWorld, PixelWorldBundle, SpawnPixelWorld};
 pub use world::plugin::{SharedChunkMesh, SharedPaletteTexture, StreamingCamera};
 
 pub use self::primitives::rect::Rect;
@@ -58,6 +58,9 @@ impl Plugin for PixelWorldPlugin {
 
     // Register the chunk material
     app.add_plugins(Material2dPlugin::<ChunkMaterial>::default());
+
+    // Initialize Materials registry (users can override by inserting before plugin)
+    app.init_resource::<Materials>();
 
     // Add world streaming systems
     app.add_plugins(world::plugin::PixelWorldStreamingPlugin);
