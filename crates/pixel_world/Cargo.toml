@@ -9,6 +9,7 @@ bevy = { workspace = true }
 ab_glyph = "0.2"
 fastnoise2 = "0.4"
 rayon = "1.10"
+bevy_egui = { version = "0.37", optional = true }
 
 [dev-dependencies]
 bevy_egui = "0.37"
@@ -20,5 +21,6 @@ harness = false
 
 [features]
 default = ["dev"]
-dev = ["bevy/dynamic_linking", "visual-debug"]
+dev = ["bevy/dynamic_linking", "visual-debug", "diagnostics"]
 visual-debug = []
+diagnostics = ["dep:bevy_egui"]
