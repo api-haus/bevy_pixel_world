@@ -10,6 +10,7 @@ use std::sync::Mutex;
 use rayon::prelude::*;
 
 use crate::coords::{ChunkPos, LocalPos, TILE_SIZE, TilePos, WorldFragment, WorldPos, WorldRect};
+use crate::simulation::hash::hash21uu64;
 use crate::debug_shim::{self, DebugGizmos};
 use crate::pixel::Pixel;
 use crate::primitives::Chunk;
@@ -148,12 +149,13 @@ pub fn parallel_simulate<F>(
   f: F,
   dirty_chunks: &Mutex<HashSet<ChunkPos>>,
   debug_gizmos: DebugGizmos<'_>,
+  tick: u64,
 ) where
   F: Fn(WorldPos, &ChunkAccess<'_>) -> Option<WorldPos> + Sync,
 {
-  for phase_tiles in tiles_by_phase {
+  for phase_tiles in &tiles_by_phase {
     phase_tiles.par_iter().for_each(|&tile| {
-      simulate_tile(chunks, tile, &f, dirty_chunks, debug_gizmos);
+      simulate_tile(chunks, tile, &f, dirty_chunks, debug_gizmos, tick);
     });
     // Implicit barrier between phases due to sequential for loop
   }
@@ -169,6 +171,7 @@ fn simulate_tile<F>(
   f: &F,
   dirty_chunks: &Mutex<HashSet<ChunkPos>>,
   debug_gizmos: DebugGizmos<'_>,
+  tick: u64,
 ) where
   F: Fn(WorldPos, &ChunkAccess<'_>) -> Option<WorldPos> + Sync,
 {
@@ -181,12 +184,11 @@ fn simulate_tile<F>(
   let tx = (local_pos.x as u32) / TILE_SIZE;
   let ty = (local_pos.y as u32) / TILE_SIZE;
 
-  // Read and reset dirty rect
+  // Tick and read dirty rect bounds
   let bounds = if let Some(chunk) = chunks.get_mut(chunk_pos) {
     let rect = chunk.tile_dirty_rect_mut(tx, ty);
-    let b = rect.bounds();
-    rect.reset();
-    b
+    rect.tick();
+    rect.bounds()
   } else {
     None
   };
@@ -207,8 +209,9 @@ fn simulate_tile<F>(
   // Process pixels bottom-to-top so falling sand settles correctly
   // Only iterate within dirty bounds
   for local_y in (min_y as i64)..=(max_y as i64) {
-    // Alternate left-to-right and right-to-left per row for more natural flow
-    let go_left = (tile.x + local_y) % 2 == 0;
+    // Alternate direction per row using hash for temporal variation
+    let world_y = base_y + local_y;
+    let go_left = hash21uu64(tick, world_y as u64) & 1 == 0;
 
     let x_range: Box<dyn Iterator<Item = i64>> = if go_left {
       Box::new((min_x as i64..=max_x as i64).rev())
