@@ -26,8 +26,8 @@ pub enum Phase {
 impl Phase {
   /// Determine the phase for a tile position.
   fn from_tile(tile: TilePos) -> Self {
-    let x_mod = tile.0.rem_euclid(2);
-    let y_mod = tile.1.rem_euclid(2);
+    let x_mod = tile.x.rem_euclid(2);
+    let y_mod = tile.y.rem_euclid(2);
     match (x_mod, y_mod) {
       (0, 1) => Phase::A,
       (1, 1) => Phase::B,
@@ -173,13 +173,13 @@ fn simulate_tile<F>(
   F: Fn(WorldPos, &ChunkAccess<'_>) -> Option<WorldPos> + Sync,
 {
   let tile_size = TILE_SIZE as i64;
-  let base_x = tile.0 * tile_size;
-  let base_y = tile.1 * tile_size;
+  let base_x = tile.x * tile_size;
+  let base_y = tile.y * tile_size;
 
   // Get chunk and tile-local coordinates for this tile
-  let (chunk_pos, local_pos) = WorldPos(base_x, base_y).to_chunk_and_local();
-  let tx = (local_pos.0 as u32) / TILE_SIZE;
-  let ty = (local_pos.1 as u32) / TILE_SIZE;
+  let (chunk_pos, local_pos) = WorldPos::new(base_x, base_y).to_chunk_and_local();
+  let tx = (local_pos.x as u32) / TILE_SIZE;
+  let ty = (local_pos.y as u32) / TILE_SIZE;
 
   // Read and reset dirty rect
   let bounds = if let Some(chunk) = chunks.get_mut(chunk_pos) {
@@ -208,7 +208,7 @@ fn simulate_tile<F>(
   // Only iterate within dirty bounds
   for local_y in (min_y as i64)..=(max_y as i64) {
     // Alternate left-to-right and right-to-left per row for more natural flow
-    let go_left = (tile.0 + local_y) % 2 == 0;
+    let go_left = (tile.x + local_y) % 2 == 0;
 
     let x_range: Box<dyn Iterator<Item = i64>> = if go_left {
       Box::new((min_x as i64..=max_x as i64).rev())
@@ -217,7 +217,7 @@ fn simulate_tile<F>(
     };
 
     for local_x in x_range {
-      let pos = WorldPos(base_x + local_x, base_y + local_y);
+      let pos = WorldPos::new(base_x + local_x, base_y + local_y);
 
       if let Some(target) = f(pos, chunks)
         && let Some(dirty) = swap_pixels(chunks, pos, target)
@@ -233,11 +233,11 @@ fn simulate_tile<F>(
         // Wake up neighbors of the vacated position so they can fall
         // into the now-empty space
         for neighbor in [
-          WorldPos(pos.0, pos.1 + 1),     // above
-          WorldPos(pos.0 - 1, pos.1 + 1), // above-left
-          WorldPos(pos.0 + 1, pos.1 + 1), // above-right
-          WorldPos(pos.0 - 1, pos.1),     // left
-          WorldPos(pos.0 + 1, pos.1),     // right
+          WorldPos::new(pos.x, pos.y + 1),     // above
+          WorldPos::new(pos.x - 1, pos.y + 1), // above-left
+          WorldPos::new(pos.x + 1, pos.y + 1), // above-right
+          WorldPos::new(pos.x - 1, pos.y),     // left
+          WorldPos::new(pos.x + 1, pos.y),     // right
         ] {
           let (n_chunk, n_local) = neighbor.to_chunk_and_local();
           dirty_pixels.push((n_chunk, n_local));
@@ -249,7 +249,7 @@ fn simulate_tile<F>(
   // Mark swapped pixels dirty for next pass
   for (pixel_chunk_pos, local) in dirty_pixels {
     if let Some(chunk) = chunks.get_mut(pixel_chunk_pos) {
-      chunk.mark_pixel_dirty(local.0 as u32, local.1 as u32);
+      chunk.mark_pixel_dirty(local.x as u32, local.y as u32);
     }
   }
 
@@ -268,8 +268,8 @@ fn swap_pixels(chunks: &ChunkAccess<'_>, a: WorldPos, b: WorldPos) -> Option<[Ch
   let (chunk_a, local_a) = a.to_chunk_and_local();
   let (chunk_b, local_b) = b.to_chunk_and_local();
 
-  let la = (local_a.0 as u32, local_a.1 as u32);
-  let lb = (local_b.0 as u32, local_b.1 as u32);
+  let la = (local_a.x as u32, local_a.y as u32);
+  let lb = (local_b.x as u32, local_b.y as u32);
 
   if chunk_a == chunk_b {
     // Same chunk - direct access
@@ -311,8 +311,8 @@ fn process_tile<F>(
   F: Fn(WorldFragment) -> Option<Pixel> + Sync,
 {
   let tile_size = TILE_SIZE as i64;
-  let tile_x_start = tile.0 * tile_size;
-  let tile_y_start = tile.1 * tile_size;
+  let tile_x_start = tile.x * tile_size;
+  let tile_y_start = tile.y * tile_size;
 
   // Track which chunks we've dirtied in this tile
   let mut local_dirty: HashSet<ChunkPos> = HashSet::new();
@@ -349,11 +349,11 @@ fn process_tile<F>(
       // Call the shader function
       if let Some(pixel) = f(frag) {
         // Convert world pos to chunk + local
-        let (chunk_pos, local_pos) = WorldPos(world_x, world_y).to_chunk_and_local();
+        let (chunk_pos, local_pos) = WorldPos::new(world_x, world_y).to_chunk_and_local();
 
         // Try to write the pixel
         if let Some(chunk) = chunks.get_mut(chunk_pos) {
-          chunk.pixels[(local_pos.0 as u32, local_pos.1 as u32)] = pixel;
+          chunk.pixels[(local_pos.x as u32, local_pos.y as u32)] = pixel;
           local_dirty.insert(chunk_pos);
           dirty_pixels.push((chunk_pos, local_pos));
         }
@@ -364,7 +364,7 @@ fn process_tile<F>(
   // Mark painted pixels dirty for simulation
   for (pixel_chunk_pos, local) in dirty_pixels {
     if let Some(chunk) = chunks.get_mut(pixel_chunk_pos) {
-      chunk.mark_pixel_dirty(local.0 as u32, local.1 as u32);
+      chunk.mark_pixel_dirty(local.x as u32, local.y as u32);
     }
   }
 

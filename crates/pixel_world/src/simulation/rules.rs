@@ -2,6 +2,8 @@
 //!
 //! Implements movement behavior for different material states.
 
+use super::hash::{chance, coin_flip};
+use super::SimContext;
 use crate::coords::WorldPos;
 use crate::material::{Materials, PhysicsState};
 use crate::parallel::blitter::ChunkAccess;
@@ -12,6 +14,7 @@ pub fn compute_swap(
   pos: WorldPos,
   chunks: &ChunkAccess<'_>,
   materials: &Materials,
+  ctx: SimContext,
 ) -> Option<WorldPos> {
   let pixel = get_pixel(chunks, pos)?;
 
@@ -24,48 +27,84 @@ pub fn compute_swap(
 
   match material.state {
     PhysicsState::Solid => None,
-    PhysicsState::Powder => compute_powder_swap(pos, chunks, materials),
-    PhysicsState::Liquid => compute_liquid_swap(pos, chunks, materials),
+    PhysicsState::Powder => compute_powder_swap(pos, chunks, materials, ctx),
+    PhysicsState::Liquid => compute_liquid_swap(pos, chunks, materials, ctx),
     PhysicsState::Gas => None,
   }
 }
+
+// Hash channels for independent random streams
+const CH_AIR_RESISTANCE: u64 = 1;
+const CH_AIR_DRIFT: u64 = 2;
 
 /// Computes swap target for powder (sand, soil) behavior.
 fn compute_powder_swap(
   pos: WorldPos,
   chunks: &ChunkAccess<'_>,
   materials: &Materials,
+  ctx: SimContext,
 ) -> Option<WorldPos> {
   let src_pixel = get_pixel(chunks, pos)?;
-  let src_density = materials.get(src_pixel.material).density;
+  let src_material = materials.get(src_pixel.material);
+  let src_density = src_material.density;
 
-  let down = WorldPos(pos.0, pos.1 - 1);
+  // Air resistance: 1/N chance to skip this tick (particle "floats")
+  if src_material.air_resistance > 0
+    && chance(
+      ctx.seed,
+      ctx.tick,
+      pos.x,
+      pos.y,
+      CH_AIR_RESISTANCE,
+      src_material.air_resistance as u64,
+    )
+  {
+    return None;
+  }
 
-  // Try falling straight down
+  // Direction flip for diagonal movement
+  let flip: i64 = if coin_flip(ctx.seed, ctx.tick, pos.x, pos.y) { -1 } else { 1 };
+
+  // Air drift: 1/N chance to drift horizontally while falling
+  let drift: i64 = if src_material.air_drift > 0
+    && chance(
+      ctx.seed,
+      ctx.tick,
+      pos.x,
+      pos.y,
+      CH_AIR_DRIFT,
+      src_material.air_drift as u64,
+    )
+  {
+    flip
+  } else {
+    0
+  };
+
+  let down = WorldPos::new(pos.x + drift, pos.y - 1);
+
+  // Try falling (possibly with horizontal drift)
   if can_swap_into(chunks, materials, src_density, down) {
     return Some(down);
   }
 
-  // Try sliding diagonally (randomize direction based on position for
-  // determinism)
-  let go_left_first = (pos.0 + pos.1) % 2 == 0;
-  let down_left = WorldPos(pos.0 - 1, pos.1 - 1);
-  let down_right = WorldPos(pos.0 + 1, pos.1 - 1);
+  // If drift failed, try straight down
+  if drift != 0 {
+    let straight_down = WorldPos::new(pos.x, pos.y - 1);
+    if can_swap_into(chunks, materials, src_density, straight_down) {
+      return Some(straight_down);
+    }
+  }
 
-  if go_left_first {
-    if can_swap_into(chunks, materials, src_density, down_left) {
-      return Some(down_left);
-    }
-    if can_swap_into(chunks, materials, src_density, down_right) {
-      return Some(down_right);
-    }
-  } else {
-    if can_swap_into(chunks, materials, src_density, down_right) {
-      return Some(down_right);
-    }
-    if can_swap_into(chunks, materials, src_density, down_left) {
-      return Some(down_left);
-    }
+  // Try sliding diagonally
+  let first = WorldPos::new(pos.x + flip, pos.y - 1);
+  let second = WorldPos::new(pos.x - flip, pos.y - 1);
+
+  if can_swap_into(chunks, materials, src_density, first) {
+    return Some(first);
+  }
+  if can_swap_into(chunks, materials, src_density, second) {
+    return Some(second);
   }
 
   None
@@ -76,59 +115,42 @@ fn compute_liquid_swap(
   pos: WorldPos,
   chunks: &ChunkAccess<'_>,
   materials: &Materials,
+  ctx: SimContext,
 ) -> Option<WorldPos> {
   let src_pixel = get_pixel(chunks, pos)?;
   let src_material = materials.get(src_pixel.material);
   let src_density = src_material.density;
 
-  let down = WorldPos(pos.0, pos.1 - 1);
+  let down = WorldPos::new(pos.x, pos.y - 1);
 
   // Try falling straight down
   if can_swap_into(chunks, materials, src_density, down) {
     return Some(down);
   }
 
-  // Try sliding diagonally
-  let go_left_first = (pos.0 + pos.1) % 2 == 0;
-  let down_left = WorldPos(pos.0 - 1, pos.1 - 1);
-  let down_right = WorldPos(pos.0 + 1, pos.1 - 1);
+  // Try sliding diagonally (randomize direction using hash)
+  let flip: i64 = if coin_flip(ctx.seed, ctx.tick, pos.x, pos.y) { -1 } else { 1 };
+  let first = WorldPos::new(pos.x + flip, pos.y - 1);
+  let second = WorldPos::new(pos.x - flip, pos.y - 1);
 
-  if go_left_first {
-    if can_swap_into(chunks, materials, src_density, down_left) {
-      return Some(down_left);
-    }
-    if can_swap_into(chunks, materials, src_density, down_right) {
-      return Some(down_right);
-    }
-  } else {
-    if can_swap_into(chunks, materials, src_density, down_right) {
-      return Some(down_right);
-    }
-    if can_swap_into(chunks, materials, src_density, down_left) {
-      return Some(down_left);
-    }
+  if can_swap_into(chunks, materials, src_density, first) {
+    return Some(first);
+  }
+  if can_swap_into(chunks, materials, src_density, second) {
+    return Some(second);
   }
 
   // Try horizontal flow
   let dispersion = src_material.dispersion;
   if dispersion > 0 {
-    let left = WorldPos(pos.0 - 1, pos.1);
-    let right = WorldPos(pos.0 + 1, pos.1);
+    let first_h = WorldPos::new(pos.x + flip, pos.y);
+    let second_h = WorldPos::new(pos.x - flip, pos.y);
 
-    if go_left_first {
-      if can_swap_into(chunks, materials, src_density, left) {
-        return Some(left);
-      }
-      if can_swap_into(chunks, materials, src_density, right) {
-        return Some(right);
-      }
-    } else {
-      if can_swap_into(chunks, materials, src_density, right) {
-        return Some(right);
-      }
-      if can_swap_into(chunks, materials, src_density, left) {
-        return Some(left);
-      }
+    if can_swap_into(chunks, materials, src_density, first_h) {
+      return Some(first_h);
+    }
+    if can_swap_into(chunks, materials, src_density, second_h) {
+      return Some(second_h);
     }
   }
 
@@ -140,7 +162,7 @@ fn compute_liquid_swap(
 fn get_pixel(chunks: &ChunkAccess<'_>, pos: WorldPos) -> Option<Pixel> {
   let (chunk_pos, local) = pos.to_chunk_and_local();
   let chunk = chunks.get(chunk_pos)?;
-  Some(chunk.pixels[(local.0 as u32, local.1 as u32)])
+  Some(chunk.pixels[(local.x as u32, local.y as u32)])
 }
 
 /// Checks if a pixel with the given density can swap into the target position.

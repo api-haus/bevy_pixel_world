@@ -2,6 +2,7 @@
 //!
 //! Implements falling sand physics using checkerboard scheduling.
 
+pub mod hash;
 pub(crate) mod rules;
 
 use std::collections::{HashMap, HashSet};
@@ -26,8 +27,8 @@ pub enum Phase {
 impl Phase {
   /// Returns the phase for a tile at the given position.
   fn from_tile(tile: TilePos) -> Phase {
-    let px = tile.0.rem_euclid(2);
-    let py = tile.1.rem_euclid(2);
+    let px = tile.x.rem_euclid(2);
+    let py = tile.y.rem_euclid(2);
     match (px, py) {
       (0, 0) => Phase::A,
       (1, 0) => Phase::B,
@@ -38,15 +39,31 @@ impl Phase {
   }
 }
 
+/// Context passed to simulation rules for deterministic randomness.
+#[derive(Clone, Copy)]
+pub struct SimContext {
+  /// Level seed for reproducible randomness.
+  pub seed: u64,
+  /// Current simulation tick.
+  pub tick: u64,
+}
+
 /// Runs one simulation tick on the world using parallel tile processing.
 ///
 /// Processes all four phases sequentially. Each phase processes all tiles
 /// of that phase in parallel, which are never adjacent, ensuring thread-safe
 /// access.
 pub fn simulate_tick(world: &mut PixelWorld, materials: &Materials, debug_gizmos: DebugGizmos<'_>) {
-  // Get center before borrowing chunks
+  // Get context before borrowing chunks
   let center = world.center();
+  let ctx = SimContext {
+    seed: world.seed(),
+    tick: world.tick(),
+  };
   let tiles_by_phase = collect_tiles_by_phase(center);
+
+  // Increment tick for next frame
+  world.increment_tick();
 
   // Extract mutable chunk references for parallel access
   let chunks_map = extract_chunks_for_simulation(world);
@@ -60,7 +77,7 @@ pub fn simulate_tick(world: &mut PixelWorld, materials: &Materials, debug_gizmos
   parallel_simulate(
     &chunk_access,
     tiles_by_phase,
-    |pos, chunks| rules::compute_swap(pos, chunks, materials),
+    |pos, chunks| rules::compute_swap(pos, chunks, materials, ctx),
     &dirty,
     debug_gizmos,
   );
@@ -106,8 +123,8 @@ fn collect_tiles_by_phase(center: ChunkPos) -> [Vec<TilePos>; 4] {
   let tiles_per_chunk = TILES_PER_CHUNK as i64;
   let tile_size = TILE_SIZE as i64;
 
-  for cy in (center.1 - hh)..(center.1 + hh) {
-    for cx in (center.0 - hw)..(center.0 + hw) {
+  for cy in (center.y - hh)..(center.y + hh) {
+    for cx in (center.x - hw)..(center.x + hw) {
       let chunk_origin_x = cx as i64 * CHUNK_SIZE as i64;
       let chunk_origin_y = cy as i64 * CHUNK_SIZE as i64;
 
@@ -115,7 +132,7 @@ fn collect_tiles_by_phase(center: ChunkPos) -> [Vec<TilePos>; 4] {
         for tx in 0..tiles_per_chunk {
           let tile_world_x = chunk_origin_x + tx * tile_size;
           let tile_world_y = chunk_origin_y + ty * tile_size;
-          let tile = TilePos(tile_world_x / tile_size, tile_world_y / tile_size);
+          let tile = TilePos::new(tile_world_x / tile_size, tile_world_y / tile_size);
 
           let phase = Phase::from_tile(tile);
           let idx = match phase {

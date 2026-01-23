@@ -38,8 +38,8 @@ impl NoiseSeeder {
 
 impl ChunkSeeder for NoiseSeeder {
   fn seed(&self, pos: ChunkPos, chunk: &mut Chunk) {
-    let base_x = pos.0 as f32 * CHUNK_SIZE as f32;
-    let base_y = pos.1 as f32 * CHUNK_SIZE as f32;
+    let base_x = pos.x as f32 * CHUNK_SIZE as f32;
+    let base_y = pos.y as f32 * CHUNK_SIZE as f32;
 
     for ly in 0..CHUNK_SIZE {
       for lx in 0..CHUNK_SIZE {
@@ -140,8 +140,8 @@ impl MaterialSeeder {
 
 impl ChunkSeeder for MaterialSeeder {
   fn seed(&self, pos: ChunkPos, chunk: &mut Chunk) {
-    let base_x = pos.0 as f32 * CHUNK_SIZE as f32;
-    let base_y = pos.1 as f32 * CHUNK_SIZE as f32;
+    let base_x = pos.x as f32 * CHUNK_SIZE as f32;
+    let base_y = pos.y as f32 * CHUNK_SIZE as f32;
 
     // Pass 1: Generate solid mask
     let mut mask = Surface::<u8>::new(CHUNK_SIZE, CHUNK_SIZE);

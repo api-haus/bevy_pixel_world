@@ -97,25 +97,55 @@ pub struct PixelWorld {
   seeder: Arc<dyn ChunkSeeder + Send + Sync>,
   /// Shared mesh for all chunk entities.
   mesh: Handle<Mesh>,
+  /// Simulation seed for deterministic randomness.
+  seed: u64,
+  /// Current simulation tick.
+  tick: u64,
 }
 
 impl PixelWorld {
   /// Creates a new pixel world with the given seeder and mesh.
   pub fn new(seeder: Arc<dyn ChunkSeeder + Send + Sync>, mesh: Handle<Mesh>) -> Self {
+    Self::with_seed(seeder, mesh, 0)
+  }
+
+  /// Creates a new pixel world with a specific simulation seed.
+  pub fn with_seed(
+    seeder: Arc<dyn ChunkSeeder + Send + Sync>,
+    mesh: Handle<Mesh>,
+    seed: u64,
+  ) -> Self {
     let slots = (0..POOL_SIZE).map(|_| ChunkSlot::new()).collect();
 
     Self {
-      center: ChunkPos(0, 0),
+      center: ChunkPos::new(0, 0),
       slots,
       active: HashMap::new(),
       seeder,
       mesh,
+      seed,
+      tick: 0,
     }
   }
 
   /// Returns the current center chunk position.
   pub fn center(&self) -> ChunkPos {
     self.center
+  }
+
+  /// Returns the simulation seed.
+  pub fn seed(&self) -> u64 {
+    self.seed
+  }
+
+  /// Returns the current simulation tick.
+  pub fn tick(&self) -> u64 {
+    self.tick
+  }
+
+  /// Increments the simulation tick counter.
+  pub fn increment_tick(&mut self) {
+    self.tick = self.tick.wrapping_add(1);
   }
 
   /// Returns the shared mesh handle.
@@ -300,7 +330,7 @@ impl PixelWorld {
     if !slot.seeded {
       return None;
     }
-    Some(&slot.chunk.pixels[(local_pos.0 as u32, local_pos.1 as u32)])
+    Some(&slot.chunk.pixels[(local_pos.x as u32, local_pos.y as u32)])
   }
 
   /// Returns a mutable reference to the pixel at the given world position.
@@ -314,7 +344,7 @@ impl PixelWorld {
     if !slot.seeded {
       return None;
     }
-    Some(&mut slot.chunk.pixels[(local_pos.0 as u32, local_pos.1 as u32)])
+    Some(&mut slot.chunk.pixels[(local_pos.x as u32, local_pos.y as u32)])
   }
 
   /// Swaps two pixels at the given world positions.
@@ -342,8 +372,8 @@ impl PixelWorld {
       // Same chunk - simple swap
       let slot = &mut self.slots[idx_a.0];
       let (la, lb) = (
-        (local_a.0 as u32, local_a.1 as u32),
-        (local_b.0 as u32, local_b.1 as u32),
+        (local_a.x as u32, local_a.y as u32),
+        (local_b.x as u32, local_b.y as u32),
       );
       let pixel_a = slot.chunk.pixels[la];
       let pixel_b = slot.chunk.pixels[lb];
@@ -361,8 +391,8 @@ impl PixelWorld {
         (&mut right[0], &mut left[idx_b.0])
       };
 
-      let la = (local_a.0 as u32, local_a.1 as u32);
-      let lb = (local_b.0 as u32, local_b.1 as u32);
+      let la = (local_a.x as u32, local_a.y as u32);
+      let lb = (local_b.x as u32, local_b.y as u32);
       std::mem::swap(&mut slot_a.chunk.pixels[la], &mut slot_b.chunk.pixels[lb]);
       slot_a.dirty = true;
       slot_b.dirty = true;
@@ -387,7 +417,7 @@ impl PixelWorld {
     if !slot.seeded {
       return false;
     }
-    slot.chunk.pixels[(local_pos.0 as u32, local_pos.1 as u32)] = pixel;
+    slot.chunk.pixels[(local_pos.x as u32, local_pos.y as u32)] = pixel;
     let was_clean = !slot.dirty;
     slot.dirty = true;
 
@@ -488,15 +518,15 @@ pub(crate) struct StreamingDelta {
 
 /// Returns iterator over visible chunk positions for a given center.
 fn visible_positions(center: ChunkPos) -> impl Iterator<Item = ChunkPos> {
-  let cx = center.0;
-  let cy = center.1;
+  let cx = center.x;
+  let cy = center.y;
   let hw = WINDOW_WIDTH as i32 / 2;
   let hh = WINDOW_HEIGHT as i32 / 2;
 
   let x_range = (cx - hw)..(cx + hw);
   let y_range = (cy - hh)..(cy + hh);
 
-  x_range.flat_map(move |x| y_range.clone().map(move |y| ChunkPos(x, y)))
+  x_range.flat_map(move |x| y_range.clone().map(move |y| ChunkPos::new(x, y)))
 }
 
 /// Bundle for spawning a PixelWorld entity.

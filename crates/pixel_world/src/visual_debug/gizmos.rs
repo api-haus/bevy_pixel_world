@@ -54,7 +54,7 @@ impl PendingGizmo {
     let world = pos.to_world();
     Self {
       kind: GizmoKind::Chunk,
-      rect: WorldRect::new(world.0, world.1, CHUNK_SIZE, CHUNK_SIZE),
+      rect: WorldRect::new(world.x, world.y, CHUNK_SIZE, CHUNK_SIZE),
     }
   }
 
@@ -63,7 +63,7 @@ impl PendingGizmo {
     let tile_size = TILE_SIZE as i64;
     Self {
       kind: GizmoKind::Tile,
-      rect: WorldRect::new(pos.0 * tile_size, pos.1 * tile_size, TILE_SIZE, TILE_SIZE),
+      rect: WorldRect::new(pos.x * tile_size, pos.y * tile_size, TILE_SIZE, TILE_SIZE),
     }
   }
 
@@ -81,8 +81,8 @@ impl PendingGizmo {
   /// max_y) relative to the tile origin.
   pub fn dirty_rect(tile: TilePos, bounds: (u8, u8, u8, u8)) -> Self {
     let tile_size = TILE_SIZE as i64;
-    let tile_origin_x = tile.0 * tile_size;
-    let tile_origin_y = tile.1 * tile_size;
+    let tile_origin_x = tile.x * tile_size;
+    let tile_origin_y = tile.y * tile_size;
 
     let (min_x, min_y, max_x, max_y) = bounds;
     let x = tile_origin_x + min_x as i64;

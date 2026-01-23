@@ -140,7 +140,7 @@ fn tick_pixel_worlds(
   let cam_pos = camera_transform.translation();
   let cam_x = cam_pos.x as i64 + half_chunk;
   let cam_y = cam_pos.y as i64 + half_chunk;
-  let (chunk_pos, _) = WorldPos(cam_x, cam_y).to_chunk_and_local();
+  let (chunk_pos, _) = WorldPos::new(cam_x, cam_y).to_chunk_and_local();
 
   for (_world_entity, mut world) in worlds.iter_mut() {
     // Check if this is initial spawn (no active chunks yet)
@@ -211,8 +211,8 @@ fn spawn_chunk_entity(
   // Spawn entity at chunk world position
   let world_pos = pos.to_world();
   let transform = Transform::from_xyz(
-    world_pos.0 as f32 + CHUNK_SIZE as f32 / 2.0,
-    world_pos.1 as f32 + CHUNK_SIZE as f32 / 2.0,
+    world_pos.x as f32 + CHUNK_SIZE as f32 / 2.0,
+    world_pos.y as f32 + CHUNK_SIZE as f32 / 2.0,
     0.0,
   );
 

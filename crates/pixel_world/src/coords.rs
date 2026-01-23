@@ -29,17 +29,47 @@ pub const TILES_PER_CHUNK: u32 = CHUNK_SIZE / TILE_SIZE;
 ///
 /// Uses i64 for effectively infinite worlds without overflow concerns.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct WorldPos(pub i64, pub i64);
+pub struct WorldPos {
+  pub x: i64,
+  pub y: i64,
+}
+
+impl WorldPos {
+  /// Creates a new world position.
+  pub const fn new(x: i64, y: i64) -> Self {
+    Self { x, y }
+  }
+}
 
 /// Position in the chunk grid.
 ///
 /// Each chunk spans [`CHUNK_SIZE`] pixels in each dimension.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct ChunkPos(pub i32, pub i32);
+pub struct ChunkPos {
+  pub x: i32,
+  pub y: i32,
+}
+
+impl ChunkPos {
+  /// Creates a new chunk position.
+  pub const fn new(x: i32, y: i32) -> Self {
+    Self { x, y }
+  }
+}
 
 /// Position within a chunk (0 to CHUNK_SIZE-1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct LocalPos(pub u16, pub u16);
+pub struct LocalPos {
+  pub x: u16,
+  pub y: u16,
+}
+
+impl LocalPos {
+  /// Creates a new local position.
+  pub const fn new(x: u16, y: u16) -> Self {
+    Self { x, y }
+  }
+}
 
 impl WorldPos {
   /// Convert to chunk position and local offset.
@@ -51,14 +81,14 @@ impl WorldPos {
 
     // Floor division: for negative numbers, we need to round toward negative
     // infinity
-    let cx = self.0.div_euclid(chunk_size) as i32;
-    let cy = self.1.div_euclid(chunk_size) as i32;
+    let cx = self.x.div_euclid(chunk_size) as i32;
+    let cy = self.y.div_euclid(chunk_size) as i32;
 
     // Local offset is always positive (0 to CHUNK_SIZE-1)
-    let lx = self.0.rem_euclid(chunk_size) as u16;
-    let ly = self.1.rem_euclid(chunk_size) as u16;
+    let lx = self.x.rem_euclid(chunk_size) as u16;
+    let ly = self.y.rem_euclid(chunk_size) as u16;
 
-    (ChunkPos(cx, cy), LocalPos(lx, ly))
+    (ChunkPos::new(cx, cy), LocalPos::new(lx, ly))
   }
 }
 
@@ -68,7 +98,7 @@ impl ChunkPos {
   /// Returns the bottom-left corner of the chunk in world coordinates.
   pub fn to_world(self) -> WorldPos {
     let chunk_size = CHUNK_SIZE as i64;
-    WorldPos(self.0 as i64 * chunk_size, self.1 as i64 * chunk_size)
+    WorldPos::new(self.x as i64 * chunk_size, self.y as i64 * chunk_size)
   }
 }
 
@@ -84,15 +114,31 @@ pub struct ColorIndex(pub u8);
 ///
 /// Each tile spans [`TILE_SIZE`] pixels in each dimension.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct TilePos(pub i64, pub i64);
+pub struct TilePos {
+  pub x: i64,
+  pub y: i64,
+}
+
+impl TilePos {
+  /// Creates a new tile position.
+  pub const fn new(x: i64, y: i64) -> Self {
+    Self { x, y }
+  }
+}
 
 /// Dirty rectangle within a tile for simulation scheduling.
 ///
 /// Coordinates are local to the tile (0 to TILE_SIZE-1).
-/// Used to skip simulation of pixels that haven't changed.
+/// Uses a two-phase cooldown: tiles stay active for 2 frames after
+/// last activity to handle oscillating patterns in falling sand.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct TileDirtyRect {
-  bounds: Option<(u8, u8, u8, u8)>, // (min_x, min_y, max_x, max_y)
+  /// Bounds for next frame (accumulated by expand() calls during simulation)
+  next: Option<(u8, u8, u8, u8)>,
+  /// Bounds to simulate this frame
+  current: Option<(u8, u8, u8, u8)>,
+  /// Frames until sleep (2 = active, 1 = cooling, 0 = sleeping)
+  cooldown: u8,
 }
 
 impl TileDirtyRect {
@@ -172,10 +218,10 @@ impl WorldRect {
 
   /// Returns true if the given world position is within this rect.
   pub fn contains(&self, pos: WorldPos) -> bool {
-    pos.0 >= self.x
-      && pos.0 < self.x + self.width as i64
-      && pos.1 >= self.y
-      && pos.1 < self.y + self.height as i64
+    pos.x >= self.x
+      && pos.x < self.x + self.width as i64
+      && pos.y >= self.y
+      && pos.y < self.y + self.height as i64
   }
 
   /// Returns the intersection of two rectangles, or None if they don't overlap.
@@ -217,7 +263,7 @@ impl WorldRect {
     let max_tx = (self.x + self.width as i64 - 1).div_euclid(tile_size);
     let max_ty = (self.y + self.height as i64 - 1).div_euclid(tile_size);
 
-    (min_tx..=max_tx).flat_map(move |tx| (min_ty..=max_ty).map(move |ty| TilePos(tx, ty)))
+    (min_tx..=max_tx).flat_map(move |tx| (min_ty..=max_ty).map(move |ty| TilePos::new(tx, ty)))
   }
 }
 
