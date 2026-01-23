@@ -76,6 +76,11 @@ impl Materials {
   pub fn get(&self, id: MaterialId) -> &Material {
     &self.entries[id.0 as usize]
   }
+
+  /// Returns the number of registered materials.
+  pub fn len(&self) -> usize {
+    self.entries.len()
+  }
 }
 
 impl Default for Materials {

@@ -9,7 +9,10 @@ use super::{PixelWorld, SlotIndex};
 use crate::coords::{ChunkPos, WorldPos, CHUNK_SIZE};
 use crate::material::Materials;
 use crate::primitives::Chunk;
-use crate::render::{create_chunk_quad, create_texture, upload_surface, ChunkMaterial};
+use crate::render::{
+    create_chunk_quad, create_palette_texture, create_pixel_texture, upload_palette, upload_pixels,
+    ChunkMaterial,
+};
 
 /// Marker component for the main camera that controls streaming.
 #[derive(Component)]
@@ -49,6 +52,7 @@ impl Plugin for PixelWorldStreamingPlugin {
             .add_systems(
                 Update,
                 (
+                    initialize_palette,
                     tick_pixel_worlds,
                     dispatch_seeding,
                     poll_seeding_tasks,
@@ -63,10 +67,49 @@ impl Plugin for PixelWorldStreamingPlugin {
 #[derive(Resource)]
 pub struct SharedChunkMesh(pub Handle<Mesh>);
 
+/// Shared palette texture for GPU-side color lookup.
+#[derive(Resource)]
+pub struct SharedPaletteTexture {
+    pub handle: Handle<Image>,
+    /// Whether the palette has been populated from Materials.
+    pub initialized: bool,
+}
+
 /// Sets up shared resources used by all PixelWorlds.
-fn setup_shared_resources(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
+fn setup_shared_resources(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut images: ResMut<Assets<Image>>,
+) {
     let mesh = meshes.add(create_chunk_quad(CHUNK_SIZE as f32, CHUNK_SIZE as f32));
     commands.insert_resource(SharedChunkMesh(mesh));
+
+    // Create palette texture (will be populated when Materials is available)
+    let palette = create_palette_texture(&mut images);
+    commands.insert_resource(SharedPaletteTexture {
+        handle: palette,
+        initialized: false,
+    });
+}
+
+/// System: Initializes the palette texture when Materials becomes available.
+fn initialize_palette(
+    mut palette: ResMut<SharedPaletteTexture>,
+    mut images: ResMut<Assets<Image>>,
+    mat_registry: Option<Res<Materials>>,
+) {
+    if palette.initialized {
+        return;
+    }
+
+    let Some(mat_registry) = mat_registry else {
+        return;
+    };
+
+    if let Some(image) = images.get_mut(&palette.handle) {
+        upload_palette(&mat_registry, image);
+        palette.initialized = true;
+    }
 }
 
 /// System: Updates streaming windows based on camera position.
@@ -79,10 +122,13 @@ fn tick_pixel_worlds(
     mut worlds: Query<(Entity, &mut PixelWorld)>,
     mut images: ResMut<Assets<Image>>,
     mut materials: ResMut<Assets<ChunkMaterial>>,
+    palette: Option<Res<SharedPaletteTexture>>,
 ) {
     let Ok(camera_transform) = camera_query.single() else {
         return;
     };
+
+    let palette_handle = palette.as_ref().map(|p| p.handle.clone());
 
     // Convert camera position to chunk position
     // Offset by half chunk so transitions occur at chunk centers
@@ -112,11 +158,11 @@ fn tick_pixel_worlds(
         for (pos, slot_idx) in delta.to_spawn {
             let slot = world.slot_mut(slot_idx);
 
-            // Create or reuse texture
+            // Create or reuse pixel texture (Rgba8Uint for raw pixel data)
             let texture = if let Some(tex) = slot.texture.take() {
                 tex
             } else {
-                create_texture(&mut images, CHUNK_SIZE, CHUNK_SIZE)
+                create_pixel_texture(&mut images, CHUNK_SIZE, CHUNK_SIZE)
             };
 
             // Create or reuse material
@@ -124,13 +170,15 @@ fn tick_pixel_worlds(
                 mat
             } else {
                 materials.add(ChunkMaterial {
-                    texture: Some(texture.clone()),
+                    pixel_texture: Some(texture.clone()),
+                    palette_texture: palette_handle.clone(),
                 })
             };
 
-            // Update material texture if reusing
+            // Update material textures if reusing
             if let Some(mat) = materials.get_mut(&material) {
-                mat.texture = Some(texture.clone());
+                mat.pixel_texture = Some(texture.clone());
+                mat.palette_texture = palette_handle.clone();
             }
 
             // Spawn entity at chunk world position
@@ -220,6 +268,46 @@ fn dispatch_seeding(
 }
 
 /// System: Polls completed seeding tasks and swaps in seeded chunks.
+#[cfg(feature = "visual-debug")]
+fn poll_seeding_tasks(
+    mut seeding_tasks: ResMut<SeedingTasks>,
+    mut worlds: Query<&mut PixelWorld>,
+    debug_gizmos: Res<crate::visual_debug::PendingDebugGizmos>,
+) {
+    let mut completed_indices = Vec::new();
+
+    for (i, task) in seeding_tasks.tasks.iter_mut().enumerate() {
+        // Poll the task - if it's ready, we get the result
+        if task.task.is_finished() {
+            let seeded_chunk = bevy::tasks::block_on(&mut task.task);
+            // Task completed
+            if let Ok(mut world) = worlds.get_mut(task.world_entity) {
+                // Verify slot is still active for this position
+                if let Some(current_idx) = world.get_slot_index(task.pos) {
+                    if current_idx == task.slot_index {
+                        let slot = world.slot_mut(task.slot_index);
+                        // Swap in the seeded chunk data
+                        slot.chunk.pixels = seeded_chunk.pixels;
+                        slot.seeded = true;
+                        slot.dirty = true;
+
+                        // Emit chunk gizmo for newly seeded chunk
+                        debug_gizmos.push(crate::visual_debug::PendingGizmo::chunk(task.pos));
+                    }
+                }
+            }
+            completed_indices.push(i);
+        }
+    }
+
+    // Remove completed tasks (in reverse order to preserve indices)
+    for i in completed_indices.into_iter().rev() {
+        seeding_tasks.tasks.swap_remove(i);
+    }
+}
+
+/// System: Polls completed seeding tasks and swaps in seeded chunks.
+#[cfg(not(feature = "visual-debug"))]
 fn poll_seeding_tasks(
     mut seeding_tasks: ResMut<SeedingTasks>,
     mut worlds: Query<&mut PixelWorld>,
@@ -254,16 +342,13 @@ fn poll_seeding_tasks(
 }
 
 /// System: Uploads dirty chunks to GPU.
+///
+/// Uploads raw pixel data directly. Color lookup happens in the shader.
 fn upload_dirty_chunks(
     mut worlds: Query<&mut PixelWorld>,
     mut images: ResMut<Assets<Image>>,
     mut materials: ResMut<Assets<ChunkMaterial>>,
-    mat_registry: Option<Res<Materials>>,
 ) {
-    let Some(mat_registry) = mat_registry else {
-        return;
-    };
-
     for mut world in worlds.iter_mut() {
         // Collect dirty+seeded slots
         let dirty_slots: Vec<_> = world
@@ -281,12 +366,9 @@ fn upload_dirty_chunks(
         for (pos, idx, texture_handle, material_handle) in dirty_slots {
             let slot = world.slot_mut(idx);
 
-            // Materialize pixels to render buffer
-            slot.chunk.materialize(&mat_registry);
-
-            // Upload to GPU
+            // Upload raw pixel data to GPU (shader does palette lookup)
             if let Some(image) = images.get_mut(&texture_handle) {
-                upload_surface(slot.chunk.render_surface(), image);
+                upload_pixels(&slot.chunk.pixels, image);
             }
 
             // Touch material to force bind group refresh (Bevy workaround)

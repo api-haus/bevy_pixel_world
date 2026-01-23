@@ -8,10 +8,11 @@
 //!
 //! Run with: `cargo run -p pixel_world --example text_demo`
 
+use bevy::asset::RenderAssetUsages;
+use bevy::image::ImageSampler;
 use bevy::prelude::*;
-use pixel_world::{
-  draw_text, spawn_static_chunk, Blitter, Chunk, ChunkMaterial, CpuFont, PixelWorldPlugin, Rgba,
-};
+use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+use pixel_world::{draw_text, Blitter, Chunk, CpuFont, Rgba, RgbaSurface};
 
 const CHUNK_SIZE: u32 = 256;
 
@@ -25,17 +26,11 @@ fn main() {
       }),
       ..default()
     }))
-    .add_plugins(PixelWorldPlugin)
     .add_systems(Startup, setup)
     .run();
 }
 
-fn setup(
-  mut commands: Commands,
-  mut images: ResMut<Assets<Image>>,
-  mut meshes: ResMut<Assets<Mesh>>,
-  mut materials: ResMut<Assets<ChunkMaterial>>,
-) {
+fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
   commands.spawn(Camera2d);
 
   let mut chunk = Chunk::new(CHUNK_SIZE, CHUNK_SIZE);
@@ -117,12 +112,34 @@ fn setup(
     Rgba::rgb(255, 128, 0),
   );
 
-  spawn_static_chunk(
-    &mut commands,
-    &mut images,
-    &mut meshes,
-    &mut materials,
-    chunk.render_surface(),
-    Vec2::splat(CHUNK_SIZE as f32 * 2.0),
+  // Create texture from RGBA surface and spawn as sprite
+  let texture = create_rgba_texture(&mut images, chunk.render_surface());
+  commands.spawn((
+    Sprite {
+      image: texture,
+      custom_size: Some(Vec2::splat(CHUNK_SIZE as f32 * 2.0)),
+      ..default()
+    },
+    Transform::default(),
+  ));
+}
+
+/// Creates an RGBA texture from an RgbaSurface for direct display.
+fn create_rgba_texture(images: &mut Assets<Image>, surface: &RgbaSurface) -> Handle<Image> {
+  let size = Extent3d {
+    width: surface.width(),
+    height: surface.height(),
+    depth_or_array_layers: 1,
+  };
+
+  let mut image = Image::new(
+    size,
+    TextureDimension::D2,
+    surface.as_bytes().to_vec(),
+    TextureFormat::Rgba8UnormSrgb,
+    RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
   );
+
+  image.sampler = ImageSampler::nearest();
+  images.add(image)
 }

@@ -5,12 +5,20 @@ use bevy::render::render_resource::AsBindGroup;
 use bevy::shader::ShaderRef;
 use bevy::sprite_render::Material2d;
 
-/// Material for rendering chunks with a texture.
+/// Material for rendering chunks with GPU-side palette lookup.
+///
+/// Uses raw pixel data (material/color indices) and a palette texture
+/// to resolve colors in the fragment shader.
 #[derive(Asset, TypePath, AsBindGroup, Clone)]
 pub struct ChunkMaterial {
-  #[texture(0)]
-  #[sampler(1)]
-  pub texture: Option<Handle<Image>>,
+  /// Raw pixel data (Rgba8Uint): [material, color, damage, flags]
+  #[texture(0, sample_type = "u_int")]
+  pub pixel_texture: Option<Handle<Image>>,
+
+  /// Palette lookup texture (256x1 Rgba8UnormSrgb)
+  #[texture(1)]
+  #[sampler(2)]
+  pub palette_texture: Option<Handle<Image>>,
 }
 
 impl Material2d for ChunkMaterial {

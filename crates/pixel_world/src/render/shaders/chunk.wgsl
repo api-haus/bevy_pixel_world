@@ -1,11 +1,25 @@
-// Chunk fragment shader - samples texture for Material2d rendering.
+// Chunk fragment shader - GPU-side palette lookup for pixel rendering.
 
 #import bevy_sprite::mesh2d_vertex_output::VertexOutput
 
-@group(#{MATERIAL_BIND_GROUP}) @binding(0) var chunk_texture: texture_2d<f32>;
-@group(#{MATERIAL_BIND_GROUP}) @binding(1) var chunk_sampler: sampler;
+@group(#{MATERIAL_BIND_GROUP}) @binding(0) var pixel_texture: texture_2d<u32>;
+@group(#{MATERIAL_BIND_GROUP}) @binding(1) var palette_texture: texture_2d<f32>;
+@group(#{MATERIAL_BIND_GROUP}) @binding(2) var palette_sampler: sampler;
 
 @fragment
 fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
-    return textureSample(chunk_texture, chunk_sampler, mesh.uv);
+    // Load raw pixel data (material, color, damage, flags)
+    let dims = textureDimensions(pixel_texture);
+    let coord = vec2<i32>(mesh.uv * vec2<f32>(dims));
+    let pixel = textureLoad(pixel_texture, coord, 0);
+
+    let material_id = pixel.r;
+    let color_index = pixel.g;
+
+    // Palette layout: material_id * 8 + (color_index * 7 / 255)
+    // Maps color_index 0-255 to palette entry 0-7 within the material
+    let palette_idx = material_id * 8u + (color_index * 7u / 255u);
+    let palette_uv = vec2<f32>(f32(palette_idx) + 0.5, 0.5) / vec2<f32>(256.0, 1.0);
+
+    return textureSample(palette_texture, palette_sampler, palette_uv);
 }

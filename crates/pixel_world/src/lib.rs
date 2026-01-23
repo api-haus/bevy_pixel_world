@@ -14,6 +14,8 @@ pub mod pixel;
 pub mod primitives;
 pub mod render;
 pub mod seeding;
+#[cfg(feature = "visual-debug")]
+pub mod visual_debug;
 pub mod world;
 
 pub use coords::{
@@ -25,12 +27,12 @@ pub use material::{ids as material_ids, Material, Materials};
 pub use pixel::{Pixel, PixelSurface};
 pub use primitives::{Blitter, Chunk, LocalFragment, RgbaSurface, Surface};
 pub use render::{
-    create_chunk_quad, create_texture, materialize, spawn_static_chunk, upload_surface, ChunkMaterial,
-    Rgba,
+    create_chunk_quad, create_palette_texture, create_pixel_texture, create_texture, materialize,
+    spawn_static_chunk, upload_palette, upload_pixels, upload_surface, ChunkMaterial, Rgba,
 };
 pub use seeding::{ChunkSeeder, MaterialSeeder, NoiseSeeder};
 pub use world::{PixelWorld, PixelWorldBundle};
-pub use world::plugin::{SharedChunkMesh, StreamingCamera};
+pub use world::plugin::{SharedChunkMesh, SharedPaletteTexture, StreamingCamera};
 
 pub use self::primitives::rect::Rect;
 
@@ -56,5 +58,9 @@ impl Plugin for PixelWorldPlugin {
 
     // Add world streaming systems
     app.add_plugins(world::plugin::PixelWorldStreamingPlugin);
+
+    // Add visual debug plugin if feature is enabled
+    #[cfg(feature = "visual-debug")]
+    app.add_plugins(visual_debug::VisualDebugPlugin);
   }
 }
