@@ -4,7 +4,7 @@
 //! modulo 2. Tiles in the same phase are never adjacent, allowing safe parallel
 //! execution.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
 use rayon::prelude::*;
@@ -64,8 +64,8 @@ pub fn parallel_blit<F>(
   chunks: &LockedChunks<'_>,
   rect: WorldRect,
   f: F,
-  dirty_chunks: &Mutex<Vec<ChunkPos>>,
-  dirty_tiles: Option<&Mutex<Vec<TilePos>>>,
+  dirty_chunks: &Mutex<HashSet<ChunkPos>>,
+  dirty_tiles: Option<&Mutex<HashSet<TilePos>>>,
 ) where
   F: Fn(WorldFragment) -> Option<Pixel> + Sync,
 {
@@ -113,8 +113,8 @@ fn process_tile<F>(
   f: &F,
   w_recip: f32,
   h_recip: f32,
-  dirty_chunks: &Mutex<Vec<ChunkPos>>,
-  dirty_tiles: Option<&Mutex<Vec<TilePos>>>,
+  dirty_chunks: &Mutex<HashSet<ChunkPos>>,
+  dirty_tiles: Option<&Mutex<HashSet<TilePos>>>,
 ) where
   F: Fn(WorldFragment) -> Option<Pixel> + Sync,
 {
@@ -123,7 +123,7 @@ fn process_tile<F>(
   let tile_y_start = tile.1 * tile_size;
 
   // Track which chunks we've dirtied in this tile
-  let mut local_dirty: Vec<ChunkPos> = Vec::new();
+  let mut local_dirty: HashSet<ChunkPos> = HashSet::new();
 
   for dy in 0..TILE_SIZE {
     let world_y = tile_y_start + dy as i64;
@@ -161,31 +161,23 @@ fn process_tile<F>(
         if let Some(chunk_mutex) = chunks.get(chunk_pos) {
           if let Ok(mut chunk) = chunk_mutex.lock() {
             chunk.pixels[(local_pos.0 as u32, local_pos.1 as u32)] = pixel;
-            if !local_dirty.contains(&chunk_pos) {
-              local_dirty.push(chunk_pos);
-            }
+            local_dirty.insert(chunk_pos);
           }
         }
       }
     }
   }
 
-  // Merge local dirty list into global
+  // Merge local dirty set into global
   if !local_dirty.is_empty() {
     if let Ok(mut global_dirty) = dirty_chunks.lock() {
-      for pos in local_dirty {
-        if !global_dirty.contains(&pos) {
-          global_dirty.push(pos);
-        }
-      }
+      global_dirty.extend(local_dirty);
     }
 
     // Track this tile as dirty
     if let Some(tiles_mutex) = dirty_tiles {
       if let Ok(mut tiles) = tiles_mutex.lock() {
-        if !tiles.contains(&tile) {
-          tiles.push(tile);
-        }
+        tiles.insert(tile);
       }
     }
   }

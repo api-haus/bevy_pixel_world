@@ -9,10 +9,7 @@
 
 use bevy::prelude::*;
 use pixel_world::primitives::rect::Rect;
-use pixel_world::{
-  create_chunk_quad, create_texture, upload_surface, Blitter, Chunk, ChunkMaterial, PixelWorldPlugin,
-  Rgba,
-};
+use pixel_world::{create_texture, upload_surface, Blitter, Rgba, RgbaSurface};
 
 /// Size of the chunk in pixels.
 const CHUNK_SIZE: u32 = 256;
@@ -33,7 +30,6 @@ fn main() {
       }),
       ..default()
     }))
-    .add_plugins(PixelWorldPlugin)
     .insert_resource(Time::<Fixed>::from_hz(60.0))
     .add_systems(Startup, setup)
     .add_systems(FixedUpdate, update_quad)
@@ -41,52 +37,43 @@ fn main() {
     .run();
 }
 
-/// Holds the chunk and animation state.
+/// Holds the surface and animation state.
 #[derive(Resource)]
 struct UvQuadState {
-  chunk: Chunk,
+  surface: RgbaSurface,
   texture_handle: Handle<Image>,
-  material_handle: Handle<ChunkMaterial>,
   /// Position of the quad (bottom-left corner).
   pos: Vec2,
   /// Velocity of the quad.
   vel: Vec2,
   /// Time accumulator for blue pulse.
   time: f32,
-  /// Whether the chunk needs uploading.
+  /// Whether the surface needs uploading.
   dirty: bool,
 }
 
-fn setup(
-  mut commands: Commands,
-  mut images: ResMut<Assets<Image>>,
-  mut meshes: ResMut<Assets<Mesh>>,
-  mut materials: ResMut<Assets<ChunkMaterial>>,
-) {
+fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
   // Create camera
   commands.spawn(Camera2d);
 
-  // Create chunk and texture
-  let chunk = Chunk::new(CHUNK_SIZE, CHUNK_SIZE);
+  // Create surface and texture
+  let surface = RgbaSurface::new(CHUNK_SIZE, CHUNK_SIZE);
   let texture_handle = create_texture(&mut images, CHUNK_SIZE, CHUNK_SIZE);
 
-  // Create quad mesh with Y+ up UVs
-  let mesh_handle = meshes.add(create_chunk_quad(
-    CHUNK_SIZE as f32 * 2.0,
-    CHUNK_SIZE as f32 * 2.0,
+  // Spawn sprite for direct RGBA rendering
+  commands.spawn((
+    Sprite {
+      image: texture_handle.clone(),
+      custom_size: Some(Vec2::splat(CHUNK_SIZE as f32 * 2.0)),
+      ..default()
+    },
+    Transform::default(),
   ));
-  let material_handle = materials.add(ChunkMaterial {
-    texture: Some(texture_handle.clone()),
-  });
-
-  // Spawn mesh with chunk material
-  commands.spawn((Mesh2d(mesh_handle), MeshMaterial2d(material_handle.clone())));
 
   // Initialize state
   commands.insert_resource(UvQuadState {
-    chunk,
+    surface,
     texture_handle,
-    material_handle,
     pos: Vec2::new(
       (CHUNK_SIZE - QUAD_SIZE) as f32 / 2.0,
       (CHUNK_SIZE - QUAD_SIZE) as f32 / 2.0,
@@ -132,7 +119,7 @@ fn update_quad(mut state: ResMut<UvQuadState>, time: Res<Time<Fixed>>) {
   let blue = blue_pulse as u8;
 
   // Clear to black
-  let mut blitter = Blitter::new(state.chunk.render_surface_mut());
+  let mut blitter = Blitter::new(&mut state.surface);
   blitter.clear(Rgba::BLACK);
 
   // Blit UV quad
@@ -149,20 +136,13 @@ fn update_quad(mut state: ResMut<UvQuadState>, time: Res<Time<Fixed>>) {
   state.dirty = true;
 }
 
-fn upload_to_gpu(
-  mut state: ResMut<UvQuadState>,
-  mut images: ResMut<Assets<Image>>,
-  mut materials: ResMut<Assets<ChunkMaterial>>,
-) {
+fn upload_to_gpu(mut state: ResMut<UvQuadState>, mut images: ResMut<Assets<Image>>) {
   if !state.dirty {
     return;
   }
 
   if let Some(image) = images.get_mut(&state.texture_handle) {
-    upload_surface(state.chunk.render_surface(), image);
-    // Touch the material to force bind group refresh (workaround for Bevy bug
-    // #15081)
-    let _ = materials.get_mut(&state.material_handle);
+    upload_surface(&state.surface, image);
     state.dirty = false;
   }
 }

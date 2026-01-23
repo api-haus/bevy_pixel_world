@@ -78,6 +78,7 @@ impl Materials {
   }
 
   /// Returns the number of registered materials.
+  #[must_use]
   pub fn len(&self) -> usize {
     self.entries.len()
   }

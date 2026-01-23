@@ -83,7 +83,7 @@ pub struct ColorIndex(pub u8);
 /// Tile position in the world grid.
 ///
 /// Each tile spans [`TILE_SIZE`] pixels in each dimension.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TilePos(pub i64, pub i64);
 
 /// World-coordinate axis-aligned bounding box.

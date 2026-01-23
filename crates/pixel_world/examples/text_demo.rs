@@ -12,7 +12,7 @@ use bevy::asset::RenderAssetUsages;
 use bevy::image::ImageSampler;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
-use pixel_world::{draw_text, Blitter, Chunk, CpuFont, Rgba, RgbaSurface};
+use pixel_world::{draw_text, Blitter, CpuFont, Rgba, RgbaSurface};
 
 const CHUNK_SIZE: u32 = 256;
 
@@ -33,17 +33,17 @@ fn main() {
 fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
   commands.spawn(Camera2d);
 
-  let mut chunk = Chunk::new(CHUNK_SIZE, CHUNK_SIZE);
+  let mut surface = RgbaSurface::new(CHUNK_SIZE, CHUNK_SIZE);
 
   // Clear to dark gray
-  Blitter::new(chunk.render_surface_mut()).clear(Rgba::rgb(32, 32, 32));
+  Blitter::new(&mut surface).clear(Rgba::rgb(32, 32, 32));
 
   let font = CpuFont::default_font();
 
   // Draw text at various sizes and positions
   // Bottom text - small (16px)
   draw_text(
-    chunk.render_surface_mut(),
+    &mut surface,
     &font,
     "Small 16px",
     10,
@@ -55,7 +55,7 @@ fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
 
   // Middle text - medium (24px), different color
   draw_text(
-    chunk.render_surface_mut(),
+    &mut surface,
     &font,
     "Medium 24px",
     10,
@@ -67,7 +67,7 @@ fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
 
   // Upper text - large (32px)
   draw_text(
-    chunk.render_surface_mut(),
+    &mut surface,
     &font,
     "Large 32px",
     10,
@@ -79,7 +79,7 @@ fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
 
   // Test Y+ up: "TOP" should appear at top, "BOTTOM" at bottom
   draw_text(
-    chunk.render_surface_mut(),
+    &mut surface,
     &font,
     "TOP",
     200,
@@ -90,7 +90,7 @@ fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
   );
 
   draw_text(
-    chunk.render_surface_mut(),
+    &mut surface,
     &font,
     "BOTTOM",
     200,
@@ -102,7 +102,7 @@ fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
 
   // Test character spacing
   draw_text(
-    chunk.render_surface_mut(),
+    &mut surface,
     &font,
     "S P A C E D",
     10,
@@ -113,7 +113,7 @@ fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
   );
 
   // Create texture from RGBA surface and spawn as sprite
-  let texture = create_rgba_texture(&mut images, chunk.render_surface());
+  let texture = create_rgba_texture(&mut images, &surface);
   commands.spawn((
     Sprite {
       image: texture,

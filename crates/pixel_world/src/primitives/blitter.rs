@@ -1,4 +1,4 @@
-//! LocalFragment-shader-style drawing API for surfaces.
+//! SurfaceFragment-shader-style drawing API for surfaces.
 //!
 //! [`Blitter`] provides methods to draw into a [`Surface`] using closures
 //! that receive both absolute coordinates (x, y) and normalized UV coordinates.
@@ -12,11 +12,11 @@
 use super::surface::Surface;
 use crate::primitives::rect::Rect;
 
-/// LocalFragment data passed to blit callbacks.
+/// SurfaceFragment data passed to blit callbacks.
 ///
 /// See `docs/architecture/glossary.md` for coordinate system conventions.
 #[derive(Clone, Copy, Debug)]
-pub struct LocalFragment {
+pub struct SurfaceFragment {
   /// Absolute X coordinate on the surface.
   pub x: u32,
   /// Absolute Y coordinate on the surface (Y+ up).
@@ -38,7 +38,7 @@ impl<'a, T> Blitter<'a, T> {
     Self { surface }
   }
 
-  /// Fills a rectangle with a closure that receives a [`LocalFragment`].
+  /// Fills a rectangle with a closure that receives a [`SurfaceFragment`].
   ///
   /// For each pixel in `rect`, calls `f(fragment)` where fragment contains:
   /// - `x, y`: absolute surface coordinates (Y+ up)
@@ -48,7 +48,7 @@ impl<'a, T> Blitter<'a, T> {
   /// The rect is clamped to surface bounds; out-of-bounds portions are skipped.
   pub fn blit<F>(&mut self, rect: Rect, mut f: F)
   where
-    F: FnMut(LocalFragment) -> T,
+    F: FnMut(SurfaceFragment) -> T,
   {
     let rect = rect.clamped(self.surface.width(), self.surface.height());
     if rect.width == 0 || rect.height == 0 {
@@ -72,7 +72,7 @@ impl<'a, T> Blitter<'a, T> {
       for dx in 0..rect.width {
         let x = rect.x + dx;
         let u = dx as f32 * w_recip;
-        let frag = LocalFragment { x, y, u, v };
+        let frag = SurfaceFragment { x, y, u, v };
         let value = f(frag);
         // We know (x, y) is in bounds due to clamping
         self.surface.set(x, y, value);

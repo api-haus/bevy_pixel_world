@@ -237,15 +237,19 @@ fn paint_system(brush: Res<BrushState>, mut worlds: Query<&mut PixelWorld>) {
     // Use the blit API for parallel painting
     let rect = WorldRect::centered(center_x, center_y, radius);
 
-    world.blit(rect, |frag| {
-        let dx = frag.x - center_x;
-        let dy = frag.y - center_y;
-        let dist_sq = (dx * dx + dy * dy) as f32;
+    world.blit(
+        rect,
+        |frag| {
+            let dx = frag.x - center_x;
+            let dy = frag.y - center_y;
+            let dist_sq = (dx * dx + dy * dy) as f32;
 
-        if dist_sq <= radius_sq {
-            Some(brush_pixel)
-        } else {
-            None
-        }
-    });
+            if dist_sq <= radius_sq {
+                Some(brush_pixel)
+            } else {
+                None
+            }
+        },
+        (),
+    );
 }

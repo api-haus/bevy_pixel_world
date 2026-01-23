@@ -7,6 +7,7 @@ use bevy::tasks::{AsyncComputeTaskPool, Task};
 
 use super::{PixelWorld, SlotIndex};
 use crate::coords::{ChunkPos, WorldPos, CHUNK_SIZE};
+use crate::debug_shim::{self, DebugGizmos};
 use crate::material::Materials;
 use crate::primitives::Chunk;
 use crate::render::{
@@ -274,6 +275,24 @@ fn poll_seeding_tasks(
     mut worlds: Query<&mut PixelWorld>,
     debug_gizmos: Res<crate::visual_debug::PendingDebugGizmos>,
 ) {
+    poll_seeding_tasks_inner(&mut seeding_tasks, &mut worlds, Some(&*debug_gizmos));
+}
+
+/// System: Polls completed seeding tasks and swaps in seeded chunks.
+#[cfg(not(feature = "visual-debug"))]
+fn poll_seeding_tasks(
+    mut seeding_tasks: ResMut<SeedingTasks>,
+    mut worlds: Query<&mut PixelWorld>,
+) {
+    poll_seeding_tasks_inner(&mut seeding_tasks, &mut worlds, ());
+}
+
+/// Shared implementation for poll_seeding_tasks.
+fn poll_seeding_tasks_inner(
+    seeding_tasks: &mut SeedingTasks,
+    worlds: &mut Query<&mut PixelWorld>,
+    debug_gizmos: DebugGizmos<'_>,
+) {
     let mut completed_indices = Vec::new();
 
     for (i, task) in seeding_tasks.tasks.iter_mut().enumerate() {
@@ -292,42 +311,7 @@ fn poll_seeding_tasks(
                         slot.dirty = true;
 
                         // Emit chunk gizmo for newly seeded chunk
-                        debug_gizmos.push(crate::visual_debug::PendingGizmo::chunk(task.pos));
-                    }
-                }
-            }
-            completed_indices.push(i);
-        }
-    }
-
-    // Remove completed tasks (in reverse order to preserve indices)
-    for i in completed_indices.into_iter().rev() {
-        seeding_tasks.tasks.swap_remove(i);
-    }
-}
-
-/// System: Polls completed seeding tasks and swaps in seeded chunks.
-#[cfg(not(feature = "visual-debug"))]
-fn poll_seeding_tasks(
-    mut seeding_tasks: ResMut<SeedingTasks>,
-    mut worlds: Query<&mut PixelWorld>,
-) {
-    let mut completed_indices = Vec::new();
-
-    for (i, task) in seeding_tasks.tasks.iter_mut().enumerate() {
-        // Poll the task - if it's ready, we get the result
-        if task.task.is_finished() {
-            let seeded_chunk = bevy::tasks::block_on(&mut task.task);
-            // Task completed
-            if let Ok(mut world) = worlds.get_mut(task.world_entity) {
-                // Verify slot is still active for this position
-                if let Some(current_idx) = world.get_slot_index(task.pos) {
-                    if current_idx == task.slot_index {
-                        let slot = world.slot_mut(task.slot_index);
-                        // Swap in the seeded chunk data
-                        slot.chunk.pixels = seeded_chunk.pixels;
-                        slot.seeded = true;
-                        slot.dirty = true;
+                        debug_shim::emit_chunk(debug_gizmos, task.pos);
                     }
                 }
             }
