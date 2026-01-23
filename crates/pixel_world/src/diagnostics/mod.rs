@@ -2,8 +2,8 @@ mod graph;
 mod time_series;
 
 use bevy::prelude::*;
-use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
-pub use graph::{TimeSeriesGraphConfig, time_series_graph};
+use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
+pub use graph::{time_series_graph, TimeSeriesGraphConfig};
 pub use time_series::TimeSeries;
 
 const SAMPLE_CAPACITY: usize = 300;

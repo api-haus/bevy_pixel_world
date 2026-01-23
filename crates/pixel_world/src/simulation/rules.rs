@@ -50,8 +50,12 @@ fn compute_powder_swap(
 
   // Air resistance: 1/N chance to skip this tick (particle "floats")
   if src_material.air_resistance > 0
-    && hash41uu64(ctx.seed ^ CH_AIR_RESISTANCE, ctx.tick, pos.x as u64, pos.y as u64)
-      % src_material.air_resistance as u64
+    && hash41uu64(
+      ctx.seed ^ CH_AIR_RESISTANCE,
+      ctx.tick,
+      pos.x as u64,
+      pos.y as u64,
+    ) % src_material.air_resistance as u64
       == 0
   {
     return None;
@@ -66,8 +70,12 @@ fn compute_powder_swap(
 
   // Air drift: 1/N chance to drift horizontally while falling
   let drift: i64 = if src_material.air_drift > 0
-    && hash41uu64(ctx.seed ^ CH_AIR_DRIFT, ctx.tick, pos.x as u64, pos.y as u64)
-      % src_material.air_drift as u64
+    && hash41uu64(
+      ctx.seed ^ CH_AIR_DRIFT,
+      ctx.tick,
+      pos.x as u64,
+      pos.y as u64,
+    ) % src_material.air_drift as u64
       == 0
   {
     flip
@@ -117,20 +125,32 @@ fn compute_liquid_swap(
 
   // Air resistance: 1/N chance to skip this tick
   if src_material.air_resistance > 0
-    && hash41uu64(ctx.seed ^ CH_AIR_RESISTANCE, ctx.tick, pos.x as u64, pos.y as u64)
-      % src_material.air_resistance as u64
+    && hash41uu64(
+      ctx.seed ^ CH_AIR_RESISTANCE,
+      ctx.tick,
+      pos.x as u64,
+      pos.y as u64,
+    ) % src_material.air_resistance as u64
       == 0
   {
     return None;
   }
 
   // Direction flip - uniform per tick for smooth flow across tile boundaries
-  let flip: i64 = if hash41uu64(ctx.seed, ctx.tick, 0, 0) & 1 == 0 { -1 } else { 1 };
+  let flip: i64 = if hash41uu64(ctx.seed, ctx.tick, 0, 0) & 1 == 0 {
+    -1
+  } else {
+    1
+  };
 
   // Air drift: 1/N chance to drift horizontally while falling
   let drift: i64 = if src_material.air_drift > 0
-    && hash41uu64(ctx.seed ^ CH_AIR_DRIFT, ctx.tick, pos.x as u64, pos.y as u64)
-      % src_material.air_drift as u64
+    && hash41uu64(
+      ctx.seed ^ CH_AIR_DRIFT,
+      ctx.tick,
+      pos.x as u64,
+      pos.y as u64,
+    ) % src_material.air_drift as u64
       == 0
   {
     flip

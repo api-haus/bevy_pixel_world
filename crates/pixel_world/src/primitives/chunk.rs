@@ -6,7 +6,7 @@
 //! organization. See `docs/architecture/chunk-pooling.md` for the pooling
 //! lifecycle.
 
-use crate::coords::{ChunkPos, TILE_SIZE, TILES_PER_CHUNK, TileDirtyRect};
+use crate::coords::{ChunkPos, TileDirtyRect, TILES_PER_CHUNK, TILE_SIZE};
 use crate::pixel::PixelSurface;
 
 /// Number of tiles per chunk (16x16 = 256).

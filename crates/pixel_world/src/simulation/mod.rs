@@ -8,10 +8,12 @@ pub(crate) mod rules;
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
-use crate::coords::{CHUNK_SIZE, ChunkPos, TILE_SIZE, TILES_PER_CHUNK, TilePos};
+use hash::hash21uu64;
+
+use crate::coords::{ChunkPos, TilePos, CHUNK_SIZE, TILES_PER_CHUNK, TILE_SIZE};
 use crate::debug_shim::DebugGizmos;
 use crate::material::Materials;
-use crate::parallel::blitter::{ChunkAccess, parallel_simulate};
+use crate::parallel::blitter::{parallel_simulate, ChunkAccess};
 use crate::primitives::Chunk;
 use crate::world::PixelWorld;
 
@@ -46,6 +48,10 @@ pub struct SimContext {
   pub seed: u64,
   /// Current simulation tick.
   pub tick: u64,
+  /// Tile grid jitter X offset (0 to TILE_SIZE-1).
+  pub jitter_x: i64,
+  /// Tile grid jitter Y offset (0 to TILE_SIZE-1).
+  pub jitter_y: i64,
 }
 
 /// Runs one simulation tick on the world using parallel tile processing.
@@ -56,9 +62,25 @@ pub struct SimContext {
 pub fn simulate_tick(world: &mut PixelWorld, materials: &Materials, debug_gizmos: DebugGizmos<'_>) {
   // Get context before borrowing chunks
   let center = world.center();
+  let tick = world.tick();
+
+  // Generate per-tick jitter for tile grid offset
+  // TODO: Dirty rects stability still needs improvement with jitter enabled.
+  let max_jitter = (TILE_SIZE as f32 * world.config().jitter_factor) as u64;
+  let (jitter_x, jitter_y) = if max_jitter > 0 {
+    (
+      (hash21uu64(tick, 0) % max_jitter) as i64,
+      (hash21uu64(tick, 1) % max_jitter) as i64,
+    )
+  } else {
+    (0, 0)
+  };
+
   let ctx = SimContext {
     seed: world.seed(),
-    tick: world.tick(),
+    tick,
+    jitter_x,
+    jitter_y,
   };
   let tiles_by_phase = collect_tiles_by_phase(center);
 
@@ -81,6 +103,7 @@ pub fn simulate_tick(world: &mut PixelWorld, materials: &Materials, debug_gizmos
     &dirty,
     debug_gizmos,
     ctx.tick,
+    (jitter_x, jitter_y),
   );
 
   // Mark dirty chunks for GPU upload

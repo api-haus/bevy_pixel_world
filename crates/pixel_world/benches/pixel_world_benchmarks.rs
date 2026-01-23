@@ -1,7 +1,7 @@
 mod common;
 
 use common::tile_processor::blit_with_tile_size;
-use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use pixel_world::primitives::Surface;
 use pixel_world::{ColorIndex, MaterialId, Pixel, Rgba};
 

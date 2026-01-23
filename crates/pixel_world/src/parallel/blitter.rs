@@ -9,11 +9,11 @@ use std::sync::Mutex;
 
 use rayon::prelude::*;
 
-use crate::coords::{ChunkPos, LocalPos, TILE_SIZE, TilePos, WorldFragment, WorldPos, WorldRect};
-use crate::simulation::hash::hash21uu64;
+use crate::coords::{ChunkPos, LocalPos, TilePos, WorldFragment, WorldPos, WorldRect, TILE_SIZE};
 use crate::debug_shim::{self, DebugGizmos};
 use crate::pixel::Pixel;
 use crate::primitives::Chunk;
+use crate::simulation::hash::hash21uu64;
 
 /// Phase assignment for 2x2 checkerboard scheduling.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -143,6 +143,10 @@ pub fn parallel_blit<F>(
 /// For each pixel in each tile, calls `f(pos, chunks)` which returns:
 /// - `Some(target)` to swap pos with target
 /// - `None` to leave pixel unchanged
+///
+/// The `jitter` parameter offsets the tile grid each tick so that tile
+/// boundaries appear at different world positions, preventing artifacts
+/// from accumulating at fixed seams.
 pub fn parallel_simulate<F>(
   chunks: &ChunkAccess<'_>,
   tiles_by_phase: [Vec<TilePos>; 4],
@@ -150,12 +154,13 @@ pub fn parallel_simulate<F>(
   dirty_chunks: &Mutex<HashSet<ChunkPos>>,
   debug_gizmos: DebugGizmos<'_>,
   tick: u64,
+  jitter: (i64, i64),
 ) where
   F: Fn(WorldPos, &ChunkAccess<'_>) -> Option<WorldPos> + Sync,
 {
   for phase_tiles in &tiles_by_phase {
     phase_tiles.par_iter().for_each(|&tile| {
-      simulate_tile(chunks, tile, &f, dirty_chunks, debug_gizmos, tick);
+      simulate_tile(chunks, tile, &f, dirty_chunks, debug_gizmos, tick, jitter);
     });
     // Implicit barrier between phases due to sequential for loop
   }
@@ -165,6 +170,11 @@ pub fn parallel_simulate<F>(
 ///
 /// Only processes pixels within the tile's dirty rect bounds.
 /// Resets the dirty rect before processing, then expands it as pixels change.
+///
+/// With jitter, the tile grid is offset so tile boundaries appear at different
+/// world positions each tick. The jittered tile overlaps 1-4 original tiles,
+/// so we union their dirty bounds for iteration but still mark dirty using
+/// original (non-jittered) tile coordinates.
 fn simulate_tile<F>(
   chunks: &ChunkAccess<'_>,
   tile: TilePos,
@@ -172,26 +182,31 @@ fn simulate_tile<F>(
   dirty_chunks: &Mutex<HashSet<ChunkPos>>,
   debug_gizmos: DebugGizmos<'_>,
   tick: u64,
+  jitter: (i64, i64),
 ) where
   F: Fn(WorldPos, &ChunkAccess<'_>) -> Option<WorldPos> + Sync,
 {
   let tile_size = TILE_SIZE as i64;
-  let base_x = tile.x * tile_size;
-  let base_y = tile.y * tile_size;
+  let (jitter_x, jitter_y) = jitter;
 
-  // Get chunk and tile-local coordinates for this tile
-  let (chunk_pos, local_pos) = WorldPos::new(base_x, base_y).to_chunk_and_local();
+  // Jittered base position - where this tile's pixels actually start
+  let base_x = tile.x * tile_size + jitter_x;
+  let base_y = tile.y * tile_size + jitter_y;
+
+  // Tick the "owned" original tile (same index as jittered tile)
+  // This maintains the dirty rect state machine correctly
+  let orig_base_x = tile.x * tile_size;
+  let orig_base_y = tile.y * tile_size;
+  let (chunk_pos, local_pos) = WorldPos::new(orig_base_x, orig_base_y).to_chunk_and_local();
   let tx = (local_pos.x as u32) / TILE_SIZE;
   let ty = (local_pos.y as u32) / TILE_SIZE;
 
-  // Tick and read dirty rect bounds
-  let bounds = if let Some(chunk) = chunks.get_mut(chunk_pos) {
-    let rect = chunk.tile_dirty_rect_mut(tx, ty);
-    rect.tick();
-    rect.bounds()
-  } else {
-    None
-  };
+  if let Some(chunk) = chunks.get_mut(chunk_pos) {
+    chunk.tile_dirty_rect_mut(tx, ty).tick();
+  }
+
+  // Union dirty bounds from all overlapping original tiles
+  let bounds = union_dirty_bounds(chunks, tile, jitter);
 
   // Skip if no dirty pixels
   let Some((min_x, min_y, max_x, max_y)) = bounds else {
@@ -250,6 +265,7 @@ fn simulate_tile<F>(
   }
 
   // Mark swapped pixels dirty for next pass
+  // Uses original (non-jittered) tile coordinates via chunk.mark_pixel_dirty
   for (pixel_chunk_pos, local) in dirty_pixels {
     if let Some(chunk) = chunks.get_mut(pixel_chunk_pos) {
       chunk.mark_pixel_dirty(local.x as u32, local.y as u32);
@@ -262,6 +278,89 @@ fn simulate_tile<F>(
   {
     global_dirty.extend(local_dirty);
   }
+}
+
+/// Compute the union of dirty bounds from all original tiles that overlap
+/// a jittered tile.
+///
+/// A jittered tile at (tx, ty) with jitter (jx, jy) overlaps:
+/// - Original tile (tx, ty) - always
+/// - Original tile (tx+1, ty) - if jx > 0
+/// - Original tile (tx, ty+1) - if jy > 0
+/// - Original tile (tx+1, ty+1) - if jx > 0 and jy > 0
+fn union_dirty_bounds(
+  chunks: &ChunkAccess<'_>,
+  tile: TilePos,
+  jitter: (i64, i64),
+) -> Option<(u8, u8, u8, u8)> {
+  let tile_size = TILE_SIZE as i64;
+  let (jitter_x, jitter_y) = jitter;
+
+  // Jittered tile base position
+  let jittered_base_x = tile.x * tile_size + jitter_x;
+  let jittered_base_y = tile.y * tile_size + jitter_y;
+
+  let mut union_bounds: Option<(u8, u8, u8, u8)> = None;
+
+  // Check up to 4 overlapping original tiles
+  for dy in 0i64..=1 {
+    if dy == 1 && jitter_y == 0 {
+      continue;
+    }
+    for dx in 0i64..=1 {
+      if dx == 1 && jitter_x == 0 {
+        continue;
+      }
+
+      let orig_tile = TilePos::new(tile.x + dx, tile.y + dy);
+      let orig_base_x = orig_tile.x * tile_size;
+      let orig_base_y = orig_tile.y * tile_size;
+
+      // Get chunk and tile-local coordinates for this original tile
+      let (chunk_pos, local_pos) = WorldPos::new(orig_base_x, orig_base_y).to_chunk_and_local();
+      let tx = (local_pos.x as u32) / TILE_SIZE;
+      let ty = (local_pos.y as u32) / TILE_SIZE;
+
+      let Some(chunk) = chunks.get(chunk_pos) else {
+        continue;
+      };
+
+      let Some((min_x, min_y, max_x, max_y)) = chunk.tile_dirty_rect(tx, ty).bounds() else {
+        continue;
+      };
+
+      // Convert original tile dirty bounds to world coords
+      let world_min_x = orig_base_x + min_x as i64;
+      let world_min_y = orig_base_y + min_y as i64;
+      let world_max_x = orig_base_x + max_x as i64;
+      let world_max_y = orig_base_y + max_y as i64;
+
+      // Convert to jittered tile local coords and clamp to [0, 31]
+      let local_min_x = (world_min_x - jittered_base_x).clamp(0, 31) as u8;
+      let local_min_y = (world_min_y - jittered_base_y).clamp(0, 31) as u8;
+      let local_max_x = (world_max_x - jittered_base_x).clamp(0, 31) as u8;
+      let local_max_y = (world_max_y - jittered_base_y).clamp(0, 31) as u8;
+
+      // Skip if this results in empty rect (can happen when dirty region
+      // doesn't actually overlap jittered tile)
+      if local_min_x > local_max_x || local_min_y > local_max_y {
+        continue;
+      }
+
+      // Union with accumulated bounds
+      union_bounds = Some(match union_bounds {
+        None => (local_min_x, local_min_y, local_max_x, local_max_y),
+        Some((u_min_x, u_min_y, u_max_x, u_max_y)) => (
+          u_min_x.min(local_min_x),
+          u_min_y.min(local_min_y),
+          u_max_x.max(local_max_x),
+          u_max_y.max(local_max_y),
+        ),
+      });
+    }
+  }
+
+  union_bounds
 }
 
 /// Swaps two pixels at the given world positions.

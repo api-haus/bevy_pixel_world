@@ -6,13 +6,13 @@ use bevy::prelude::*;
 use bevy::tasks::{AsyncComputeTaskPool, Task};
 
 use super::{PixelWorld, SlotIndex};
-use crate::coords::{CHUNK_SIZE, ChunkPos, WorldPos};
+use crate::coords::{ChunkPos, WorldPos, CHUNK_SIZE};
 use crate::debug_shim;
 use crate::material::Materials;
 use crate::primitives::Chunk;
 use crate::render::{
-  ChunkMaterial, create_chunk_quad, create_palette_texture, create_pixel_texture, upload_palette,
-  upload_pixels,
+  create_chunk_quad, create_palette_texture, create_pixel_texture, upload_palette, upload_pixels,
+  ChunkMaterial,
 };
 use crate::simulation;
 

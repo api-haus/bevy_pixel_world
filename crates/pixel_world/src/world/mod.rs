@@ -14,15 +14,30 @@ use std::sync::Arc;
 use bevy::prelude::*;
 
 use crate::coords::{
-  CHUNK_SIZE, ChunkPos, POOL_SIZE, TilePos, WINDOW_HEIGHT, WINDOW_WIDTH, WorldFragment, WorldPos,
-  WorldRect,
+  ChunkPos, TilePos, WorldFragment, WorldPos, WorldRect, CHUNK_SIZE, POOL_SIZE, WINDOW_HEIGHT,
+  WINDOW_WIDTH,
 };
 use crate::debug_shim::{self, DebugGizmos};
-use crate::parallel::blitter::{ChunkAccess, parallel_blit};
+use crate::parallel::blitter::{parallel_blit, ChunkAccess};
 use crate::pixel::Pixel;
 use crate::primitives::Chunk;
 use crate::render::ChunkMaterial;
 use crate::seeding::ChunkSeeder;
+
+/// Configuration for pixel world simulation behavior.
+#[derive(Clone, Debug)]
+pub struct PixelWorldConfig {
+  /// Jitter factor for tile grid offset (0.0 = no jitter, 1.0 = full tile
+  /// jitter). Higher values reduce tile boundary artifacts but may slightly
+  /// increase processing.
+  pub jitter_factor: f32,
+}
+
+impl Default for PixelWorldConfig {
+  fn default() -> Self {
+    Self { jitter_factor: 0.0 }
+  }
+}
 
 /// Index into the slots array.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -101,18 +116,39 @@ pub struct PixelWorld {
   seed: u64,
   /// Current simulation tick.
   tick: u64,
+  /// World configuration settings.
+  config: PixelWorldConfig,
 }
 
 impl PixelWorld {
   /// Creates a new pixel world with the given seeder and mesh.
   pub fn new(seeder: Arc<dyn ChunkSeeder + Send + Sync>, mesh: Handle<Mesh>) -> Self {
-    Self::with_seed(seeder, mesh, 0)
+    Self::with_config(seeder, mesh, PixelWorldConfig::default())
   }
 
   /// Creates a new pixel world with a specific simulation seed.
   pub fn with_seed(
     seeder: Arc<dyn ChunkSeeder + Send + Sync>,
     mesh: Handle<Mesh>,
+    seed: u64,
+  ) -> Self {
+    Self::with_config_and_seed(seeder, mesh, PixelWorldConfig::default(), seed)
+  }
+
+  /// Creates a new pixel world with custom configuration.
+  pub fn with_config(
+    seeder: Arc<dyn ChunkSeeder + Send + Sync>,
+    mesh: Handle<Mesh>,
+    config: PixelWorldConfig,
+  ) -> Self {
+    Self::with_config_and_seed(seeder, mesh, config, 0)
+  }
+
+  /// Creates a new pixel world with custom configuration and seed.
+  pub fn with_config_and_seed(
+    seeder: Arc<dyn ChunkSeeder + Send + Sync>,
+    mesh: Handle<Mesh>,
+    config: PixelWorldConfig,
     seed: u64,
   ) -> Self {
     let slots = (0..POOL_SIZE).map(|_| ChunkSlot::new()).collect();
@@ -125,6 +161,7 @@ impl PixelWorld {
       mesh,
       seed,
       tick: 0,
+      config,
     }
   }
 
@@ -146,6 +183,16 @@ impl PixelWorld {
   /// Increments the simulation tick counter.
   pub fn increment_tick(&mut self) {
     self.tick = self.tick.wrapping_add(1);
+  }
+
+  /// Returns the world configuration.
+  pub fn config(&self) -> &PixelWorldConfig {
+    &self.config
+  }
+
+  /// Returns a mutable reference to the world configuration.
+  pub fn config_mut(&mut self) -> &mut PixelWorldConfig {
+    &mut self.config
   }
 
   /// Returns the shared mesh handle.
@@ -556,6 +603,9 @@ impl PixelWorldBundle {
 /// This is the simplest way to create a PixelWorld - just provide a seeder
 /// and queue this command. The plugin's SharedChunkMesh is used automatically.
 ///
+/// Uses the default configuration from `PixelWorldPlugin` unless overridden
+/// with `with_config()`.
+///
 /// # Example
 /// ```ignore
 /// fn setup(mut commands: Commands) {
@@ -567,13 +617,21 @@ impl PixelWorldBundle {
 /// Panics if `PixelWorldPlugin` hasn't been added (SharedChunkMesh not found).
 pub struct SpawnPixelWorld {
   seeder: Arc<dyn ChunkSeeder + Send + Sync>,
+  config: Option<PixelWorldConfig>,
 }
 
 impl SpawnPixelWorld {
   pub fn new(seeder: impl ChunkSeeder + Send + Sync + 'static) -> Self {
     Self {
       seeder: Arc::new(seeder),
+      config: None,
     }
+  }
+
+  /// Sets the world configuration, overriding the plugin default.
+  pub fn with_config(mut self, config: PixelWorldConfig) -> Self {
+    self.config = Some(config);
+    self
   }
 }
 
@@ -585,8 +643,16 @@ impl bevy::ecs::system::Command for SpawnPixelWorld {
       .0
       .clone();
 
+    // Use explicit config or fall back to plugin default
+    let config = self.config.unwrap_or_else(|| {
+      world
+        .get_resource::<crate::DefaultPixelWorldConfig>()
+        .map(|r| r.0.clone())
+        .unwrap_or_default()
+    });
+
     world.spawn(PixelWorldBundle {
-      world: PixelWorld::new(self.seeder, mesh),
+      world: PixelWorld::with_config(self.seeder, mesh, config),
       transform: Transform::default(),
       global_transform: GlobalTransform::default(),
     });

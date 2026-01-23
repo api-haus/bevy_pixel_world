@@ -153,25 +153,25 @@ macro_rules! bench_hash_functions {
 }
 
 fn bench_hash_32(c: &mut Criterion) {
-    let mut group = c.benchmark_group("hash/32bit");
-    group.throughput(Throughput::Elements(ITERATIONS));
+  let mut group = c.benchmark_group("hash/32bit");
+  group.throughput(Throughput::Elements(ITERATIONS));
 
-    bench_hash_functions!(group;
-        32: u32, i32, f32
-    );
+  bench_hash_functions!(group;
+      32: u32, i32, f32
+  );
 
-    group.finish();
+  group.finish();
 }
 
 fn bench_hash_64(c: &mut Criterion) {
-    let mut group = c.benchmark_group("hash/64bit");
-    group.throughput(Throughput::Elements(ITERATIONS));
+  let mut group = c.benchmark_group("hash/64bit");
+  group.throughput(Throughput::Elements(ITERATIONS));
 
-    bench_hash_functions!(group;
-        64: u64, i64, f64
-    );
+  bench_hash_functions!(group;
+      64: u64, i64, f64
+  );
 
-    group.finish();
+  group.finish();
 }
 
 criterion_group!(benches, bench_hash_32, bench_hash_64);

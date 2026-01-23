@@ -7,8 +7,8 @@ mod visual_debug;
 mod world;
 
 use bevy::{
-  prelude::*,
-  window::{MonitorSelection, PresentMode, WindowMode, WindowResolution},
+    prelude::*,
+    window::{MonitorSelection, PresentMode, WindowMode, WindowResolution},
 };
 
 fn main() {

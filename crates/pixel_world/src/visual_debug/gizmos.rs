@@ -5,7 +5,7 @@ use std::sync::Mutex;
 use bevy::prelude::*;
 
 use super::colors;
-use crate::coords::{CHUNK_SIZE, ChunkPos, TILE_SIZE, TilePos, WorldRect};
+use crate::coords::{ChunkPos, TilePos, WorldRect, CHUNK_SIZE, TILE_SIZE};
 
 /// Kind of debug gizmo with associated duration.
 #[derive(Clone, Copy, Debug)]

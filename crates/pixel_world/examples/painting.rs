@@ -17,12 +17,12 @@ use bevy::camera::ScalingMode;
 use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
-use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
+use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
 #[cfg(feature = "diagnostics")]
 use pixel_world::diagnostics::DiagnosticsPlugin;
 use pixel_world::{
-  ColorIndex, MaterialId, MaterialSeeder, Materials, Pixel, PixelWorld, PixelWorldPlugin,
-  SpawnPixelWorld, StreamingCamera, WorldRect, material_ids,
+  material_ids, ColorIndex, MaterialId, MaterialSeeder, Materials, Pixel, PixelWorld,
+  PixelWorldPlugin, SpawnPixelWorld, StreamingCamera, WorldRect,
 };
 
 const CAMERA_SPEED: f32 = 500.0;
@@ -43,7 +43,7 @@ fn main() {
       }),
       ..default()
     }))
-    .add_plugins(PixelWorldPlugin)
+    .add_plugins(PixelWorldPlugin::default())
     .add_plugins(EguiPlugin::default())
     .insert_resource(BrushState::default())
     .add_systems(Startup, setup)

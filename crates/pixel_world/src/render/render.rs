@@ -11,10 +11,10 @@ use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::sprite_render::MeshMaterial2d;
 
 use super::material::ChunkMaterial;
-use crate::RgbaSurface;
 use crate::material::Materials;
 use crate::pixel::PixelSurface;
 use crate::render::Rgba;
+use crate::RgbaSurface;
 
 /// Creates an RGBA8 texture with nearest-neighbor sampling.
 ///

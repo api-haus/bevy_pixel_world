@@ -125,8 +125,8 @@ impl Materials {
           state: PhysicsState::Powder,
           density: 160,
           dispersion: 0,
-          air_resistance: 8,  // light particles float a bit
-          air_drift: 4,       // blown around by wind
+          air_resistance: 8, // light particles float a bit
+          air_drift: 4,      // blown around by wind
         },
         // WATER (blue gradient) - liquid that flows
         Material {
@@ -143,7 +143,7 @@ impl Materials {
           ],
           state: PhysicsState::Liquid,
           density: 100,
-          dispersion: 5, // flows horizontally
+          dispersion: 5,      // flows horizontally
           air_resistance: 16, // subtle splash effect
           air_drift: 12,
         },

@@ -2,12 +2,12 @@ use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
 
 use super::components::{
-  CharacterMovementConfig, CharacterVelocity, CurrentPosition, LocomotionState, Player,
-  PlayerVisual, PreviousPosition,
+    CharacterMovementConfig, CharacterVelocity, CurrentPosition, LocomotionState, Player,
+    PlayerVisual, PreviousPosition,
 };
 use crate::config::ConfigLoaded;
 use crate::core::CameraTarget;
-use crate::input::{PlayerInput, player_input_actions};
+use crate::input::{player_input_actions, PlayerInput};
 
 pub fn spawn_player(mut commands: Commands, config: Res<ConfigLoaded>) {
   let player = &config.player;
