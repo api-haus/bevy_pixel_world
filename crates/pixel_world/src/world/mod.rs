@@ -298,6 +298,43 @@ impl PixelWorld {
     ///
     /// Returns true if the pixel was set, false if the chunk is not loaded
     /// or not yet seeded.
+    ///
+    /// When compiled with the `visual-debug` feature, pass `debug_gizmos` to emit
+    /// visual debug gizmos when a chunk is marked dirty.
+    #[cfg(feature = "visual-debug")]
+    pub fn set_pixel(
+        &mut self,
+        pos: WorldPos,
+        pixel: Pixel,
+        debug_gizmos: Option<&crate::visual_debug::PendingDebugGizmos>,
+    ) -> bool {
+        let (chunk_pos, local_pos) = pos.to_chunk_and_local();
+        let Some(&idx) = self.active.get(&chunk_pos) else {
+            return false;
+        };
+        let slot = &mut self.slots[idx.0];
+        if !slot.seeded {
+            return false;
+        }
+        slot.chunk.pixels[(local_pos.0 as u32, local_pos.1 as u32)] = pixel;
+        let was_clean = !slot.dirty;
+        slot.dirty = true;
+
+        // Emit chunk gizmo if this is the first modification
+        if was_clean {
+            if let Some(gizmos) = debug_gizmos {
+                gizmos.push(crate::visual_debug::PendingGizmo::chunk(chunk_pos));
+            }
+        }
+
+        true
+    }
+
+    /// Sets the pixel at the given world position.
+    ///
+    /// Returns true if the pixel was set, false if the chunk is not loaded
+    /// or not yet seeded.
+    #[cfg(not(feature = "visual-debug"))]
     pub fn set_pixel(&mut self, pos: WorldPos, pixel: Pixel) -> bool {
         let (chunk_pos, local_pos) = pos.to_chunk_and_local();
         let Some(&idx) = self.active.get(&chunk_pos) else {
@@ -320,7 +357,111 @@ impl PixelWorld {
     ///
     /// Uses parallel 2x2 checkerboard scheduling for thread-safe concurrent writes.
     /// Returns the list of chunk positions that were modified.
+    ///
+    /// When compiled with the `visual-debug` feature, pass `debug_gizmos` to emit
+    /// visual debug gizmos for the blit operation.
+    #[cfg(feature = "visual-debug")]
+    pub fn blit<F>(
+        &mut self,
+        rect: WorldRect,
+        f: F,
+        debug_gizmos: Option<&crate::visual_debug::PendingDebugGizmos>,
+    ) -> Vec<ChunkPos>
+    where
+        F: Fn(WorldFragment) -> Option<Pixel> + Sync,
+    {
+        self.blit_inner(rect, f, debug_gizmos)
+    }
+
+    /// Blits pixels using a shader-style callback.
+    ///
+    /// For each pixel in `rect`, calls `f(fragment)` where fragment contains
+    /// world coordinates and normalized UV. If `f` returns Some(pixel), that
+    /// pixel is written; if None, the pixel is unchanged.
+    ///
+    /// Uses parallel 2x2 checkerboard scheduling for thread-safe concurrent writes.
+    /// Returns the list of chunk positions that were modified.
+    #[cfg(not(feature = "visual-debug"))]
     pub fn blit<F>(&mut self, rect: WorldRect, f: F) -> Vec<ChunkPos>
+    where
+        F: Fn(WorldFragment) -> Option<Pixel> + Sync,
+    {
+        self.blit_inner(rect, f)
+    }
+
+    #[cfg(feature = "visual-debug")]
+    fn blit_inner<F>(
+        &mut self,
+        rect: WorldRect,
+        f: F,
+        debug_gizmos: Option<&crate::visual_debug::PendingDebugGizmos>,
+    ) -> Vec<ChunkPos>
+    where
+        F: Fn(WorldFragment) -> Option<Pixel> + Sync,
+    {
+        // Collect mutable references to seeded chunks
+        let mut chunks: HashMap<ChunkPos, &mut Chunk> = HashMap::new();
+
+        // We need to collect handles first to avoid borrow issues
+        let seeded_positions: Vec<_> = self
+            .active
+            .iter()
+            .filter_map(|(&pos, &idx)| {
+                if self.slots[idx.0].seeded {
+                    Some((pos, idx))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        for (pos, idx) in seeded_positions {
+            // SAFETY: Each slot has a unique index, so we're creating
+            // non-overlapping mutable references to distinct chunks.
+            let chunk = &mut self.slots[idx.0].chunk;
+            let chunk_ptr = chunk as *mut Chunk;
+            chunks.insert(pos, unsafe { &mut *chunk_ptr });
+        }
+
+        let locked = LockedChunks::new(chunks);
+        let dirty_chunks = std::sync::Mutex::new(Vec::new());
+        let dirty_tiles = std::sync::Mutex::new(Vec::new());
+
+        parallel_blit(&locked, rect, f, &dirty_chunks, Some(&dirty_tiles));
+
+        let dirty = dirty_chunks.into_inner().unwrap_or_default();
+        let dirty_tile_list = dirty_tiles.into_inner().unwrap_or_default();
+
+        // Mark affected chunks as dirty
+        for &pos in &dirty {
+            if let Some(&idx) = self.active.get(&pos) {
+                self.slots[idx.0].dirty = true;
+            }
+        }
+
+        // Emit debug gizmos
+        if let Some(gizmos) = debug_gizmos {
+            use crate::visual_debug::PendingGizmo;
+
+            // Emit blit rect gizmo
+            gizmos.push(PendingGizmo::blit_rect(rect));
+
+            // Emit chunk gizmos
+            for &pos in &dirty {
+                gizmos.push(PendingGizmo::chunk(pos));
+            }
+
+            // Emit tile gizmos
+            for &tile in &dirty_tile_list {
+                gizmos.push(PendingGizmo::tile(tile));
+            }
+        }
+
+        dirty
+    }
+
+    #[cfg(not(feature = "visual-debug"))]
+    fn blit_inner<F>(&mut self, rect: WorldRect, f: F) -> Vec<ChunkPos>
     where
         F: Fn(WorldFragment) -> Option<Pixel> + Sync,
     {
@@ -351,7 +492,7 @@ impl PixelWorld {
         let locked = LockedChunks::new(chunks);
         let dirty_chunks = std::sync::Mutex::new(Vec::new());
 
-        parallel_blit(&locked, rect, f, &dirty_chunks);
+        parallel_blit(&locked, rect, f, &dirty_chunks, None);
 
         let dirty = dirty_chunks.into_inner().unwrap_or_default();
 

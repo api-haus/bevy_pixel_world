@@ -65,6 +65,7 @@ pub fn parallel_blit<F>(
   rect: WorldRect,
   f: F,
   dirty_chunks: &Mutex<Vec<ChunkPos>>,
+  dirty_tiles: Option<&Mutex<Vec<TilePos>>>,
 ) where
   F: Fn(WorldFragment) -> Option<Pixel> + Sync,
 {
@@ -98,7 +99,7 @@ pub fn parallel_blit<F>(
   // Execute each phase sequentially, tiles within phase in parallel
   for phase_tiles in phases {
     phase_tiles.par_iter().for_each(|&tile| {
-      process_tile(chunks, tile, &rect, &f, w_recip, h_recip, dirty_chunks);
+      process_tile(chunks, tile, &rect, &f, w_recip, h_recip, dirty_chunks, dirty_tiles);
     });
     // Implicit barrier between phases due to sequential for loop
   }
@@ -113,6 +114,7 @@ fn process_tile<F>(
   w_recip: f32,
   h_recip: f32,
   dirty_chunks: &Mutex<Vec<ChunkPos>>,
+  dirty_tiles: Option<&Mutex<Vec<TilePos>>>,
 ) where
   F: Fn(WorldFragment) -> Option<Pixel> + Sync,
 {
@@ -174,6 +176,15 @@ fn process_tile<F>(
       for pos in local_dirty {
         if !global_dirty.contains(&pos) {
           global_dirty.push(pos);
+        }
+      }
+    }
+
+    // Track this tile as dirty
+    if let Some(tiles_mutex) = dirty_tiles {
+      if let Ok(mut tiles) = tiles_mutex.lock() {
+        if !tiles.contains(&tile) {
+          tiles.push(tile);
         }
       }
     }

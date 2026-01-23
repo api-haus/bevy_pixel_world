@@ -158,6 +158,57 @@ fn camera_input(
     }
 }
 
+#[cfg(feature = "visual-debug")]
+fn paint_system(
+    brush: Res<BrushState>,
+    mut worlds: Query<&mut PixelWorld>,
+    debug_gizmos: Res<pixel_world::visual_debug::PendingDebugGizmos>,
+) {
+    if !brush.painting && !brush.erasing {
+        return;
+    }
+
+    let Some((center_x, center_y)) = brush.world_pos else {
+        return;
+    };
+
+    let Ok(mut world) = worlds.single_mut() else {
+        return;
+    };
+
+    // Use STONE material for painting, AIR for erasing
+    let (material, color) = if brush.painting {
+        (material_ids::STONE, ColorIndex(128))
+    } else {
+        (material_ids::AIR, ColorIndex(0))
+    };
+    let brush_pixel = Pixel::new(material, color);
+
+    let radius = brush.radius;
+    let radius_i64 = radius as i64;
+    let radius_sq = (radius_i64 * radius_i64) as f32;
+
+    // Use the blit API for parallel painting
+    let rect = WorldRect::centered(center_x, center_y, radius);
+
+    world.blit(
+        rect,
+        |frag| {
+            let dx = frag.x - center_x;
+            let dy = frag.y - center_y;
+            let dist_sq = (dx * dx + dy * dy) as f32;
+
+            if dist_sq <= radius_sq {
+                Some(brush_pixel)
+            } else {
+                None
+            }
+        },
+        Some(&debug_gizmos),
+    );
+}
+
+#[cfg(not(feature = "visual-debug"))]
 fn paint_system(brush: Res<BrushState>, mut worlds: Query<&mut PixelWorld>) {
     if !brush.painting && !brush.erasing {
         return;
