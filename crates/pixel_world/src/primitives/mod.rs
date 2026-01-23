@@ -6,4 +6,4 @@ mod surface;
 pub use blitter::{Blitter, Fragment};
 pub use chunk::Chunk;
 pub use rect::Rect;
-pub use surface::{Rgba, RgbaSurface, Surface};
+pub use surface::{RgbaSurface, Surface};

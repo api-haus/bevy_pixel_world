@@ -6,8 +6,9 @@
 //! See `docs/architecture/chunk-seeding.md` for the seeder trait design.
 
 mod noise;
+pub mod sdf;
 
-pub use noise::NoiseSeeder;
+pub use noise::{MaterialSeeder, NoiseSeeder};
 
 use crate::{Chunk, ChunkPos};
 

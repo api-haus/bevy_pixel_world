@@ -11,6 +11,8 @@ use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::sprite_render::MeshMaterial2d;
 
 use super::material::ChunkMaterial;
+use crate::material::Materials;
+use crate::pixel::PixelSurface;
 use crate::RgbaSurface;
 
 /// Creates an RGBA8 texture with nearest-neighbor sampling.
@@ -110,4 +112,16 @@ pub fn spawn_static_chunk(
   commands
     .spawn((Mesh2d(mesh_handle), MeshMaterial2d(material_handle)))
     .id()
+}
+
+/// Convert simulation pixels to renderable RGBA.
+pub fn materialize(pixels: &PixelSurface, materials: &Materials, output: &mut RgbaSurface) {
+    for y in 0..pixels.height() {
+        for x in 0..pixels.width() {
+            let pixel = pixels[(x, y)];
+            let material = materials.get(pixel.material);
+            let rgba = material.sample(pixel.color);
+            output.set(x, y, rgba);
+        }
+    }
 }

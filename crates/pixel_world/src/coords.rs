@@ -4,6 +4,8 @@
 //! - [`WorldPos`]: Absolute pixel position (i64 for infinite worlds)
 //! - [`ChunkPos`]: Chunk grid position (i32)
 //! - [`LocalPos`]: Position within a chunk (u16)
+//! - [`MaterialId`]: Material registry index (0-255)
+//! - [`ColorIndex`]: Palette color index (0-255)
 
 /// Size of a chunk in pixels (width and height).
 pub const CHUNK_SIZE: u32 = 512;
@@ -68,3 +70,11 @@ impl ChunkPos {
     WorldPos(self.0 as i64 * chunk_size, self.1 as i64 * chunk_size)
   }
 }
+
+/// Material registry index (0-255).
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
+pub struct MaterialId(pub u8);
+
+/// Palette color index (0-255).
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
+pub struct ColorIndex(pub u8);

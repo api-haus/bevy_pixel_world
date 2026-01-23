@@ -132,7 +132,7 @@ fn update_quad(mut state: ResMut<UvQuadState>, time: Res<Time<Fixed>>) {
   let blue = blue_pulse as u8;
 
   // Clear to black
-  let mut blitter = Blitter::new(&mut state.chunk.pixels);
+  let mut blitter = Blitter::new(state.chunk.render_surface_mut());
   blitter.clear(Rgba::BLACK);
 
   // Blit UV quad
@@ -159,7 +159,7 @@ fn upload_to_gpu(
   }
 
   if let Some(image) = images.get_mut(&state.texture_handle) {
-    upload_surface(&state.chunk.pixels, image);
+    upload_surface(state.chunk.render_surface(), image);
     // Touch the material to force bind group refresh (workaround for Bevy bug
     // #15081)
     let _ = materials.get_mut(&state.material_handle);

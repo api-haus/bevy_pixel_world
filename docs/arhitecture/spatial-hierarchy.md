@@ -74,7 +74,7 @@ flowchart LR
 ### Checkerboard Scheduling
 
 Tiles are assigned to one of four phases (A, B, C, D) in a checkerboard pattern. During simulation, tiles of the same
-phase can be processed in parallel because they are never adjacent. See [Simulation](simulation.md) for details.
+phase can be processed in parallel because they are never adjacent. See [Scheduling](scheduling.md) for details.
 
 ### Dirty Rect Tracking
 
@@ -185,7 +185,8 @@ flowchart TB
 ## Related Documentation
 
 - [Pixel Format](pixel-format.md) - Per-pixel data structure
-- [Simulation](simulation.md) - Checkerboard scheduling using tiles
+- [Simulation](simulation.md) - Multi-pass simulation overview
+- [Scheduling](scheduling.md) - Checkerboard tile phasing for parallel simulation
 - [Chunk Pooling](chunk-pooling.md) - Chunk memory management
 - [Streaming Window](streaming-window.md) - Active region around camera
 - [Architecture Overview](README.md)

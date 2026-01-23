@@ -41,14 +41,14 @@ fn setup(
   let mut chunk = Chunk::new(CHUNK_SIZE, CHUNK_SIZE);
 
   // Clear to dark gray
-  Blitter::new(&mut chunk.pixels).clear(Rgba::rgb(32, 32, 32));
+  Blitter::new(chunk.render_surface_mut()).clear(Rgba::rgb(32, 32, 32));
 
   let font = CpuFont::default_font();
 
   // Draw text at various sizes and positions
   // Bottom text - small (16px)
   draw_text(
-    &mut chunk.pixels,
+    chunk.render_surface_mut(),
     &font,
     "Small 16px",
     10,
@@ -60,7 +60,7 @@ fn setup(
 
   // Middle text - medium (24px), different color
   draw_text(
-    &mut chunk.pixels,
+    chunk.render_surface_mut(),
     &font,
     "Medium 24px",
     10,
@@ -72,7 +72,7 @@ fn setup(
 
   // Upper text - large (32px)
   draw_text(
-    &mut chunk.pixels,
+    chunk.render_surface_mut(),
     &font,
     "Large 32px",
     10,
@@ -84,7 +84,7 @@ fn setup(
 
   // Test Y+ up: "TOP" should appear at top, "BOTTOM" at bottom
   draw_text(
-    &mut chunk.pixels,
+    chunk.render_surface_mut(),
     &font,
     "TOP",
     200,
@@ -95,7 +95,7 @@ fn setup(
   );
 
   draw_text(
-    &mut chunk.pixels,
+    chunk.render_surface_mut(),
     &font,
     "BOTTOM",
     200,
@@ -107,7 +107,7 @@ fn setup(
 
   // Test character spacing
   draw_text(
-    &mut chunk.pixels,
+    chunk.render_surface_mut(),
     &font,
     "S P A C E D",
     10,
@@ -122,7 +122,7 @@ fn setup(
     &mut images,
     &mut meshes,
     &mut materials,
-    &chunk.pixels,
+    chunk.render_surface(),
     Vec2::splat(CHUNK_SIZE as f32 * 2.0),
   );
 }

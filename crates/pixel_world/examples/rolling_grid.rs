@@ -1,7 +1,13 @@
-//! Rolling Grid Demo - Phase 1 streaming window example.
+//! Rolling Grid Demo - Phase 2 material system example.
 //!
 //! Demonstrates the rolling chunk grid with WASD camera movement.
 //! Chunks are streamed in/out as the camera moves through the infinite world.
+//!
+//! Features:
+//! - Pixelated cutoff noise (hard solid/air boundary)
+//! - Soil layer near surface (brown gradient)
+//! - Stone layer below (gray gradient)
+//! - Noise-feathered material boundaries for natural edges
 //!
 //! Controls:
 //! - WASD/Arrow keys: Move camera
@@ -11,9 +17,9 @@
 
 use bevy::prelude::*;
 use pixel_world::{
-  create_chunk_quad, create_texture, draw_text, upload_surface, ChunkMaterial, ChunkPos,
-  ChunkSeeder, CpuFont, NoiseSeeder, PixelWorldPlugin, Rgba, StreamingWindow, WorldPos,
-  CHUNK_SIZE, WINDOW_HEIGHT, WINDOW_WIDTH,
+    create_chunk_quad, create_texture, draw_text, upload_surface, ChunkMaterial, ChunkPos,
+    ChunkSeeder, CpuFont, MaterialSeeder, Materials, PixelWorldPlugin, Rgba, StreamingWindow,
+    WorldPos, CHUNK_SIZE, WINDOW_HEIGHT, WINDOW_WIDTH,
 };
 
 /// Base camera movement speed in pixels per second.
@@ -26,7 +32,7 @@ fn main() {
   App::new()
     .add_plugins(DefaultPlugins.set(WindowPlugin {
       primary_window: Some(Window {
-        title: "Rolling Grid Demo - Phase 1".to_string(),
+        title: "Rolling Grid Demo - Phase 2 Material System".to_string(),
         resolution: (1280, 720).into(),
         ..default()
       }),
@@ -59,8 +65,13 @@ fn setup(
   let font = CpuFont::default_font();
   commands.insert_resource(LabelFont(font));
 
-  // Create noise seeder for terrain generation
-  let seeder = NoiseSeeder::new(42, 200.0);
+  // Create materials registry
+  let mat_registry = Materials::new();
+  commands.insert_resource(mat_registry);
+
+  // Create material seeder for terrain generation
+  // seed=42, feature_scale=200.0, threshold=0.0, soil_depth=8, feather_scale=3.0
+  let seeder = MaterialSeeder::new(42, 200.0, 0.0, 8, 3.0);
 
   // Create streaming window
   let mut window = StreamingWindow::new();
@@ -110,7 +121,7 @@ fn spawn_chunk(
   window: &mut StreamingWindow,
   pos: ChunkPos,
   mesh: &Handle<Mesh>,
-  seeder: &NoiseSeeder,
+  seeder: &MaterialSeeder,
 ) {
   // Acquire chunk from pool
   let handle = match window.acquire_chunk() {
@@ -197,7 +208,7 @@ fn update_streaming(
   mut images: ResMut<Assets<Image>>,
   mut materials: ResMut<Assets<ChunkMaterial>>,
   chunk_mesh: Res<ChunkMesh>,
-  seeder: Res<NoiseSeeder>,
+  seeder: Res<MaterialSeeder>,
 ) {
   let Ok(camera_transform) = camera.single() else {
     return;
@@ -265,7 +276,12 @@ fn update_streaming(
   }
 }
 
-fn upload_chunks(mut window: ResMut<StreamingWindow>, mut images: ResMut<Assets<Image>>, font: Res<LabelFont>) {
+fn upload_chunks(
+  mut window: ResMut<StreamingWindow>,
+  mut images: ResMut<Assets<Image>>,
+  font: Res<LabelFont>,
+  mat_registry: Res<Materials>,
+) {
   // Collect dirty chunks with needed data
   let dirty_chunks: Vec<_> = window
     .active
@@ -277,13 +293,16 @@ fn upload_chunks(mut window: ResMut<StreamingWindow>, mut images: ResMut<Assets<
   for (pos, handle, texture_handle) in dirty_chunks {
     let chunk = window.pool.get_mut(handle);
 
-    // Draw chunk position label
+    // Materialize pixels to render buffer
+    chunk.materialize(&mat_registry);
+
+    // Draw chunk position label on render surface
     let label = format!("({}, {})", pos.0, pos.1);
-    draw_text(&mut chunk.pixels, &font.0, &label, 10, 10, 16.0, 0.0, Rgba::WHITE);
+    draw_text(chunk.render_surface_mut(), &font.0, &label, 10, 10, 16.0, 0.0, Rgba::WHITE);
 
     // Upload to GPU
     if let Some(image) = images.get_mut(&texture_handle) {
-      upload_surface(&chunk.pixels, image);
+      upload_surface(chunk.render_surface(), image);
     }
 
     // Mark clean
