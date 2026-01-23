@@ -8,6 +8,7 @@ description = "Infinite cellular automata simulation plugin for Bevy"
 bevy = { workspace = true }
 ab_glyph = "0.2"
 fastnoise2 = "0.4"
+paste = "1.0"
 rayon = "1.10"
 bevy_egui = { version = "0.37", optional = true }
 
