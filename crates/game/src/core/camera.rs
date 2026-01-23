@@ -1,5 +1,7 @@
 use bevy::{camera::ScalingMode, prelude::*};
 
+use crate::config::ConfigLoaded;
+
 /// Marker component for the game camera
 #[derive(Component)]
 pub struct GameCamera;
@@ -19,7 +21,7 @@ impl Default for CameraSmoothness {
 }
 
 /// Simple orthographic 2D camera setup
-pub fn setup_camera(mut commands: Commands) {
+pub fn setup_camera(mut commands: Commands, config: Res<ConfigLoaded>) {
   commands.spawn((
     GameCamera,
     Camera2d,
@@ -33,7 +35,10 @@ pub fn setup_camera(mut commands: Commands) {
       far: 1000.0,
       scale: 1.0,
       viewport_origin: Vec2::new(0.5, 0.5),
-      scaling_mode: ScalingMode::WindowSize,
+      scaling_mode: ScalingMode::AutoMin {
+        min_width: config.camera.viewport_width,
+        min_height: config.camera.viewport_height,
+      },
       area: Rect::default(),
     }),
   ));

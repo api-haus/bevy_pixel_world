@@ -15,6 +15,7 @@ pub mod pixel;
 pub mod primitives;
 pub mod render;
 pub mod seeding;
+pub mod simulation;
 #[cfg(feature = "visual-debug")]
 pub mod visual_debug;
 pub mod world;
@@ -24,7 +25,7 @@ pub use coords::{
     CHUNK_SIZE, TILE_SIZE,
 };
 pub use debug::{draw_text, rasterize_text, stamp_text, CpuFont, TextMask};
-pub use material::{ids as material_ids, Material, Materials};
+pub use material::{ids as material_ids, Material, Materials, PhysicsState};
 pub use pixel::{Pixel, PixelSurface};
 pub use primitives::{Chunk, RgbaSurface, Surface};
 pub use render::{
@@ -32,6 +33,7 @@ pub use render::{
     spawn_static_chunk, upload_palette, upload_pixels, upload_surface, ChunkMaterial, Rgba,
 };
 pub use seeding::{ChunkSeeder, MaterialSeeder, NoiseSeeder};
+pub use simulation::simulate_tick;
 pub use world::{PixelWorld, PixelWorldBundle};
 pub use world::plugin::{SharedChunkMesh, SharedPaletteTexture, StreamingCamera};
 

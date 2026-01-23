@@ -295,6 +295,74 @@ impl PixelWorld {
         Some(&slot.chunk.pixels[(local_pos.0 as u32, local_pos.1 as u32)])
     }
 
+    /// Returns a mutable reference to the pixel at the given world position.
+    ///
+    /// Returns None if the chunk is not loaded or not yet seeded.
+    /// Does NOT mark the chunk as dirty - caller must do so.
+    pub fn get_pixel_mut(&mut self, pos: WorldPos) -> Option<&mut Pixel> {
+        let (chunk_pos, local_pos) = pos.to_chunk_and_local();
+        let idx = self.active.get(&chunk_pos)?;
+        let slot = &mut self.slots[idx.0];
+        if !slot.seeded {
+            return None;
+        }
+        Some(&mut slot.chunk.pixels[(local_pos.0 as u32, local_pos.1 as u32)])
+    }
+
+    /// Swaps two pixels at the given world positions.
+    ///
+    /// Returns true if the swap was successful, false if either chunk
+    /// is not loaded or not yet seeded.
+    pub fn swap_pixels(&mut self, a: WorldPos, b: WorldPos) -> bool {
+        let (chunk_a, local_a) = a.to_chunk_and_local();
+        let (chunk_b, local_b) = b.to_chunk_and_local();
+
+        // Get slot indices for both chunks
+        let Some(&idx_a) = self.active.get(&chunk_a) else {
+            return false;
+        };
+        let Some(&idx_b) = self.active.get(&chunk_b) else {
+            return false;
+        };
+
+        // Check both are seeded
+        if !self.slots[idx_a.0].seeded || !self.slots[idx_b.0].seeded {
+            return false;
+        }
+
+        if chunk_a == chunk_b {
+            // Same chunk - simple swap
+            let slot = &mut self.slots[idx_a.0];
+            let (la, lb) = ((local_a.0 as u32, local_a.1 as u32), (local_b.0 as u32, local_b.1 as u32));
+            let pixel_a = slot.chunk.pixels[la];
+            let pixel_b = slot.chunk.pixels[lb];
+            slot.chunk.pixels[la] = pixel_b;
+            slot.chunk.pixels[lb] = pixel_a;
+            slot.dirty = true;
+        } else {
+            // Different chunks - need to swap across
+            // SAFETY: idx_a != idx_b since chunk_a != chunk_b and active map is 1:1
+            let (slot_a, slot_b) = if idx_a.0 < idx_b.0 {
+                let (left, right) = self.slots.split_at_mut(idx_b.0);
+                (&mut left[idx_a.0], &mut right[0])
+            } else {
+                let (left, right) = self.slots.split_at_mut(idx_a.0);
+                (&mut right[0], &mut left[idx_b.0])
+            };
+
+            let la = (local_a.0 as u32, local_a.1 as u32);
+            let lb = (local_b.0 as u32, local_b.1 as u32);
+            std::mem::swap(
+                &mut slot_a.chunk.pixels[la],
+                &mut slot_b.chunk.pixels[lb],
+            );
+            slot_a.dirty = true;
+            slot_b.dirty = true;
+        }
+
+        true
+    }
+
     /// Sets the pixel at the given world position.
     ///
     /// Returns true if the pixel was set, false if the chunk is not loaded

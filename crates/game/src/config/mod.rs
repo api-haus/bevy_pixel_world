@@ -24,6 +24,8 @@ pub struct WindowConfig {
 #[derive(Deserialize, Debug, Clone)]
 pub struct CameraConfig {
   pub clear_color: [f32; 3],
+  pub viewport_width: f32,
+  pub viewport_height: f32,
 }
 
 #[derive(Deserialize, Debug, Clone)]

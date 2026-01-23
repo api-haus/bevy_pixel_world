@@ -1,3 +1,3 @@
-//! Parallel tile blitting for world-coordinate pixel operations.
+//! Parallel tile blitting and simulation for world-coordinate pixel operations.
 
 pub(crate) mod blitter;

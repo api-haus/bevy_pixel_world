@@ -3,11 +3,30 @@
 use crate::coords::{ColorIndex, MaterialId};
 use crate::render::Rgba;
 
+/// Physics state determines movement behavior.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PhysicsState {
+  /// Does not move.
+  Solid,
+  /// Falls, piles, slides.
+  Powder,
+  /// Falls, flows horizontally.
+  Liquid,
+  /// Rises, disperses.
+  Gas,
+}
+
 /// Material properties.
 pub struct Material {
   pub name: &'static str,
   /// 8-color gradient from surface to deep.
   pub palette: [Rgba; 8],
+  /// Physics behavior.
+  pub state: PhysicsState,
+  /// Density (higher sinks below lower).
+  pub density: u8,
+  /// Horizontal spread per tick (liquids).
+  pub dispersion: u8,
 }
 
 impl Material {
@@ -24,6 +43,8 @@ pub mod ids {
   pub const AIR: MaterialId = MaterialId(0);
   pub const SOIL: MaterialId = MaterialId(1);
   pub const STONE: MaterialId = MaterialId(2);
+  pub const SAND: MaterialId = MaterialId(3);
+  pub const WATER: MaterialId = MaterialId(4);
 }
 
 /// Material registry with built-in definitions.
@@ -36,12 +57,15 @@ impl Materials {
   pub fn new() -> Self {
     Self {
       entries: vec![
-        // AIR (transparent)
+        // AIR (transparent) - density 0 means everything sinks through
         Material {
           name: "Air",
           palette: [Rgba::new(135, 206, 235, 0); 8], // sky blue, transparent
+          state: PhysicsState::Gas,
+          density: 0,
+          dispersion: 0,
         },
-        // SOIL (brown gradient)
+        // SOIL (brown gradient) - powder that falls and piles
         Material {
           name: "Soil",
           palette: [
@@ -54,8 +78,11 @@ impl Materials {
             Rgba::rgb(85, 42, 13),
             Rgba::rgb(76, 34, 8), // deep - darker brown
           ],
+          state: PhysicsState::Powder,
+          density: 150,
+          dispersion: 0,
         },
-        // STONE (gray gradient)
+        // STONE (gray gradient) - solid, does not move
         Material {
           name: "Stone",
           palette: [
@@ -68,6 +95,43 @@ impl Materials {
             Rgba::rgb(68, 68, 68),
             Rgba::rgb(58, 58, 58), // deep - darker gray
           ],
+          state: PhysicsState::Solid,
+          density: 200,
+          dispersion: 0,
+        },
+        // SAND (tan/yellow gradient) - powder that falls and piles
+        Material {
+          name: "Sand",
+          palette: [
+            Rgba::rgb(237, 201, 175), // surface - light tan
+            Rgba::rgb(225, 191, 146),
+            Rgba::rgb(218, 180, 130),
+            Rgba::rgb(210, 170, 115),
+            Rgba::rgb(200, 160, 100),
+            Rgba::rgb(190, 150, 85),
+            Rgba::rgb(180, 140, 70),
+            Rgba::rgb(170, 130, 60), // deep - darker tan
+          ],
+          state: PhysicsState::Powder,
+          density: 160,
+          dispersion: 0,
+        },
+        // WATER (blue gradient) - liquid that flows
+        Material {
+          name: "Water",
+          palette: [
+            Rgba::new(64, 164, 223, 180),  // surface - lighter blue, semi-transparent
+            Rgba::new(55, 145, 205, 190),
+            Rgba::new(46, 126, 187, 200),
+            Rgba::new(37, 107, 169, 210),
+            Rgba::new(28, 88, 151, 220),
+            Rgba::new(19, 69, 133, 230),
+            Rgba::new(10, 50, 115, 240),
+            Rgba::new(5, 35, 100, 250),   // deep - darker blue
+          ],
+          state: PhysicsState::Liquid,
+          density: 100,
+          dispersion: 5, // flows horizontally
         },
       ],
     }

@@ -5,6 +5,8 @@ title = "Sim2D"
 
 [camera]
 clear_color = [0.0, 0.0, 0.0]
+viewport_width = 640.0
+viewport_height = 480.0
 
 [physics]
 gravity = 980.0

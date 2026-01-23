@@ -1,4 +1,7 @@
-use bevy::{asset::AssetEvent, ecs::message::MessageReader, prelude::*, window::PrimaryWindow};
+use bevy::{
+  asset::AssetEvent, camera::ScalingMode, ecs::message::MessageReader, prelude::*,
+  window::PrimaryWindow,
+};
 use bevy_common_assets::toml::TomlAssetPlugin;
 
 use super::{ConfigHandle, ConfigLoaded, GameConfig};
@@ -17,6 +20,7 @@ impl Plugin for ConfigPlugin {
           watch_config_changes,
           update_window_on_config_change,
           update_gravity_on_config_change,
+          update_camera_on_config_change,
         ),
       );
   }
@@ -68,5 +72,21 @@ fn update_window_on_config_change(
 fn update_gravity_on_config_change(config: Res<ConfigLoaded>, mut gravity: ResMut<GravityConfig>) {
   if config.is_changed() {
     gravity.value = config.physics.gravity;
+  }
+}
+
+fn update_camera_on_config_change(
+  config: Res<ConfigLoaded>,
+  mut camera_query: Query<&mut Projection, With<Camera2d>>,
+) {
+  if config.is_changed() {
+    for mut projection in camera_query.iter_mut() {
+      if let Projection::Orthographic(ref mut ortho) = *projection {
+        ortho.scaling_mode = ScalingMode::AutoMin {
+          min_width: config.camera.viewport_width,
+          min_height: config.camera.viewport_height,
+        };
+      }
+    }
   }
 }

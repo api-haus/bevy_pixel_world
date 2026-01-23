@@ -12,6 +12,7 @@
 //!
 //! Run with: `cargo run -p pixel_world --example painting`
 
+use bevy::camera::ScalingMode;
 use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
@@ -68,7 +69,21 @@ impl Default for BrushState {
 
 fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
     // Spawn camera with StreamingCamera marker
-    commands.spawn((Camera2d, StreamingCamera));
+    commands.spawn((
+        Camera2d,
+        StreamingCamera,
+        Projection::Orthographic(OrthographicProjection {
+            near: -1000.0,
+            far: 1000.0,
+            scale: 1.0,
+            viewport_origin: Vec2::new(0.5, 0.5),
+            scaling_mode: ScalingMode::AutoMin {
+                min_width: 640.0,
+                min_height: 480.0,
+            },
+            area: Rect::default(),
+        }),
+    ));
 
     // Create materials registry
     let mat_registry = Materials::new();
