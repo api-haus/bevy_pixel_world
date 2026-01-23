@@ -7,8 +7,8 @@ mod visual_debug;
 mod world;
 
 use bevy::{
-    prelude::*,
-    window::{MonitorSelection, PresentMode, WindowMode, WindowResolution},
+  prelude::*,
+  window::{MonitorSelection, PresentMode, WindowMode, WindowResolution},
 };
 
 fn main() {
@@ -44,6 +44,9 @@ fn main() {
 
   #[cfg(feature = "visual_debug")]
   app.add_plugins(visual_debug::VisualDebugPlugin);
+
+  #[cfg(feature = "diagnostics")]
+  app.add_plugins(pixel_world::diagnostics::DiagnosticsPlugin);
 
   app.run();
 }
