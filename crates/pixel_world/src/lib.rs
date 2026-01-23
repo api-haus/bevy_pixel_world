@@ -26,7 +26,7 @@ pub use coords::{
 pub use debug::{draw_text, rasterize_text, stamp_text, CpuFont, TextMask};
 pub use material::{ids as material_ids, Material, Materials};
 pub use pixel::{Pixel, PixelSurface};
-pub use primitives::{Blitter, Chunk, RgbaSurface, Surface, SurfaceFragment};
+pub use primitives::{Chunk, RgbaSurface, Surface};
 pub use render::{
     create_chunk_quad, create_palette_texture, create_pixel_texture, create_texture, materialize,
     spawn_static_chunk, upload_palette, upload_pixels, upload_surface, ChunkMaterial, Rgba,

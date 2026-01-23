@@ -3,7 +3,7 @@
 //! Provides debug gizmo rendering for chunk updates, tile updates, and blit operations.
 //! Enable with the `visual-debug` feature flag.
 
-pub mod colors;
+pub(super) mod colors;
 mod gizmos;
 mod systems;
 

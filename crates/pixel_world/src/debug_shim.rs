@@ -3,6 +3,9 @@
 //! Provides a unified interface for emitting debug gizmos that compiles to
 //! no-ops when the `visual-debug` feature is disabled.
 
+use bevy::ecs::system::SystemParam;
+use bevy::prelude::*;
+
 use crate::coords::{ChunkPos, TilePos, WorldRect};
 
 /// Debug gizmos parameter type.
@@ -14,6 +17,34 @@ pub type DebugGizmos<'a> = Option<&'a crate::visual_debug::PendingDebugGizmos>;
 
 #[cfg(not(feature = "visual-debug"))]
 pub type DebugGizmos<'a> = ();
+
+/// System parameter for extracting debug gizmos resource.
+///
+/// Provides a unified interface for systems that need gizmos.
+/// When `visual-debug` is enabled, wraps the resource; otherwise a no-op.
+#[cfg(feature = "visual-debug")]
+#[derive(SystemParam)]
+pub struct GizmosParam<'w>(Res<'w, crate::visual_debug::PendingDebugGizmos>);
+
+#[cfg(feature = "visual-debug")]
+impl GizmosParam<'_> {
+    /// Extracts gizmos as `DebugGizmos` for passing to functions.
+    pub fn get(&self) -> DebugGizmos<'_> {
+        Some(&*self.0)
+    }
+}
+
+#[cfg(not(feature = "visual-debug"))]
+#[derive(SystemParam)]
+pub struct GizmosParam;
+
+#[cfg(not(feature = "visual-debug"))]
+impl GizmosParam {
+    /// Returns unit type when visual-debug is disabled.
+    pub fn get(&self) -> DebugGizmos<'static> {
+        ()
+    }
+}
 
 /// Emit a chunk dirty gizmo.
 #[cfg(feature = "visual-debug")]

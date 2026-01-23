@@ -365,8 +365,11 @@ impl PixelWorld {
             .collect();
 
         for (pos, idx) in seeded_positions {
-            // SAFETY: Each slot has a unique index, so we're creating
-            // non-overlapping mutable references to distinct chunks.
+            // SAFETY: `seeded_positions` contains unique SlotIndex values (each slot
+            // appears at most once in `self.active`). Since slots are stored in a Vec
+            // and we access each by distinct index, the resulting mutable references
+            // are non-overlapping. The raw pointer cast is used to work around the
+            // borrow checker's inability to prove this statically.
             let chunk = &mut self.slots[idx.0].chunk;
             let chunk_ptr = chunk as *mut Chunk;
             chunks.insert(pos, unsafe { &mut *chunk_ptr });
