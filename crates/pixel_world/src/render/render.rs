@@ -116,12 +116,12 @@ pub fn spawn_static_chunk(
 
 /// Convert simulation pixels to renderable RGBA.
 pub fn materialize(pixels: &PixelSurface, materials: &Materials, output: &mut RgbaSurface) {
-    for y in 0..pixels.height() {
-        for x in 0..pixels.width() {
-            let pixel = pixels[(x, y)];
-            let material = materials.get(pixel.material);
-            let rgba = material.sample(pixel.color);
-            output.set(x, y, rgba);
-        }
+  for y in 0..pixels.height() {
+    for x in 0..pixels.width() {
+      let pixel = pixels[(x, y)];
+      let material = materials.get(pixel.material);
+      let rgba = material.sample(pixel.color);
+      output.set(x, y, rgba);
     }
+  }
 }

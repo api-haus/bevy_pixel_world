@@ -17,6 +17,6 @@ use crate::{Chunk, ChunkPos};
 /// Implementations may generate procedural content ([`NoiseSeeder`]) or
 /// load persisted data from disk.
 pub trait ChunkSeeder {
-    /// Fills the chunk buffer with data for the given world position.
-    fn seed(&self, pos: ChunkPos, chunk: &mut Chunk);
+  /// Fills the chunk buffer with data for the given world position.
+  fn seed(&self, pos: ChunkPos, chunk: &mut Chunk);
 }

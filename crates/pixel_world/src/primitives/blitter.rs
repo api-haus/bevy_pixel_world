@@ -17,14 +17,14 @@ use crate::primitives::rect::Rect;
 /// See `docs/architecture/glossary.md` for coordinate system conventions.
 #[derive(Clone, Copy, Debug)]
 pub struct Fragment {
-    /// Absolute X coordinate on the surface.
-    pub x: u32,
-    /// Absolute Y coordinate on the surface (Y+ up).
-    pub y: u32,
-    /// Normalized U coordinate (0.0 at left, 1.0 at right).
-    pub u: f32,
-    /// Normalized V coordinate (0.0 at bottom, 1.0 at top).
-    pub v: f32,
+  /// Absolute X coordinate on the surface.
+  pub x: u32,
+  /// Absolute Y coordinate on the surface (Y+ up).
+  pub y: u32,
+  /// Normalized U coordinate (0.0 at left, 1.0 at right).
+  pub u: f32,
+  /// Normalized V coordinate (0.0 at bottom, 1.0 at top).
+  pub v: f32,
 }
 
 /// Drawing API for surfaces.

@@ -131,5 +131,6 @@ impl<T> IndexMut<(u32, u32)> for Surface<T> {
 
 /// A surface containing RGBA pixels, suitable for GPU upload.
 ///
-/// Used for GPU upload and basic examples only. Simulation uses [`PixelSurface`].
+/// Used for GPU upload and basic examples only. Simulation uses
+/// [`PixelSurface`].
 pub type RgbaSurface = Surface<Rgba>;

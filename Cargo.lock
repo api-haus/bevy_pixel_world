@@ -4414,6 +4414,7 @@ dependencies = [
  "ab_glyph",
  "bevy",
  "fastnoise2",
+ "rayon",
 ]
 
 [[package]]

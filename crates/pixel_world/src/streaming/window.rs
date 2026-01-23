@@ -21,6 +21,8 @@ pub struct ActiveChunk {
   pub entity: Entity,
   /// Handle to the chunk's texture.
   pub texture: Handle<Image>,
+  /// Handle to the chunk's material (for bind group refresh workaround).
+  pub material: Handle<crate::ChunkMaterial>,
   /// Whether the chunk needs GPU upload.
   pub dirty: bool,
 }
@@ -136,6 +138,7 @@ impl StreamingWindow {
     handle: PoolHandle,
     entity: Entity,
     texture: Handle<Image>,
+    material: Handle<crate::ChunkMaterial>,
   ) {
     self.active.insert(
       pos,
@@ -143,8 +146,41 @@ impl StreamingWindow {
         handle,
         entity,
         texture,
+        material,
         dirty: true,
       },
     );
+  }
+
+  /// Returns a map of all active chunk positions to mutable chunk references.
+  ///
+  /// This method provides safe multi-chunk access for operations like
+  /// Canvas::blit that need to write to multiple chunks concurrently.
+  ///
+  /// # Safety Rationale
+  ///
+  /// This is safe because:
+  /// - Each active chunk has a unique PoolHandle (enforced by acquire/release)
+  /// - Each PoolHandle indexes a distinct slot in the pool's internal storage
+  /// - We only create one reference per handle
+  pub fn borrow_all_chunks_mut(&mut self) -> std::collections::HashMap<ChunkPos, &mut Chunk> {
+    let mut result = std::collections::HashMap::new();
+
+    // Collect handles first to avoid borrow issues
+    let handles: Vec<_> = self
+      .active
+      .iter()
+      .map(|(pos, active)| (*pos, active.handle))
+      .collect();
+
+    for (pos, handle) in handles {
+      // SAFETY: Each handle is unique and indexes a different pool slot.
+      // We're creating non-overlapping mutable references to distinct chunks.
+      let chunk = self.pool.get_mut(handle);
+      let chunk_ptr = chunk as *mut Chunk;
+      result.insert(pos, unsafe { &mut *chunk_ptr });
+    }
+
+    result
   }
 }
