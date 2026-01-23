@@ -15,6 +15,7 @@ pub mod primitives;
 pub mod render;
 pub mod seeding;
 pub mod streaming;
+pub mod world;
 
 pub use canvas::Canvas;
 pub use coords::{
@@ -31,10 +32,21 @@ pub use render::{
 };
 pub use seeding::{ChunkSeeder, MaterialSeeder, NoiseSeeder};
 pub use streaming::{ActiveChunk, ChunkPool, PoolHandle, StreamingWindow, WindowDelta};
+pub use world::{PixelWorld, PixelWorldBundle, SlotIndex, StreamingDelta};
+pub use world::plugin::{SharedChunkMesh, StreamingCamera};
 
 pub use self::primitives::rect::Rect;
 
 /// Plugin for infinite cellular automata simulation.
+///
+/// This plugin provides:
+/// - Chunk material rendering
+/// - Automatic chunk streaming based on camera position
+/// - Async background seeding
+/// - GPU texture upload for dirty chunks
+///
+/// To use automatic streaming, spawn a `PixelWorldBundle` and mark a camera
+/// with `StreamingCamera`. Otherwise, use the lower-level streaming module.
 pub struct PixelWorldPlugin;
 
 impl Plugin for PixelWorldPlugin {
@@ -44,5 +56,8 @@ impl Plugin for PixelWorldPlugin {
 
     // Register the chunk material
     app.add_plugins(Material2dPlugin::<ChunkMaterial>::default());
+
+    // Add world streaming systems
+    app.add_plugins(world::plugin::PixelWorldStreamingPlugin);
   }
 }

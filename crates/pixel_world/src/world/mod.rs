@@ -1,0 +1,413 @@
+//! PixelWorld - unified chunk streaming and modification API.
+//!
+//! This module encapsulates all chunk management:
+//! - Owns all chunk memory (no separate pool)
+//! - Handles streaming window logic internally
+//! - Provides world-coordinate pixel modification API
+//! - Uses async background seeding with proper state tracking
+
+pub mod plugin;
+
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use bevy::prelude::*;
+
+use crate::canvas::blitter::{parallel_blit, LockedChunks};
+use crate::coords::{ChunkPos, WorldFragment, WorldPos, WorldRect, CHUNK_SIZE, POOL_SIZE, WINDOW_HEIGHT, WINDOW_WIDTH};
+use crate::pixel::Pixel;
+use crate::primitives::Chunk;
+use crate::render::ChunkMaterial;
+use crate::seeding::ChunkSeeder;
+
+/// Index into the slots array.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct SlotIndex(pub usize);
+
+/// A slot in the chunk storage.
+///
+/// Each slot contains pre-allocated chunk memory and lifecycle state.
+pub struct ChunkSlot {
+    /// Pre-allocated chunk memory.
+    pub chunk: Chunk,
+    /// World position if active, None if in pool.
+    pub pos: Option<ChunkPos>,
+    /// Whether the chunk has valid pixel data for its position.
+    /// When false, the chunk needs seeding before it can participate in simulation.
+    pub seeded: bool,
+    /// Whether the chunk's CPU data differs from GPU texture.
+    /// When true, the chunk needs upload.
+    pub dirty: bool,
+    /// Entity displaying this chunk (when active).
+    pub entity: Option<Entity>,
+    /// Texture handle for GPU upload.
+    pub texture: Option<Handle<Image>>,
+    /// Material handle (for bind group refresh workaround).
+    pub material: Option<Handle<ChunkMaterial>>,
+}
+
+impl ChunkSlot {
+    /// Creates a new slot with pre-allocated chunk memory.
+    fn new() -> Self {
+        Self {
+            chunk: Chunk::new(CHUNK_SIZE, CHUNK_SIZE),
+            pos: None,
+            seeded: false,
+            dirty: false,
+            entity: None,
+            texture: None,
+            material: None,
+        }
+    }
+
+    /// Returns true if this slot is available for use.
+    fn is_free(&self) -> bool {
+        self.pos.is_none()
+    }
+
+    /// Resets the slot to pool state.
+    fn release(&mut self) {
+        self.chunk.clear_pos();
+        self.pos = None;
+        self.seeded = false;
+        self.dirty = false;
+        self.entity = None;
+        // Keep texture and material handles - they'll be reused
+    }
+}
+
+/// Unified pixel world component.
+///
+/// Owns all chunk memory and handles streaming, seeding, and modification.
+/// Spawn this as a component on an entity to create a pixel world.
+#[derive(Component)]
+pub struct PixelWorld {
+    /// Current center of the streaming window in chunk coordinates.
+    center: ChunkPos,
+    /// Fixed array of chunk slots (pre-allocated memory).
+    slots: Vec<ChunkSlot>,
+    /// Maps active chunk positions to slot indices.
+    active: HashMap<ChunkPos, SlotIndex>,
+    /// Chunk seeder for generating initial data.
+    seeder: Arc<dyn ChunkSeeder + Send + Sync>,
+    /// Shared mesh for all chunk entities.
+    mesh: Handle<Mesh>,
+}
+
+impl PixelWorld {
+    /// Creates a new pixel world with the given seeder and mesh.
+    pub fn new(seeder: Arc<dyn ChunkSeeder + Send + Sync>, mesh: Handle<Mesh>) -> Self {
+        let slots = (0..POOL_SIZE).map(|_| ChunkSlot::new()).collect();
+
+        Self {
+            center: ChunkPos(0, 0),
+            slots,
+            active: HashMap::new(),
+            seeder,
+            mesh,
+        }
+    }
+
+    /// Returns the current center chunk position.
+    pub fn center(&self) -> ChunkPos {
+        self.center
+    }
+
+    /// Returns the shared mesh handle.
+    pub fn mesh(&self) -> &Handle<Mesh> {
+        &self.mesh
+    }
+
+    /// Returns the seeder.
+    pub fn seeder(&self) -> &Arc<dyn ChunkSeeder + Send + Sync> {
+        &self.seeder
+    }
+
+    /// Returns iterator over visible chunk positions for the current center.
+    pub fn visible_positions(&self) -> impl Iterator<Item = ChunkPos> {
+        visible_positions(self.center)
+    }
+
+    /// Acquires a free slot from the pool.
+    ///
+    /// Returns None if all slots are in use.
+    fn acquire_slot(&mut self) -> Option<SlotIndex> {
+        for (i, slot) in self.slots.iter_mut().enumerate() {
+            if slot.is_free() {
+                return Some(SlotIndex(i));
+            }
+        }
+        None
+    }
+
+    /// Gets a reference to a slot by index.
+    pub fn slot(&self, index: SlotIndex) -> &ChunkSlot {
+        &self.slots[index.0]
+    }
+
+    /// Gets a mutable reference to a slot by index.
+    pub fn slot_mut(&mut self, index: SlotIndex) -> &mut ChunkSlot {
+        &mut self.slots[index.0]
+    }
+
+    /// Gets the slot index for an active chunk position.
+    pub fn get_slot_index(&self, pos: ChunkPos) -> Option<SlotIndex> {
+        self.active.get(&pos).copied()
+    }
+
+    /// Returns a mutable reference to chunk data at the given position.
+    pub fn get_chunk_mut(&mut self, pos: ChunkPos) -> Option<&mut Chunk> {
+        self.active.get(&pos).map(|&idx| &mut self.slots[idx.0].chunk)
+    }
+
+    /// Marks a chunk as needing GPU upload.
+    pub fn mark_dirty(&mut self, pos: ChunkPos) {
+        if let Some(&idx) = self.active.get(&pos) {
+            self.slots[idx.0].dirty = true;
+        }
+    }
+
+    /// Returns an iterator over active chunk positions and their slot indices.
+    pub fn active_chunks(&self) -> impl Iterator<Item = (ChunkPos, SlotIndex)> + '_ {
+        self.active.iter().map(|(&pos, &idx)| (pos, idx))
+    }
+
+    /// Returns the number of active chunks.
+    pub fn active_count(&self) -> usize {
+        self.active.len()
+    }
+
+    // === Streaming logic ===
+
+    /// Initializes the world at a given center position.
+    ///
+    /// Used for initial spawn when there are no active chunks yet.
+    /// Returns all visible positions as chunks to spawn.
+    pub fn initialize_at(&mut self, center: ChunkPos) -> StreamingDelta {
+        self.center = center;
+
+        // Collect positions first to avoid borrow issues
+        let positions: Vec<_> = visible_positions(center).collect();
+
+        let mut to_spawn = Vec::new();
+        for pos in positions {
+            if let Some(idx) = self.acquire_slot() {
+                let slot = &mut self.slots[idx.0];
+                slot.pos = Some(pos);
+                slot.chunk.set_pos(pos);
+                slot.seeded = false;
+                slot.dirty = false;
+                self.active.insert(pos, idx);
+                to_spawn.push((pos, idx));
+            } else {
+                eprintln!("Pool exhausted at {:?}", pos);
+            }
+        }
+
+        StreamingDelta {
+            to_despawn: vec![],
+            to_spawn,
+        }
+    }
+
+    /// Updates the streaming window center, returning positions to despawn and spawn.
+    ///
+    /// This handles:
+    /// - Computing which chunks leave/enter the window
+    /// - Releasing slots for departing chunks
+    /// - Acquiring slots for arriving chunks
+    /// - Marking new chunks as unseeded
+    pub fn update_center(&mut self, new_center: ChunkPos) -> StreamingDelta {
+        if new_center == self.center {
+            return StreamingDelta {
+                to_despawn: vec![],
+                to_spawn: vec![],
+            };
+        }
+
+        // Compute old and new visible sets
+        let old_set: std::collections::HashSet<_> = self.visible_positions().collect();
+        self.center = new_center;
+        let new_set: std::collections::HashSet<_> = self.visible_positions().collect();
+
+        // Find chunks to release (in old but not new)
+        let mut to_despawn = Vec::new();
+        for pos in old_set.difference(&new_set) {
+            if let Some(idx) = self.active.remove(pos) {
+                let slot = &mut self.slots[idx.0];
+                let entity = slot.entity;
+                slot.release();
+                if let Some(entity) = entity {
+                    to_despawn.push((*pos, entity));
+                }
+            }
+        }
+
+        // Find chunks to spawn (in new but not old)
+        let mut to_spawn = Vec::new();
+        for pos in new_set.difference(&old_set) {
+            if let Some(idx) = self.acquire_slot() {
+                let slot = &mut self.slots[idx.0];
+                slot.pos = Some(*pos);
+                slot.chunk.set_pos(*pos);
+                slot.seeded = false;
+                slot.dirty = false;
+                self.active.insert(*pos, idx);
+                to_spawn.push((*pos, idx));
+            } else {
+                eprintln!("Pool exhausted at {:?}", pos);
+            }
+        }
+
+        StreamingDelta {
+            to_despawn,
+            to_spawn,
+        }
+    }
+
+    /// Registers entity and render resources for a slot.
+    pub fn register_slot_entity(
+        &mut self,
+        index: SlotIndex,
+        entity: Entity,
+        texture: Handle<Image>,
+        material: Handle<ChunkMaterial>,
+    ) {
+        let slot = &mut self.slots[index.0];
+        slot.entity = Some(entity);
+        slot.texture = Some(texture);
+        slot.material = Some(material);
+    }
+
+    // === Pixel access API ===
+
+    /// Returns a reference to the pixel at the given world position.
+    ///
+    /// Returns None if the chunk is not loaded or not yet seeded.
+    pub fn get_pixel(&self, pos: WorldPos) -> Option<&Pixel> {
+        let (chunk_pos, local_pos) = pos.to_chunk_and_local();
+        let idx = self.active.get(&chunk_pos)?;
+        let slot = &self.slots[idx.0];
+        if !slot.seeded {
+            return None;
+        }
+        Some(&slot.chunk.pixels[(local_pos.0 as u32, local_pos.1 as u32)])
+    }
+
+    /// Sets the pixel at the given world position.
+    ///
+    /// Returns true if the pixel was set, false if the chunk is not loaded
+    /// or not yet seeded.
+    pub fn set_pixel(&mut self, pos: WorldPos, pixel: Pixel) -> bool {
+        let (chunk_pos, local_pos) = pos.to_chunk_and_local();
+        let Some(&idx) = self.active.get(&chunk_pos) else {
+            return false;
+        };
+        let slot = &mut self.slots[idx.0];
+        if !slot.seeded {
+            return false;
+        }
+        slot.chunk.pixels[(local_pos.0 as u32, local_pos.1 as u32)] = pixel;
+        slot.dirty = true;
+        true
+    }
+
+    /// Blits pixels using a shader-style callback.
+    ///
+    /// For each pixel in `rect`, calls `f(fragment)` where fragment contains
+    /// world coordinates and normalized UV. If `f` returns Some(pixel), that
+    /// pixel is written; if None, the pixel is unchanged.
+    ///
+    /// Uses parallel 2x2 checkerboard scheduling for thread-safe concurrent writes.
+    /// Returns the list of chunk positions that were modified.
+    pub fn blit<F>(&mut self, rect: WorldRect, f: F) -> Vec<ChunkPos>
+    where
+        F: Fn(WorldFragment) -> Option<Pixel> + Sync,
+    {
+        // Collect mutable references to seeded chunks
+        let mut chunks: HashMap<ChunkPos, &mut Chunk> = HashMap::new();
+
+        // We need to collect handles first to avoid borrow issues
+        let seeded_positions: Vec<_> = self
+            .active
+            .iter()
+            .filter_map(|(&pos, &idx)| {
+                if self.slots[idx.0].seeded {
+                    Some((pos, idx))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        for (pos, idx) in seeded_positions {
+            // SAFETY: Each slot has a unique index, so we're creating
+            // non-overlapping mutable references to distinct chunks.
+            let chunk = &mut self.slots[idx.0].chunk;
+            let chunk_ptr = chunk as *mut Chunk;
+            chunks.insert(pos, unsafe { &mut *chunk_ptr });
+        }
+
+        let locked = LockedChunks::new(chunks);
+        let dirty_chunks = std::sync::Mutex::new(Vec::new());
+
+        parallel_blit(&locked, rect, f, &dirty_chunks);
+
+        let dirty = dirty_chunks.into_inner().unwrap_or_default();
+
+        // Mark affected chunks as dirty
+        for &pos in &dirty {
+            if let Some(&idx) = self.active.get(&pos) {
+                self.slots[idx.0].dirty = true;
+            }
+        }
+
+        dirty
+    }
+}
+
+/// Changes from updating the streaming window center.
+pub struct StreamingDelta {
+    /// Chunks that left the window (position, entity to despawn).
+    pub to_despawn: Vec<(ChunkPos, Entity)>,
+    /// Chunks that entered the window (position, slot index).
+    pub to_spawn: Vec<(ChunkPos, SlotIndex)>,
+}
+
+/// Returns iterator over visible chunk positions for a given center.
+fn visible_positions(center: ChunkPos) -> impl Iterator<Item = ChunkPos> {
+    let cx = center.0;
+    let cy = center.1;
+    let hw = WINDOW_WIDTH as i32 / 2;
+    let hh = WINDOW_HEIGHT as i32 / 2;
+
+    let x_range = (cx - hw)..(cx + hw);
+    let y_range = (cy - hh)..(cy + hh);
+
+    x_range.flat_map(move |x| y_range.clone().map(move |y| ChunkPos(x, y)))
+}
+
+/// Bundle for spawning a PixelWorld entity.
+#[derive(Bundle)]
+pub struct PixelWorldBundle {
+    /// The pixel world component.
+    pub world: PixelWorld,
+    /// Transform (typically at origin).
+    pub transform: Transform,
+    /// Global transform (computed by Bevy).
+    pub global_transform: GlobalTransform,
+}
+
+impl PixelWorldBundle {
+    /// Creates a new PixelWorld bundle.
+    pub fn new(
+        seeder: impl ChunkSeeder + Send + Sync + 'static,
+        mesh: Handle<Mesh>,
+    ) -> Self {
+        Self {
+            world: PixelWorld::new(Arc::new(seeder), mesh),
+            transform: Transform::default(),
+            global_transform: GlobalTransform::default(),
+        }
+    }
+}

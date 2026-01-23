@@ -3,7 +3,7 @@
 //! The [`Canvas`] provides a high-level API for reading and writing pixels
 //! using world coordinates, automatically handling chunk boundaries.
 
-mod blitter;
+pub mod blitter;
 
 use std::collections::HashMap;
 use std::sync::Mutex;
