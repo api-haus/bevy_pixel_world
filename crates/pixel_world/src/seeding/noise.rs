@@ -63,8 +63,8 @@ impl ChunkSeeder for NoiseSeeder {
 ///
 /// Generates pixelated terrain with:
 /// - Hard solid/air boundary from primary noise threshold
-/// - Soil layer near surface using SDF distance
-/// - Stone layer below soil
+/// - Stone base terrain
+/// - Surface sand patches and water pools via islet noise
 /// - Noise-feathered material boundaries for natural edges
 #[derive(bevy::prelude::Resource)]
 pub struct MaterialSeeder {
@@ -72,13 +72,21 @@ pub struct MaterialSeeder {
   primary: GeneratorWrapper<SafeNode>,
   /// Secondary noise for edge feathering.
   secondary: GeneratorWrapper<SafeNode>,
+  /// Noise for sand islet placement.
+  sand_noise: GeneratorWrapper<SafeNode>,
+  /// Noise for water islet placement.
+  water_noise: GeneratorWrapper<SafeNode>,
   seed: i32,
   /// Solid/air cutoff threshold (noise values below this are solid).
   threshold: f32,
-  /// Pixels of soil before stone.
-  soil_depth: u8,
   /// Secondary noise influence on boundaries.
   feather_scale: f32,
+  /// Feature scale for islet noise.
+  islet_scale: f32,
+  /// Threshold for islet activation (higher = fewer islets).
+  islet_threshold: f32,
+  /// Max distance from air for islets to appear.
+  islet_depth: u8,
 }
 
 impl MaterialSeeder {
@@ -86,29 +94,43 @@ impl MaterialSeeder {
   const DEFAULT_FEATURE_SCALE: f32 = 200.0;
   /// Default solid/air threshold.
   const DEFAULT_THRESHOLD: f32 = 0.0;
-  /// Default soil depth in pixels.
-  const DEFAULT_SOIL_DEPTH: u8 = 8;
   /// Default secondary noise influence.
   const DEFAULT_FEATHER_SCALE: f32 = 3.0;
+  /// Default islet feature scale.
+  const DEFAULT_ISLET_SCALE: f32 = 30.0;
+  /// Default islet threshold (higher = fewer islets).
+  const DEFAULT_ISLET_THRESHOLD: f32 = 0.6;
+  /// Default max depth from air for islets.
+  const DEFAULT_ISLET_DEPTH: u8 = 3;
 
   /// Creates a new material seeder with the given seed and default parameters.
   ///
   /// Use builder methods to customize:
   /// - `feature_scale(f32)`: Controls terrain feature size (default: 200.0)
   /// - `threshold(f32)`: Noise cutoff for solid/air (default: 0.0)
-  /// - `soil_depth(u8)`: Pixels of soil before stone (default: 8)
   /// - `feather_scale(f32)`: Edge noise influence (default: 3.0)
+  /// - `islet_scale(f32)`: Feature scale for islets (default: 30.0)
+  /// - `islet_threshold(f32)`: Threshold for islet activation (default: 0.6)
+  /// - `islet_depth(u8)`: Max depth from air for islets (default: 3)
   pub fn new(seed: i32) -> Self {
     let feature_scale = Self::DEFAULT_FEATURE_SCALE;
+    let islet_scale = Self::DEFAULT_ISLET_SCALE;
     let primary = supersimplex_scaled(feature_scale).build();
     let secondary = supersimplex_scaled(feature_scale * 0.5).build();
+    // Use different seed offsets for sand/water to get distinct patterns
+    let sand_noise = supersimplex_scaled(islet_scale).build();
+    let water_noise = supersimplex_scaled(islet_scale).build();
     Self {
       primary,
       secondary,
+      sand_noise,
+      water_noise,
       seed,
       threshold: Self::DEFAULT_THRESHOLD,
-      soil_depth: Self::DEFAULT_SOIL_DEPTH,
       feather_scale: Self::DEFAULT_FEATHER_SCALE,
+      islet_scale,
+      islet_threshold: Self::DEFAULT_ISLET_THRESHOLD,
+      islet_depth: Self::DEFAULT_ISLET_DEPTH,
     }
   }
 
@@ -125,15 +147,29 @@ impl MaterialSeeder {
     self
   }
 
-  /// Sets the soil depth in pixels before transitioning to stone.
-  pub fn soil_depth(mut self, depth: u8) -> Self {
-    self.soil_depth = depth;
-    self
-  }
-
   /// Sets the secondary noise influence on material boundaries.
   pub fn feather_scale(mut self, scale: f32) -> Self {
     self.feather_scale = scale;
+    self
+  }
+
+  /// Sets the islet feature scale (controls sand/water patch size).
+  pub fn islet_scale(mut self, scale: f32) -> Self {
+    self.islet_scale = scale;
+    self.sand_noise = supersimplex_scaled(scale).build();
+    self.water_noise = supersimplex_scaled(scale).build();
+    self
+  }
+
+  /// Sets the islet threshold (higher = fewer islets).
+  pub fn islet_threshold(mut self, threshold: f32) -> Self {
+    self.islet_threshold = threshold;
+    self
+  }
+
+  /// Sets the max depth from air for islets to appear.
+  pub fn islet_depth(mut self, depth: u8) -> Self {
+    self.islet_depth = depth;
     self
   }
 }
@@ -174,9 +210,20 @@ impl ChunkSeeder for MaterialSeeder {
           // Feathered distance
           let fd = dist as f32 + feather * self.feather_scale;
 
-          // Material selection
-          let material = if fd < self.soil_depth as f32 {
-            material_ids::SOIL
+          // Material selection: check for surface islets first
+          let material = if dist <= self.islet_depth {
+            // Surface zone - check for sand/water islets
+            // Use different seed offsets for distinct patterns
+            let sand_val = self.sand_noise.gen_single_2d(wx, wy, self.seed);
+            let water_val = self.water_noise.gen_single_2d(wx, wy, self.seed + 1000);
+
+            if sand_val > self.islet_threshold {
+              material_ids::SAND
+            } else if water_val > self.islet_threshold {
+              material_ids::WATER
+            } else {
+              material_ids::STONE
+            }
           } else {
             material_ids::STONE
           };
