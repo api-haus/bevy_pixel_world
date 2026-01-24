@@ -31,6 +31,7 @@
 //! ```
 
 mod cache;
+mod contour;
 mod marching;
 mod mesh;
 mod simplify;
@@ -42,6 +43,7 @@ pub mod physics;
 
 use bevy::prelude::*;
 pub use cache::{CollisionCache, CollisionTask, CollisionTasks};
+pub use contour::{EDGE_TABLE, connect_segments, grid_key};
 pub use marching::{GRID_SIZE, marching_squares};
 pub use mesh::{PolygonMesh, TileCollisionMesh};
 pub use simplify::{douglas_peucker, simplify_polylines};

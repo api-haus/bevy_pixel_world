@@ -12,7 +12,7 @@ use bevy_rapier2d::prelude::Collider;
 
 use super::PixelBody;
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
-use crate::collision::{simplify_polylines, triangulate_polygons};
+use crate::collision::{EDGE_TABLE, connect_segments, simplify_polylines, triangulate_polygons};
 
 /// Generates a physics collider from a pixel body's shape mask.
 ///
@@ -121,27 +121,6 @@ fn build_marching_grid(body: &PixelBody) -> Vec<Vec<bool>> {
 /// Similar to marching_squares but works with arbitrary grid sizes.
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 fn extract_contours(grid: &[Vec<bool>], width: usize, height: usize) -> Vec<Vec<Vec2>> {
-  // Edge segment lookup table (same as in marching.rs)
-  type EdgeSegment = ((f32, f32), (f32, f32));
-  const EDGE_TABLE: [&[EdgeSegment]; 16] = [
-    &[],
-    &[((0.0, 0.5), (0.5, 1.0))],
-    &[((0.5, 1.0), (1.0, 0.5))],
-    &[((0.0, 0.5), (1.0, 0.5))],
-    &[((0.5, 0.0), (0.0, 0.5))],
-    &[((0.5, 0.0), (0.5, 1.0))],
-    &[((0.0, 0.5), (0.5, 1.0)), ((0.5, 0.0), (1.0, 0.5))],
-    &[((0.5, 0.0), (1.0, 0.5))],
-    &[((1.0, 0.5), (0.5, 0.0))],
-    &[((0.0, 0.5), (0.5, 0.0)), ((0.5, 1.0), (1.0, 0.5))],
-    &[((0.5, 1.0), (0.5, 0.0))],
-    &[((0.0, 0.5), (0.5, 0.0))],
-    &[((1.0, 0.5), (0.0, 0.5))],
-    &[((0.5, 1.0), (1.0, 0.5))],
-    &[((0.0, 0.5), (0.5, 1.0))],
-    &[],
-  ];
-
   let mut segments: Vec<(Vec2, Vec2)> = Vec::new();
 
   // Process each 2x2 cell
@@ -167,93 +146,6 @@ fn extract_contours(grid: &[Vec<bool>], width: usize, height: usize) -> Vec<Vec<
   }
 
   connect_segments(segments)
-}
-
-/// Connects edge segments into closed polylines.
-#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
-fn connect_segments(segments: Vec<(Vec2, Vec2)>) -> Vec<Vec<Vec2>> {
-  use std::collections::HashMap;
-
-  if segments.is_empty() {
-    return vec![];
-  }
-
-  fn grid_key(v: Vec2) -> (i32, i32) {
-    ((v.x * 2.0).round() as i32, (v.y * 2.0).round() as i32)
-  }
-
-  // Build adjacency map
-  let mut adjacency: HashMap<(i32, i32), Vec<(usize, bool)>> = HashMap::new();
-  for (i, (start, end)) in segments.iter().enumerate() {
-    adjacency
-      .entry(grid_key(*start))
-      .or_default()
-      .push((i, true));
-    adjacency
-      .entry(grid_key(*end))
-      .or_default()
-      .push((i, false));
-  }
-
-  let mut used = vec![false; segments.len()];
-  let mut polylines = Vec::new();
-
-  for start_idx in 0..segments.len() {
-    if used[start_idx] {
-      continue;
-    }
-
-    let mut polyline = Vec::new();
-    let mut current_idx = start_idx;
-    let mut entering_from_start = true;
-
-    loop {
-      used[current_idx] = true;
-      let (seg_start, seg_end) = segments[current_idx];
-
-      if entering_from_start {
-        if polyline.is_empty() {
-          polyline.push(seg_start);
-        }
-        polyline.push(seg_end);
-      } else {
-        if polyline.is_empty() {
-          polyline.push(seg_end);
-        }
-        polyline.push(seg_start);
-      }
-
-      let current_end = *polyline.last().unwrap();
-      let key = grid_key(current_end);
-
-      let next = adjacency
-        .get(&key)
-        .and_then(|neighbors| neighbors.iter().find(|(idx, _)| !used[*idx]).copied());
-
-      match next {
-        Some((idx, is_start)) => {
-          current_idx = idx;
-          entering_from_start = is_start;
-        }
-        None => break,
-      }
-    }
-
-    // Remove duplicate closing vertex
-    if polyline.len() >= 4 {
-      let first = polyline.first().unwrap();
-      let last = polyline.last().unwrap();
-      if (first.x - last.x).abs() < 0.001 && (first.y - last.y).abs() < 0.001 {
-        polyline.pop();
-      }
-    }
-
-    if polyline.len() >= 3 {
-      polylines.push(polyline);
-    }
-  }
-
-  polylines
 }
 
 /// Stub for when no physics feature is enabled.

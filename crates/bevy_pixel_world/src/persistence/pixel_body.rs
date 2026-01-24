@@ -342,7 +342,7 @@ impl PixelBodyRecord {
 
 /// Packs a slice of bools into bytes (8 bools per byte).
 fn pack_bools(bools: &[bool]) -> Vec<u8> {
-  let byte_count = (bools.len() + 7) / 8;
+  let byte_count = bools.len().div_ceil(8);
   let mut bytes = vec![0u8; byte_count];
 
   for (i, &b) in bools.iter().enumerate() {
