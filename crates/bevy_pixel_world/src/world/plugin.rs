@@ -8,10 +8,17 @@ use bevy::tasks::{AsyncComputeTaskPool, Task};
 
 use super::{PixelWorld, SlotIndex};
 use crate::collision::{
-  dispatch_collision_tasks, draw_collision_gizmos, draw_sample_mesh_gizmos,
-  invalidate_dirty_tiles, poll_collision_tasks, update_sample_mesh, CollisionCache,
-  CollisionConfig, CollisionTasks, SampleMesh,
+    dispatch_collision_tasks, invalidate_dirty_tiles, poll_collision_tasks, CollisionCache,
+    CollisionConfig, CollisionTasks,
 };
+#[cfg(feature = "visual-debug")]
+use crate::collision::{
+    draw_collision_gizmos, draw_sample_mesh_gizmos, update_sample_mesh, SampleMesh,
+};
+#[cfg(all(feature = "avian2d", not(feature = "rapier2d")))]
+use crate::collision::physics::{avian::sync_physics_colliders, PhysicsColliderRegistry};
+#[cfg(all(feature = "rapier2d", not(feature = "avian2d")))]
+use crate::collision::physics::{rapier::sync_physics_colliders, PhysicsColliderRegistry};
 use crate::coords::{ChunkPos, WorldPos, WorldRect, CHUNK_SIZE};
 use crate::debug_shim;
 use crate::material::Materials;
@@ -70,8 +77,22 @@ impl Plugin for PixelWorldStreamingPlugin {
       .init_resource::<CollisionCache>()
       .init_resource::<CollisionTasks>()
       .init_resource::<CollisionConfig>()
-      .init_resource::<SampleMesh>()
       .add_systems(Startup, setup_shared_resources);
+
+    #[cfg(feature = "visual-debug")]
+    app.init_resource::<SampleMesh>();
+
+    #[cfg(all(feature = "avian2d", not(feature = "rapier2d")))]
+    {
+      app.init_resource::<PhysicsColliderRegistry>();
+      app.add_systems(Update, sync_physics_colliders.after(poll_collision_tasks));
+    }
+
+    #[cfg(all(feature = "rapier2d", not(feature = "avian2d")))]
+    {
+      app.init_resource::<PhysicsColliderRegistry>();
+      app.add_systems(Update, sync_physics_colliders.after(poll_collision_tasks));
+    }
 
     #[cfg(not(feature = "headless"))]
     app.add_systems(
@@ -92,7 +113,7 @@ impl Plugin for PixelWorldStreamingPlugin {
         .chain(),
     );
 
-    #[cfg(not(feature = "headless"))]
+    #[cfg(all(not(feature = "headless"), feature = "visual-debug"))]
     app.add_systems(
       PostUpdate,
       (update_sample_mesh, draw_collision_gizmos, draw_sample_mesh_gizmos),

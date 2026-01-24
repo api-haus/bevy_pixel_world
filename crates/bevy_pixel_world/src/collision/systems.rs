@@ -3,7 +3,6 @@
 use bevy::math::Vec2;
 use bevy::prelude::*;
 use bevy::tasks::AsyncComputeTaskPool;
-use std::f32::consts::PI;
 
 use crate::coords::{TilePos, TILE_SIZE, TILES_PER_CHUNK};
 use crate::material::{Materials, PhysicsState};
@@ -219,6 +218,7 @@ pub fn poll_collision_tasks(
 }
 
 /// System: Draws collision meshes as debug gizmos.
+#[cfg(feature = "visual-debug")]
 pub fn draw_collision_gizmos(
     cache: Res<CollisionCache>,
     query_points: Query<&Transform, With<CollisionQueryPoint>>,
@@ -284,6 +284,7 @@ pub fn invalidate_dirty_tiles(mut cache: ResMut<CollisionCache>, worlds: Query<&
 }
 
 /// Shape types for sample mesh.
+#[cfg(feature = "visual-debug")]
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub enum SampleShapeType {
     #[default]
@@ -293,6 +294,7 @@ pub enum SampleShapeType {
 }
 
 /// Resource holding a sample mesh for visualization testing.
+#[cfg(feature = "visual-debug")]
 #[derive(Resource, Default)]
 pub struct SampleMesh {
     /// The polygon mesh to visualize.
@@ -305,9 +307,11 @@ pub struct SampleMesh {
     pub shape_type: SampleShapeType,
 }
 
+#[cfg(feature = "visual-debug")]
 impl SampleMesh {
     /// Creates a regular polygon (circle approximation) centered at position.
     pub fn regular_polygon(center: Vec2, radius: f32, num_vertices: usize) -> PolygonMesh {
+        use std::f32::consts::PI;
         let vertices: Vec<Vec2> = (0..num_vertices)
             .map(|i| {
                 let angle = 2.0 * PI * (i as f32) / (num_vertices as f32) - PI / 2.0;
@@ -325,6 +329,7 @@ impl SampleMesh {
 
     /// Creates a star shape centered at position.
     pub fn star(center: Vec2, outer_radius: f32, inner_radius: f32, num_points: usize) -> PolygonMesh {
+        use std::f32::consts::PI;
         let mut vertices = Vec::with_capacity(num_points * 2);
 
         for i in 0..(num_points * 2) {
@@ -363,6 +368,7 @@ impl SampleMesh {
 }
 
 /// System: Updates the sample mesh position to follow the cursor.
+#[cfg(feature = "visual-debug")]
 pub fn update_sample_mesh(
     mut sample_mesh: ResMut<SampleMesh>,
     query_points: Query<&Transform, With<CollisionQueryPoint>>,
@@ -431,6 +437,7 @@ pub fn update_sample_mesh(
 }
 
 /// System: Draws the sample mesh as debug gizmos.
+#[cfg(feature = "visual-debug")]
 pub fn draw_sample_mesh_gizmos(sample_mesh: Res<SampleMesh>, mut gizmos: Gizmos) {
     let Some(mesh) = &sample_mesh.mesh else {
         return;

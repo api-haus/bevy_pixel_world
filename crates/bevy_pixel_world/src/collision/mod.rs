@@ -35,16 +35,19 @@ mod simplify;
 mod systems;
 mod triangulate;
 
+#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+pub mod physics;
+
 pub use cache::{CollisionCache, CollisionTask, CollisionTasks};
 pub use marching::{marching_squares, GRID_SIZE};
 pub use mesh::{PolygonMesh, TileCollisionMesh};
 pub use simplify::{douglas_peucker, simplify_polylines};
 pub use triangulate::{triangulate_polygon, triangulate_polygons, Triangle};
 pub use systems::{
-    dispatch_collision_tasks, draw_collision_gizmos, draw_sample_mesh_gizmos,
-    invalidate_dirty_tiles, poll_collision_tasks, update_sample_mesh, CollisionQueryPoint,
-    SampleMesh,
+    dispatch_collision_tasks, invalidate_dirty_tiles, poll_collision_tasks, CollisionQueryPoint,
 };
+#[cfg(feature = "visual-debug")]
+pub use systems::{draw_collision_gizmos, draw_sample_mesh_gizmos, update_sample_mesh, SampleMesh};
 
 use bevy::prelude::*;
 
