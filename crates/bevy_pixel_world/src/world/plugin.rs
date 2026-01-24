@@ -15,10 +15,8 @@ use crate::collision::{
 use crate::collision::{
     draw_collision_gizmos, draw_sample_mesh_gizmos, update_sample_mesh, SampleMesh,
 };
-#[cfg(all(feature = "avian2d", not(feature = "rapier2d")))]
-use crate::collision::physics::{avian::sync_physics_colliders, PhysicsColliderRegistry};
-#[cfg(all(feature = "rapier2d", not(feature = "avian2d")))]
-use crate::collision::physics::{rapier::sync_physics_colliders, PhysicsColliderRegistry};
+#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+use crate::collision::physics::{sync_physics_colliders, PhysicsColliderRegistry};
 use crate::coords::{ChunkPos, WorldPos, WorldRect, CHUNK_SIZE};
 use crate::debug_shim;
 use crate::material::Materials;
@@ -82,13 +80,7 @@ impl Plugin for PixelWorldStreamingPlugin {
     #[cfg(feature = "visual-debug")]
     app.init_resource::<SampleMesh>();
 
-    #[cfg(all(feature = "avian2d", not(feature = "rapier2d")))]
-    {
-      app.init_resource::<PhysicsColliderRegistry>();
-      app.add_systems(Update, sync_physics_colliders.after(poll_collision_tasks));
-    }
-
-    #[cfg(all(feature = "rapier2d", not(feature = "avian2d")))]
+    #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
     {
       app.init_resource::<PhysicsColliderRegistry>();
       app.add_systems(Update, sync_physics_colliders.after(poll_collision_tasks));
