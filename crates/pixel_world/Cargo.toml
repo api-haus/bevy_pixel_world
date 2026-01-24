@@ -35,6 +35,10 @@ harness = false
 name = "persistence_benchmarks"
 harness = false
 
+[[test]]
+name = "persistence_bevy_e2e"
+required-features = ["headless"]
+
 [features]
 default = ["dev"]
 dev = ["bevy/dynamic_linking", "visual-debug", "diagnostics"]
