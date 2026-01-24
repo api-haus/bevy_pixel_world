@@ -7,8 +7,22 @@ use bevy::ecs::entity_disabling::Disabled;
 use bevy::prelude::*;
 
 use crate::collision::CollisionCache;
-use crate::coords::{CHUNK_SIZE, TILE_SIZE, TilePos, WINDOW_HEIGHT, WINDOW_WIDTH};
+use crate::coords::{CHUNK_SIZE, ChunkPos, TILE_SIZE, TilePos, WINDOW_HEIGHT, WINDOW_WIDTH};
 use crate::world::PixelWorld;
+
+/// Compute world-space bounds of the streaming window.
+///
+/// Returns (min_x, min_y, max_x, max_y) in world pixel coordinates.
+pub fn streaming_window_bounds(center: ChunkPos) -> (i64, i64, i64, i64) {
+  let hw = WINDOW_WIDTH as i32 / 2;
+  let hh = WINDOW_HEIGHT as i32 / 2;
+  let chunk_size = CHUNK_SIZE as i64;
+  let min_x = (center.x - hw) as i64 * chunk_size;
+  let min_y = (center.y - hh) as i64 * chunk_size;
+  let max_x = min_x + (WINDOW_WIDTH as i64 * chunk_size);
+  let max_y = min_y + (WINDOW_HEIGHT as i64 * chunk_size);
+  (min_x, min_y, max_x, max_y)
+}
 
 /// Marker component for entities that should be auto-culled when outside the
 /// streaming window.
@@ -93,17 +107,7 @@ pub(crate) fn update_entity_culling(
     return;
   };
 
-  let center = world.center();
-
-  // Compute world-space bounds of the streaming window
-  let hw = WINDOW_WIDTH as i32 / 2;
-  let hh = WINDOW_HEIGHT as i32 / 2;
-  let chunk_size = CHUNK_SIZE as i64;
-
-  let min_x = (center.x - hw) as i64 * chunk_size;
-  let min_y = (center.y - hh) as i64 * chunk_size;
-  let max_x = min_x + (WINDOW_WIDTH as i64 * chunk_size);
-  let max_y = min_y + (WINDOW_HEIGHT as i64 * chunk_size);
+  let (min_x, min_y, max_x, max_y) = streaming_window_bounds(world.center());
 
   for (entity, transform, is_culled) in &entities {
     let pos = transform.translation();

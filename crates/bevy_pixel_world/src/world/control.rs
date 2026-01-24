@@ -30,15 +30,9 @@ use bevy::prelude::*;
 ///     }
 /// }
 /// ```
-#[derive(Resource, Debug)]
+#[derive(Resource, Debug, Default)]
 pub struct SimulationState {
   paused: bool,
-}
-
-impl Default for SimulationState {
-  fn default() -> Self {
-    Self { paused: false }
-  }
 }
 
 impl SimulationState {
@@ -96,7 +90,7 @@ impl Default for AutoSaveConfig {
   fn default() -> Self {
     Self {
       enabled: true,
-      interval: Duration::from_secs(60), // Auto-save every 60 seconds
+      interval: Duration::from_secs(5), // Auto-save every 5 seconds
     }
   }
 }

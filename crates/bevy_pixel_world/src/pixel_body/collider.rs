@@ -12,7 +12,9 @@ use bevy_rapier2d::prelude::Collider;
 
 use super::PixelBody;
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
-use crate::collision::{EDGE_TABLE, connect_segments, simplify_polylines, triangulate_polygons};
+use crate::collision::{
+  connect_segments, extract_marching_segments, simplify_polylines, triangulate_polygons,
+};
 
 /// Generates a physics collider from a pixel body's shape mask.
 ///
@@ -121,30 +123,7 @@ fn build_marching_grid(body: &PixelBody) -> Vec<Vec<bool>> {
 /// Similar to marching_squares but works with arbitrary grid sizes.
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 fn extract_contours(grid: &[Vec<bool>], width: usize, height: usize) -> Vec<Vec<Vec2>> {
-  let mut segments: Vec<(Vec2, Vec2)> = Vec::new();
-
-  // Process each 2x2 cell
-  for cy in 0..height - 1 {
-    for cx in 0..width - 1 {
-      let bl = grid[cy][cx];
-      let br = grid[cy][cx + 1];
-      let tl = grid[cy + 1][cx];
-      let tr = grid[cy + 1][cx + 1];
-
-      let case = (tl as usize) | ((tr as usize) << 1) | ((bl as usize) << 2) | ((br as usize) << 3);
-
-      for &((x1, y1), (x2, y2)) in EDGE_TABLE[case] {
-        // Convert to local coordinates (subtract 1 for border offset)
-        let local_x1 = (cx as f32 - 1.0) + x1;
-        let local_y1 = (cy as f32 - 1.0) + y1;
-        let local_x2 = (cx as f32 - 1.0) + x2;
-        let local_y2 = (cy as f32 - 1.0) + y2;
-
-        segments.push((Vec2::new(local_x1, local_y1), Vec2::new(local_x2, local_y2)));
-      }
-    }
-  }
-
+  let segments = extract_marching_segments(width, height, |x, y| grid[y][x], 1.0);
   connect_segments(segments)
 }
 

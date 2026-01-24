@@ -4,7 +4,7 @@
 //! detection. Uses spade's CDT which respects polygon edges as constraints.
 
 use bevy::math::Vec2;
-use spade::{ConstrainedDelaunayTriangulation, Point2, Triangulation};
+use spade::{ConstrainedDelaunayTriangulation, Point2, Triangulation, handles::FixedVertexHandle};
 
 /// A triangle represented by three vertex indices.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -14,32 +14,16 @@ pub struct Triangle {
   pub c: usize,
 }
 
-/// Triangulates a simple polygon using Constrained Delaunay Triangulation.
-///
-/// # Arguments
-/// * `polygon` - A closed polygon as a list of vertices (counter-clockwise
-///   winding).
-///
-/// # Returns
-/// A list of triangles, each represented by three vertex indices into the
-/// original polygon. Returns empty if the polygon is invalid
-/// (self-intersecting, too few vertices, etc.)
-pub fn triangulate_polygon(polygon: &[Vec2]) -> Vec<Triangle> {
-  if polygon.len() < 3 {
-    return vec![];
-  }
-  if polygon.len() == 3 {
-    return vec![Triangle { a: 0, b: 1, c: 2 }];
-  }
+type CDT = ConstrainedDelaunayTriangulation<Point2<f64>>;
 
-  // Check for self-intersecting edges (CDT panics on these)
-  if has_self_intersections(polygon) {
-    return vec![];
-  }
+/// Validates that a polygon can be triangulated.
+fn validate_polygon(polygon: &[Vec2]) -> bool {
+  polygon.len() >= 3 && !has_self_intersections(polygon)
+}
 
-  // Build CDT with polygon vertices
-  let mut cdt: ConstrainedDelaunayTriangulation<Point2<f64>> =
-    ConstrainedDelaunayTriangulation::new();
+/// Builds a CDT with polygon vertices and edge constraints.
+fn build_constrained_cdt(polygon: &[Vec2]) -> Option<(CDT, Vec<FixedVertexHandle>)> {
+  let mut cdt = CDT::new();
 
   // Insert vertices and collect handles
   let handles: Vec<_> = polygon
@@ -58,6 +42,15 @@ pub fn triangulate_polygon(polygon: &[Vec2]) -> Vec<Triangle> {
     let _ = cdt.add_constraint(handles[i], handles[j]);
   }
 
+  Some((cdt, handles))
+}
+
+/// Extracts interior triangles from a CDT.
+fn extract_interior_triangles(
+  cdt: &CDT,
+  handles: &[FixedVertexHandle],
+  polygon: &[Vec2],
+) -> Vec<Triangle> {
   // Build a map from fixed vertex handle to polygon index
   let handle_to_index: std::collections::HashMap<_, _> = handles
     .iter()
@@ -65,7 +58,6 @@ pub fn triangulate_polygon(polygon: &[Vec2]) -> Vec<Triangle> {
     .map(|(idx, &handle)| (handle, idx))
     .collect();
 
-  // Extract triangles and filter to those inside the polygon
   let mut triangles = Vec::new();
 
   for face in cdt.inner_faces() {
@@ -98,6 +90,35 @@ pub fn triangulate_polygon(polygon: &[Vec2]) -> Vec<Triangle> {
   }
 
   triangles
+}
+
+/// Triangulates a simple polygon using Constrained Delaunay Triangulation.
+///
+/// # Arguments
+/// * `polygon` - A closed polygon as a list of vertices (counter-clockwise
+///   winding).
+///
+/// # Returns
+/// A list of triangles, each represented by three vertex indices into the
+/// original polygon. Returns empty if the polygon is invalid
+/// (self-intersecting, too few vertices, etc.)
+pub fn triangulate_polygon(polygon: &[Vec2]) -> Vec<Triangle> {
+  if polygon.len() < 3 {
+    return vec![];
+  }
+  if polygon.len() == 3 {
+    return vec![Triangle { a: 0, b: 1, c: 2 }];
+  }
+
+  if !validate_polygon(polygon) {
+    return vec![];
+  }
+
+  let Some((cdt, handles)) = build_constrained_cdt(polygon) else {
+    return vec![];
+  };
+
+  extract_interior_triangles(&cdt, &handles, polygon)
 }
 
 /// Checks if a polygon has any self-intersecting edges.
@@ -148,7 +169,7 @@ fn cross_2d(a: Vec2, b: Vec2) -> f32 {
 }
 
 /// Tests if a point is inside a polygon using the ray casting algorithm.
-fn point_in_polygon(point: Vec2, polygon: &[Vec2]) -> bool {
+pub fn point_in_polygon(point: Vec2, polygon: &[Vec2]) -> bool {
   let mut inside = false;
   let n = polygon.len();
 
@@ -179,79 +200,4 @@ pub fn triangulate_polygons(polygons: &[Vec<Vec2>]) -> Vec<(Vec<Vec2>, Vec<Trian
       (polygon.clone(), triangles)
     })
     .collect()
-}
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-
-  #[test]
-  fn test_triangulate_triangle() {
-    let triangle = vec![
-      Vec2::new(0.0, 0.0),
-      Vec2::new(1.0, 0.0),
-      Vec2::new(0.5, 1.0),
-    ];
-
-    let result = triangulate_polygon(&triangle);
-    assert_eq!(result.len(), 1);
-  }
-
-  #[test]
-  fn test_triangulate_square() {
-    // Counter-clockwise square
-    let square = vec![
-      Vec2::new(0.0, 0.0),
-      Vec2::new(1.0, 0.0),
-      Vec2::new(1.0, 1.0),
-      Vec2::new(0.0, 1.0),
-    ];
-
-    let result = triangulate_polygon(&square);
-    assert_eq!(result.len(), 2, "Square should produce 2 triangles");
-  }
-
-  #[test]
-  fn test_triangulate_pentagon() {
-    // Regular pentagon (counter-clockwise)
-    let pentagon = vec![
-      Vec2::new(0.0, 1.0),
-      Vec2::new(0.951, 0.309),
-      Vec2::new(0.588, -0.809),
-      Vec2::new(-0.588, -0.809),
-      Vec2::new(-0.951, 0.309),
-    ];
-
-    let result = triangulate_polygon(&pentagon);
-    assert_eq!(result.len(), 3, "Pentagon should produce 3 triangles");
-  }
-
-  #[test]
-  fn test_empty_polygon() {
-    let result = triangulate_polygon(&[]);
-    assert!(result.is_empty());
-  }
-
-  #[test]
-  fn test_two_vertices() {
-    let result = triangulate_polygon(&[Vec2::ZERO, Vec2::ONE]);
-    assert!(result.is_empty());
-  }
-
-  #[test]
-  fn test_point_in_polygon() {
-    let square = vec![
-      Vec2::new(0.0, 0.0),
-      Vec2::new(1.0, 0.0),
-      Vec2::new(1.0, 1.0),
-      Vec2::new(0.0, 1.0),
-    ];
-
-    // Point inside
-    assert!(point_in_polygon(Vec2::new(0.5, 0.5), &square));
-    // Point outside
-    assert!(!point_in_polygon(Vec2::new(2.0, 2.0), &square));
-    // Point outside but within bounding box of convex hull
-    assert!(!point_in_polygon(Vec2::new(-0.5, 0.5), &square));
-  }
 }

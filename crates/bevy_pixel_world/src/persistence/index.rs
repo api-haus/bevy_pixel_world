@@ -208,12 +208,11 @@ impl PixelBodyIndex {
   /// Inserts or updates an entry.
   pub fn insert(&mut self, entry: PixelBodyIndexEntry) {
     // Remove from old chunk if exists
-    if let Some(old) = self.by_id.get(&entry.stable_id) {
-      if old.chunk_pos != entry.chunk_pos {
-        if let Some(ids) = self.by_chunk.get_mut(&old.chunk_pos) {
-          ids.retain(|&id| id != entry.stable_id);
-        }
-      }
+    if let Some(old) = self.by_id.get(&entry.stable_id)
+      && old.chunk_pos != entry.chunk_pos
+      && let Some(ids) = self.by_chunk.get_mut(&old.chunk_pos)
+    {
+      ids.retain(|&id| id != entry.stable_id);
     }
 
     // Add to new chunk

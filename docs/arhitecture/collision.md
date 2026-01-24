@@ -139,9 +139,118 @@ Collision mesh updates run at **60 TPS** (same rate as CA and physics simulation
 
 See [Configuration](configuration.md) for tick rate definitions.
 
+## Collision Cache
+
+Generated meshes are cached to avoid redundant computation:
+
+```mermaid
+flowchart LR
+    Request["Tile Needed"] --> Check{In Cache?}
+    Check -->|"yes"| Use["Use Cached"]
+    Check -->|"no"| InFlight{In-Flight?}
+    InFlight -->|"yes"| Wait["Skip (pending)"]
+    InFlight -->|"no"| Generate["Spawn Async Task"]
+    Generate --> Complete["Task Completes"]
+    Complete --> Validate{Still Valid?}
+    Validate -->|"yes"| Insert["Insert to Cache"]
+    Validate -->|"no"| Discard["Discard (invalidated)"]
+```
+
+### Cache Invalidation
+
+When pixels change in a tile:
+
+1. Remove tile from cache
+2. Remove from in-flight set (discards pending results)
+3. Next frame: tile is re-requested, new task spawns
+
+### Generation Counter
+
+Each cached mesh has a `generation` counter incremented on every insert. Collider entities track their creation generation—if the cache entry has a higher generation, the collider is stale and must be respawned.
+
+### Async Generation
+
+Mesh generation runs on Bevy's `AsyncComputeTaskPool`:
+
+1. Main thread marks tile as in-flight
+2. Task runs marching squares, simplification, triangulation
+3. On completion, result inserts to cache if tile wasn't invalidated
+4. Collider sync system spawns physics entities from cached meshes
+
+## Physics Integration
+
+Collision meshes integrate with physics engines via feature flags:
+
+```toml
+bevy_pixel_world = { features = ["avian2d"] }  # or "rapier2d"
+```
+
+### CollisionQueryPoint
+
+Entities with `CollisionQueryPoint` marker drive collision generation. The system generates meshes in a radius around each query point:
+
+```rust
+commands.spawn((
+    RigidBody::Dynamic,
+    Collider::circle(10.0),
+    CollisionQueryPoint,  // Generates collision in proximity
+));
+```
+
+Tiles outside all query point radii have colliders despawned.
+
+### Collider Lifecycle
+
+```mermaid
+flowchart TB
+    A["Mesh cached for tile"] --> B["Spawn static collider entity"]
+    B --> C{Each frame}
+    C --> D{Still in proximity?}
+    D -->|"no"| E["Despawn collider"]
+    D -->|"yes"| F{Cache generation changed?}
+    F -->|"yes"| G["Despawn + respawn"]
+    F -->|"no"| H["Keep collider"]
+```
+
+### Sleeping Body Wake
+
+When terrain changes (collider despawned due to staleness), sleeping physics bodies nearby are woken:
+
+| Physics Backend | Wake Mechanism                      |
+|-----------------|-------------------------------------|
+| Avian2D         | Remove `Sleeping` component         |
+| Rapier2D        | Set `Sleeping::sleeping = false`    |
+
+Bodies within 1 tile of the changed tile are woken to respond to new terrain.
+
+## Entity Culling
+
+Entities with `StreamCulled` are automatically disabled when outside the streaming window:
+
+```rust
+commands.spawn((
+    RigidBody::Dynamic,
+    Collider::circle(10.0),
+    StreamCulled,  // Auto-disable outside streaming window
+));
+```
+
+### Culling Lifecycle
+
+| Entity Position | Collision Ready | Action                            |
+|-----------------|-----------------|-----------------------------------|
+| Outside window  | —               | Insert `Disabled` component       |
+| Inside window   | No              | Keep disabled (wait for mesh)     |
+| Inside window   | Yes             | Remove `Disabled`, entity active  |
+
+"Collision ready" means the tile is cached and not in-flight. This prevents physics bodies from falling through unmeshed terrain when re-entering the streaming window.
+
 ## Related Documentation
 
 - [Pixel Format](pixel-format.md) - Solid flag definition
+- [Pixel Bodies](pixel-bodies.md) - Dynamic objects with per-body collision
 - [Simulation](simulation.md) - When solid flag changes
-- [Spatial Hierarchy](spatial-hierarchy.md) - Chunk-based organization
+- [Spatial Hierarchy](spatial-hierarchy.md) - Chunk and tile organization
+- [Streaming Window](streaming-window.md) - Window that drives entity culling
+- [Glossary](glossary.md) - Collision terminology
 - [Architecture Overview](README.md)

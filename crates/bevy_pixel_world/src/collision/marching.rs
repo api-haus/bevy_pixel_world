@@ -4,7 +4,7 @@
 
 use bevy::math::Vec2;
 
-use super::contour::{EDGE_TABLE, connect_segments};
+use super::contour::{connect_segments, extract_marching_segments};
 
 /// Grid size for tile extraction (tile + 1px border on each side).
 /// This allows contours to connect across tile boundaries.
@@ -40,43 +40,16 @@ pub fn marching_squares(
     row[GRID_SIZE - 1] = false;
   }
 
-  // Collect all edge segments from the grid
-  let mut segments: Vec<(Vec2, Vec2)> = Vec::new();
+  // Extract segments using shared marching squares implementation
+  let segments = extract_marching_segments(GRID_SIZE, GRID_SIZE, |x, y| working_grid[y][x], 1.0);
 
-  // Process each 2x2 cell in the grid
-  // The grid is 34x34, giving us 33x33 cells
-  for cy in 0..GRID_SIZE - 1 {
-    for cx in 0..GRID_SIZE - 1 {
-      // Sample the 4 corners of this cell
-      // Grid layout (Y-down in array indices, but we treat Y+ as up):
-      //   grid[cy][cx]     = bottom-left  (bit 2)
-      //   grid[cy][cx+1]   = bottom-right (bit 3)
-      //   grid[cy+1][cx]   = top-left     (bit 0)
-      //   grid[cy+1][cx+1] = top-right    (bit 1)
-      let bl = working_grid[cy][cx];
-      let br = working_grid[cy][cx + 1];
-      let tl = working_grid[cy + 1][cx];
-      let tr = working_grid[cy + 1][cx + 1];
+  // Offset to world coordinates and connect into polylines
+  let world_segments: Vec<_> = segments
+    .into_iter()
+    .map(|(a, b)| (a + tile_origin, b + tile_origin))
+    .collect();
 
-      let case = (tl as usize) | ((tr as usize) << 1) | ((bl as usize) << 2) | ((br as usize) << 3);
-
-      // Get edge segments for this case
-      for &((x1, y1), (x2, y2)) in EDGE_TABLE[case] {
-        // Convert cell-local coords to world coords
-        // Cell (cx, cy) corresponds to pixel position (cx-1, cy-1) relative to tile
-        // origin because we have a 1-pixel border
-        let world_x1 = tile_origin.x + (cx as f32 - 1.0) + x1;
-        let world_y1 = tile_origin.y + (cy as f32 - 1.0) + y1;
-        let world_x2 = tile_origin.x + (cx as f32 - 1.0) + x2;
-        let world_y2 = tile_origin.y + (cy as f32 - 1.0) + y2;
-
-        segments.push((Vec2::new(world_x1, world_y1), Vec2::new(world_x2, world_y2)));
-      }
-    }
-  }
-
-  // Connect segments into closed polylines
-  connect_segments(segments)
+  connect_segments(world_segments)
 }
 
 #[cfg(test)]

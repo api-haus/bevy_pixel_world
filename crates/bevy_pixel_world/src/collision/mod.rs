@@ -43,7 +43,7 @@ pub mod physics;
 
 use bevy::prelude::*;
 pub use cache::{CollisionCache, CollisionTask, CollisionTasks};
-pub use contour::{EDGE_TABLE, connect_segments, grid_key};
+pub use contour::{EDGE_TABLE, connect_segments, extract_marching_segments, grid_key};
 pub use marching::{GRID_SIZE, marching_squares};
 pub use mesh::{PolygonMesh, TileCollisionMesh};
 pub use simplify::{douglas_peucker, simplify_polylines};
@@ -52,7 +52,7 @@ pub use systems::{
 };
 #[cfg(feature = "visual-debug")]
 pub use systems::{SampleMesh, draw_collision_gizmos, draw_sample_mesh_gizmos, update_sample_mesh};
-pub use triangulate::{Triangle, triangulate_polygon, triangulate_polygons};
+pub use triangulate::{Triangle, point_in_polygon, triangulate_polygon, triangulate_polygons};
 
 /// Configuration for collision mesh generation.
 #[derive(Resource, Clone, Debug)]

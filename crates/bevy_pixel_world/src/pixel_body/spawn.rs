@@ -41,7 +41,7 @@ impl Default for PixelBodyIdGenerator {
 
 impl PixelBodyIdGenerator {
   /// Generates a new unique pixel body ID.
-  pub fn next(&mut self) -> PixelBodyId {
+  pub fn generate(&mut self) -> PixelBodyId {
     self.counter += 1;
     // Combine session seed and counter with XOR and rotation for better
     // distribution
@@ -202,7 +202,7 @@ pub fn finalize_pending_pixel_bodies(
     };
 
     // Generate unique ID for this body
-    let body_id = id_generator.next();
+    let body_id = id_generator.generate();
 
     // Replace the pending entity with the full pixel body
     commands
@@ -242,7 +242,7 @@ pub fn finalize_pending_pixel_bodies(
     };
 
     // Generate unique ID for this body
-    let body_id = id_generator.next();
+    let body_id = id_generator.generate();
 
     commands
       .entity(entity)

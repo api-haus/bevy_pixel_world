@@ -224,6 +224,34 @@ Terms for physics collision mesh generation. See [collision.md](collision.md) fo
 | **Triangulation**                | Converting simplified polygon outlines into triangle meshes suitable for physics engines (Avian2D or Rapier2D).           | [collision.md](collision.md)       |
 | **Connected component analysis** | Algorithm detecting separate regions in a shape mask. Used to identify when a pixel body should split into fragments.     | [pixel-bodies.md](pixel-bodies.md) |
 
+### Collision Caching
+
+| Term                    | Definition                                                                                                         | Documentation                |
+|-------------------------|-------------------------------------------------------------------------------------------------------------------|------------------------------|
+| **CollisionCache**      | Resource caching generated meshes by tile position. Tracks in-flight tasks and generation counters.               | [collision.md](collision.md) |
+| **In-flight**           | A tile with an active async mesh generation task. Prevents duplicate tasks; invalidation discards pending results.| [collision.md](collision.md) |
+| **Generation counter**  | Monotonic counter incremented on each cache insert. Colliders track their creation generation to detect staleness.| [collision.md](collision.md) |
+| **CollisionQueryPoint** | Marker component for entities that drive collision mesh generation in their proximity radius.                      | [collision.md](collision.md) |
+
+### Physics Integration
+
+| Term              | Definition                                                                                                                  | Documentation                |
+|-------------------|-----------------------------------------------------------------------------------------------------------------------------|------------------------------|
+| **TileCollider**  | Static physics collider entity spawned from cached mesh. Tracks tile position and generation for staleness detection.       | [collision.md](collision.md) |
+| **Body wake**     | Sleeping physics bodies are woken when nearby terrain changes. Prevents bodies from floating after ground is removed.       | [collision.md](collision.md) |
+
+---
+
+## Entity Culling
+
+Automatic disabling of entities outside the streaming window. See [collision.md](collision.md).
+
+| Term              | Definition                                                                                                                            | Documentation                |
+|-------------------|---------------------------------------------------------------------------------------------------------------------------------------|------------------------------|
+| **StreamCulled**  | Marker component for entities that should be auto-disabled when outside the streaming window.                                          | [collision.md](collision.md) |
+| **CulledByWindow**| Internal marker distinguishing system-disabled entities from user-disabled. Only system-disabled entities are re-enabled on re-entry. | [collision.md](collision.md) |
+| **Collision ready**| A tile is cached and not in-flight. Culled entities wait for collision ready before re-enabling to prevent fall-through.             | [collision.md](collision.md) |
+
 ---
 
 ## Thermal System

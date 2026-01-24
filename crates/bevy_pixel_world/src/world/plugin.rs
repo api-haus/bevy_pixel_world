@@ -1153,7 +1153,7 @@ fn process_pending_save_requests(
     // Queue each chunk and mark as persisted
     for (pos, idx) in to_save {
       let slot = world.slot(idx);
-      let compressed = compress_lz4(&slot.chunk.pixels.as_bytes());
+      let compressed = compress_lz4(slot.chunk.pixels.as_bytes());
       persistence_tasks.queue_save(pos, compressed, StorageType::Full);
 
       // Mark slot as persisted so we don't save again until modified

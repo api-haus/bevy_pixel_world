@@ -176,6 +176,52 @@ fn traverse_polyline(
   polyline
 }
 
+/// Extracts edge segments from a grid using marching squares.
+///
+/// # Arguments
+/// * `width` - Grid width in cells (typically pixels + 2 for border)
+/// * `height` - Grid height in cells
+/// * `is_solid` - Closure that returns true if cell (x, y) is solid
+/// * `origin_offset` - Offset subtracted from cell coords (typically 1.0 for
+///   border)
+///
+/// # Returns
+/// A vector of edge segment pairs in local coordinates.
+pub fn extract_marching_segments<F>(
+  width: usize,
+  height: usize,
+  is_solid: F,
+  origin_offset: f32,
+) -> Vec<(Vec2, Vec2)>
+where
+  F: Fn(usize, usize) -> bool,
+{
+  let mut segments = Vec::new();
+
+  // Process each 2x2 cell
+  for cy in 0..height - 1 {
+    for cx in 0..width - 1 {
+      let bl = is_solid(cx, cy);
+      let br = is_solid(cx + 1, cy);
+      let tl = is_solid(cx, cy + 1);
+      let tr = is_solid(cx + 1, cy + 1);
+
+      let case = (tl as usize) | ((tr as usize) << 1) | ((bl as usize) << 2) | ((br as usize) << 3);
+
+      for &((x1, y1), (x2, y2)) in EDGE_TABLE[case] {
+        let local_x1 = (cx as f32 - origin_offset) + x1;
+        let local_y1 = (cy as f32 - origin_offset) + y1;
+        let local_x2 = (cx as f32 - origin_offset) + x2;
+        let local_y2 = (cy as f32 - origin_offset) + y2;
+
+        segments.push((Vec2::new(local_x1, local_y1), Vec2::new(local_x2, local_y2)));
+      }
+    }
+  }
+
+  segments
+}
+
 /// Connects edge segments into closed polylines.
 ///
 /// Uses integer grid-based matching for robust endpoint comparison.
