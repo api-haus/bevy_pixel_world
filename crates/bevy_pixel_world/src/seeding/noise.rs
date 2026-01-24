@@ -174,12 +174,9 @@ impl MaterialSeeder {
   }
 }
 
-impl ChunkSeeder for MaterialSeeder {
-  fn seed(&self, pos: ChunkPos, chunk: &mut Chunk) {
-    let base_x = pos.x as f32 * CHUNK_SIZE as f32;
-    let base_y = pos.y as f32 * CHUNK_SIZE as f32;
-
-    // Pass 1: Generate solid mask
+impl MaterialSeeder {
+  /// Pass 1: Generate solid mask from primary noise.
+  fn generate_solid_mask(&self, base_x: f32, base_y: f32) -> Surface<u8> {
     let mut mask = Surface::<u8>::new(CHUNK_SIZE, CHUNK_SIZE);
     for ly in 0..CHUNK_SIZE {
       for lx in 0..CHUNK_SIZE {
@@ -191,51 +188,72 @@ impl ChunkSeeder for MaterialSeeder {
         mask.set(lx, ly, if value < self.threshold { 1 } else { 0 });
       }
     }
+    mask
+  }
+
+  /// Computes the pixel at a given position based on SDF distance.
+  fn compute_pixel(&self, lx: u32, ly: u32, base_x: f32, base_y: f32, dist: u8) -> Pixel {
+    let wx = base_x + lx as f32;
+    let wy = base_y + ly as f32;
+
+    // Sample secondary noise for feathering
+    let feather = self.secondary.gen_single_2d(wx * 0.5, wy * 0.5, self.seed);
+
+    // Feathered distance
+    let fd = dist as f32 + feather * self.feather_scale;
+
+    // Material selection: check for surface islets first
+    let material = if dist <= self.islet_depth {
+      // Surface zone - check for sand/water islets
+      // Use different seed offsets for distinct patterns
+      let sand_val = self.sand_noise.gen_single_2d(wx, wy, self.seed);
+      let water_val = self.water_noise.gen_single_2d(wx, wy, self.seed + 1000);
+
+      if sand_val > self.islet_threshold {
+        material_ids::SAND
+      } else if water_val > self.islet_threshold {
+        material_ids::WATER
+      } else {
+        material_ids::STONE
+      }
+    } else {
+      material_ids::STONE
+    };
+
+    // Color from feathered depth (0-255)
+    let color = ((fd / 32.0) * 255.0).clamp(0.0, 255.0) as u8;
+
+    Pixel::new(material, ColorIndex(color))
+  }
+
+  /// Pass 3: Assign materials with feathered colors based on SDF.
+  fn assign_materials(&self, chunk: &mut Chunk, sdf: &Surface<u8>, base_x: f32, base_y: f32) {
+    for ly in 0..CHUNK_SIZE {
+      for lx in 0..CHUNK_SIZE {
+        let dist = sdf[(lx, ly)];
+        let pixel = if dist == 0 {
+          Pixel::VOID
+        } else {
+          self.compute_pixel(lx, ly, base_x, base_y, dist)
+        };
+        chunk.pixels.set(lx, ly, pixel);
+      }
+    }
+  }
+}
+
+impl ChunkSeeder for MaterialSeeder {
+  fn seed(&self, pos: ChunkPos, chunk: &mut Chunk) {
+    let base_x = pos.x as f32 * CHUNK_SIZE as f32;
+    let base_y = pos.y as f32 * CHUNK_SIZE as f32;
+
+    // Pass 1: Generate solid mask
+    let mask = self.generate_solid_mask(base_x, base_y);
 
     // Pass 2: Compute SDF (distance to void)
     let sdf = distance_to_void(&mask);
 
     // Pass 3: Assign materials with feathered colors
-    for ly in 0..CHUNK_SIZE {
-      for lx in 0..CHUNK_SIZE {
-        let dist = sdf[(lx, ly)];
-        if dist == 0 {
-          chunk.pixels.set(lx, ly, Pixel::VOID);
-        } else {
-          // Sample secondary noise for feathering
-          let wx = base_x + lx as f32;
-          let wy = base_y + ly as f32;
-          let feather = self.secondary.gen_single_2d(wx * 0.5, wy * 0.5, self.seed);
-
-          // Feathered distance
-          let fd = dist as f32 + feather * self.feather_scale;
-
-          // Material selection: check for surface islets first
-          let material = if dist <= self.islet_depth {
-            // Surface zone - check for sand/water islets
-            // Use different seed offsets for distinct patterns
-            let sand_val = self.sand_noise.gen_single_2d(wx, wy, self.seed);
-            let water_val = self.water_noise.gen_single_2d(wx, wy, self.seed + 1000);
-
-            if sand_val > self.islet_threshold {
-              material_ids::SAND
-            } else if water_val > self.islet_threshold {
-              material_ids::WATER
-            } else {
-              material_ids::STONE
-            }
-          } else {
-            material_ids::STONE
-          };
-
-          // Color from feathered depth (0-255)
-          let color = ((fd / 32.0) * 255.0).clamp(0.0, 255.0) as u8;
-
-          chunk
-            .pixels
-            .set(lx, ly, Pixel::new(material, ColorIndex(color)));
-        }
-      }
-    }
+    self.assign_materials(chunk, &sdf, base_x, base_y);
   }
 }

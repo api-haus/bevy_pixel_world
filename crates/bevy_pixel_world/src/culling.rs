@@ -63,6 +63,14 @@ impl CullingConfig {
   }
 }
 
+/// Query type for entities that can be culled by the streaming window.
+type CulledEntityQuery<'w, 's> = Query<
+  'w,
+  's,
+  (Entity, &'static GlobalTransform, Has<CulledByWindow>),
+  (With<StreamCulled>, Allow<Disabled>),
+>;
+
 /// System that culls entities outside the streaming window.
 ///
 /// For each entity with [`StreamCulled`]:
@@ -74,10 +82,7 @@ pub(crate) fn update_entity_culling(
   config: Res<CullingConfig>,
   cache: Res<CollisionCache>,
   worlds: Query<&PixelWorld>,
-  entities: Query<
-    (Entity, &GlobalTransform, Has<CulledByWindow>),
-    (With<StreamCulled>, Allow<Disabled>),
-  >,
+  entities: CulledEntityQuery,
 ) {
   if !config.enabled {
     return;

@@ -1,8 +1,8 @@
 mod material;
-mod render;
+mod pipeline;
 
 pub use material::ChunkMaterial;
-pub use render::{
+pub use pipeline::{
   create_chunk_quad, create_palette_texture, create_pixel_texture, create_texture, materialize,
   spawn_static_chunk, upload_palette, upload_pixels, upload_surface,
 };

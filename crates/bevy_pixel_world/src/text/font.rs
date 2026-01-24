@@ -180,6 +180,28 @@ pub fn rasterize_text(
   })
 }
 
+/// Text rendering style configuration.
+///
+/// Bundles font scale, character spacing, and color for text rendering.
+pub struct TextStyle {
+  /// Font size in pixels (e.g., 16.0 for 16px).
+  pub font_scale: f32,
+  /// Extra spacing between characters in pixels.
+  pub char_spacing: f32,
+  /// Color to use for the text.
+  pub color: Rgba,
+}
+
+impl Default for TextStyle {
+  fn default() -> Self {
+    Self {
+      font_scale: 16.0,
+      char_spacing: 0.0,
+      color: Rgba::new(255, 255, 255, 255),
+    }
+  }
+}
+
 /// Stamps a text mask onto a surface at the given position.
 ///
 /// - `x, y`: Position of the bottom-left corner of the text.
@@ -213,20 +235,16 @@ pub fn stamp_text(surface: &mut RgbaSurface, mask: &TextMask, x: i32, y: i32, co
 /// Convenience function combining [`rasterize_text`] and [`stamp_text`].
 ///
 /// - `x, y`: Position of the bottom-left corner of the text.
-/// - `font_scale`: Font size in pixels.
-/// - `char_spacing`: Extra spacing between characters in pixels.
-/// - `color`: Color to use for the text.
+/// - `style`: Text style (font scale, spacing, color).
 pub fn draw_text(
   surface: &mut RgbaSurface,
   font: &CpuFont,
   text: &str,
   x: i32,
   y: i32,
-  font_scale: f32,
-  char_spacing: f32,
-  color: Rgba,
+  style: &TextStyle,
 ) {
-  if let Some(mask) = rasterize_text(font, text, font_scale, char_spacing) {
-    stamp_text(surface, &mask, x, y, color);
+  if let Some(mask) = rasterize_text(font, text, style.font_scale, style.char_spacing) {
+    stamp_text(surface, &mask, x, y, style.color);
   }
 }

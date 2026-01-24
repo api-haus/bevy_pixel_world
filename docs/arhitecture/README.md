@@ -51,6 +51,7 @@ flowchart TB
 | **Chunk Persistence** | Save file format, random access, compression, dirty tracking     | [chunk-persistence.md](chunk-persistence.md) |
 | **Simulation Engine** | Parallel cellular automata with checkerboard scheduling          | [simulation.md](simulation.md)               |
 | **Particle System**   | Free-form particles for dynamic effects (debris, gases, pouring) | [particles.md](particles.md)                 |
+| **Pixel Bodies**      | Dynamic physics objects with pixel content in CA simulation      | [pixel-bodies.md](pixel-bodies.md)           |
 | **Streaming Window**  | Camera-tracking active region management                         | [streaming-window.md](streaming-window.md)   |
 | **Chunk Seeder**      | Trait for procedural generation, noise pipelines                 | [chunk-seeding.md](chunk-seeding.md)         |
 | **Rendering**         | Chunk texture upload and material identity textures              | [rendering.md](rendering.md)                 |

@@ -8,7 +8,7 @@ use super::gizmos::GizmoKind;
 /// Settings for visual debug overlays.
 ///
 /// All visualizations are opt-in (disabled by default).
-#[derive(Resource, Clone, Debug, Serialize, Deserialize)]
+#[derive(Resource, Clone, Debug, Default, Serialize, Deserialize)]
 pub struct VisualDebugSettings {
   /// Show collision mesh outlines.
   pub show_collision_meshes: bool,
@@ -20,18 +20,6 @@ pub struct VisualDebugSettings {
   pub show_dirty_rects: bool,
   /// Show blit rect highlights.
   pub show_blit_rects: bool,
-}
-
-impl Default for VisualDebugSettings {
-  fn default() -> Self {
-    Self {
-      show_collision_meshes: false,
-      show_chunk_boundaries: false,
-      show_tile_boundaries: false,
-      show_dirty_rects: false,
-      show_blit_rects: false,
-    }
-  }
 }
 
 impl VisualDebugSettings {

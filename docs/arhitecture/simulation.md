@@ -300,6 +300,7 @@ See [Spatial Hierarchy](spatial-hierarchy.md) for tile system details.
 
 - [Materials](materials.md) - Material properties, tags, and interaction definitions
 - [Particles](particles.md) - Free-form particle system for dynamic effects
+- [Pixel Bodies](pixel-bodies.md) - Dynamic physics objects with pixel content
 - [Pixel Format](pixel-format.md) - Data structure processed by simulation
 - [Spatial Hierarchy](spatial-hierarchy.md) - World, chunk, tile, pixel organization
 - [Scheduling](scheduling.md) - Checkerboard tile phasing for parallel simulation

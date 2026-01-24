@@ -56,8 +56,8 @@ fn compute_powder_swap(
       ctx.tick,
       pos.x as u64,
       pos.y as u64,
-    ) % src_material.air_resistance as u64
-      == 0
+    )
+    .is_multiple_of(src_material.air_resistance as u64)
   {
     return None;
   }
@@ -76,8 +76,8 @@ fn compute_powder_swap(
       ctx.tick,
       pos.x as u64,
       pos.y as u64,
-    ) % src_material.air_drift as u64
-      == 0
+    )
+    .is_multiple_of(src_material.air_drift as u64)
   {
     flip
   } else {
@@ -105,8 +105,8 @@ fn compute_liquid_swap(
       ctx.tick,
       pos.x as u64,
       pos.y as u64,
-    ) % src_material.air_resistance as u64
-      == 0
+    )
+    .is_multiple_of(src_material.air_resistance as u64)
   {
     return None;
   }
@@ -125,8 +125,8 @@ fn compute_liquid_swap(
       ctx.tick,
       pos.x as u64,
       pos.y as u64,
-    ) % src_material.air_drift as u64
-      == 0
+    )
+    .is_multiple_of(src_material.air_drift as u64)
   {
     flip
   } else {

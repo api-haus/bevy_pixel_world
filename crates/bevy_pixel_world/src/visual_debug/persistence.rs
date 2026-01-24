@@ -97,11 +97,11 @@ pub fn save_settings(
   };
 
   // Ensure parent directory exists
-  if let Some(parent) = path.parent() {
-    if let Err(e) = std::fs::create_dir_all(parent) {
-      warn!("Failed to create settings directory: {e}");
-      return;
-    }
+  if let Some(parent) = path.parent()
+    && let Err(e) = std::fs::create_dir_all(parent)
+  {
+    warn!("Failed to create settings directory: {e}");
+    return;
   }
 
   match toml::to_string_pretty(&*settings) {

@@ -42,6 +42,7 @@
 //!
 //! See `docs/architecture/scheduling.md` for detailed design rationale.
 
+use std::cell::UnsafeCell;
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
@@ -65,7 +66,7 @@ use crate::simulation::hash::hash21uu64;
 /// It is only safe to use with the 2x2 checkerboard scheduling, which
 /// guarantees tiles in the same phase never access overlapping pixels.
 pub struct Canvas<'a> {
-  chunks: HashMap<ChunkPos, *mut Chunk>,
+  chunks: HashMap<ChunkPos, UnsafeCell<*mut Chunk>>,
   _marker: std::marker::PhantomData<&'a mut Chunk>,
 }
 
@@ -79,7 +80,7 @@ impl<'a> Canvas<'a> {
   pub fn new(chunks: HashMap<ChunkPos, &'a mut Chunk>) -> Self {
     let ptrs = chunks
       .into_iter()
-      .map(|(pos, chunk)| (pos, chunk as *mut Chunk))
+      .map(|(pos, chunk)| (pos, UnsafeCell::new(chunk as *mut Chunk)))
       .collect();
     Self {
       chunks: ptrs,
@@ -90,13 +91,21 @@ impl<'a> Canvas<'a> {
   /// Gets a chunk reference for reading.
   #[inline]
   pub fn get(&self, pos: ChunkPos) -> Option<&Chunk> {
-    self.chunks.get(&pos).map(|ptr| unsafe { &**ptr })
+    self.chunks.get(&pos).map(|cell| unsafe { &**cell.get() })
   }
 
   /// Gets a mutable chunk reference for writing.
+  ///
+  /// # Safety
+  /// Interior mutability is sound due to 2x2 checkerboard scheduling, which
+  /// guarantees tiles in the same phase never access overlapping pixels.
   #[inline]
+  #[allow(clippy::mut_from_ref)]
   pub fn get_mut(&self, pos: ChunkPos) -> Option<&mut Chunk> {
-    self.chunks.get(&pos).map(|ptr| unsafe { &mut **ptr })
+    self
+      .chunks
+      .get(&pos)
+      .map(|cell| unsafe { &mut **cell.get() })
   }
 
   /// Gets mutable references to two different chunks.
@@ -105,17 +114,31 @@ impl<'a> Canvas<'a> {
   /// (use `get_mut` for same-chunk access).
   ///
   /// # Safety
-  /// This is safe because the positions are guaranteed to be different,
-  /// so the raw pointers point to distinct memory locations.
+  /// Interior mutability is sound because:
+  /// - The positions are guaranteed to be different (distinct memory)
+  /// - Checkerboard scheduling guarantees no overlapping pixel access
   #[inline]
+  #[allow(clippy::mut_from_ref)]
   pub fn get_two_mut(&self, a: ChunkPos, b: ChunkPos) -> Option<(&mut Chunk, &mut Chunk)> {
     debug_assert_ne!(a, b, "get_two_mut requires different chunk positions");
-    let ptr_a = self.chunks.get(&a)?;
-    let ptr_b = self.chunks.get(&b)?;
+    let cell_a = self.chunks.get(&a)?;
+    let cell_b = self.chunks.get(&b)?;
     // SAFETY: a != b guarantees these are distinct memory locations.
     // Checkerboard scheduling guarantees no overlapping pixel access.
-    Some(unsafe { (&mut **ptr_a, &mut **ptr_b) })
+    Some(unsafe { (&mut **cell_a.get(), &mut **cell_b.get()) })
   }
+}
+
+/// Context for tile-based blit operations.
+///
+/// Bundles parameters needed by process_tile to reduce function signature
+/// complexity.
+struct TileContext<'a> {
+  rect: &'a WorldRect,
+  w_recip: f32,
+  h_recip: f32,
+  dirty_chunks: &'a Mutex<HashSet<ChunkPos>>,
+  dirty_tiles: Option<&'a Mutex<HashSet<TilePos>>>,
 }
 
 /// Executes a blit operation across tiles in parallel using 2x2 checkerboard
@@ -150,19 +173,18 @@ pub fn parallel_blit<F>(
     0.0
   };
 
+  let ctx = TileContext {
+    rect: &rect,
+    w_recip,
+    h_recip,
+    dirty_chunks,
+    dirty_tiles,
+  };
+
   // Execute each phase sequentially, tiles within phase in parallel
   for phase_tiles in phases {
     phase_tiles.par_iter().for_each(|&tile| {
-      process_tile(
-        chunks,
-        tile,
-        &rect,
-        &f,
-        w_recip,
-        h_recip,
-        dirty_chunks,
-        dirty_tiles,
-      );
+      process_tile(chunks, tile, &ctx, &f);
     });
     // Implicit barrier between phases due to sequential for loop
   }
@@ -192,7 +214,10 @@ pub fn parallel_simulate<F>(
   #[cfg(feature = "tracy")]
   let _span = tracing::info_span!("parallel_simulate").entered();
 
-  for (_phase_idx, phase_tiles) in tiles_by_phase.iter().enumerate() {
+  #[cfg(feature = "tracy")]
+  let mut _phase_idx = 0usize;
+
+  for phase_tiles in &tiles_by_phase {
     #[cfg(feature = "tracy")]
     let _phase_span = tracing::info_span!("phase", phase = _phase_idx).entered();
 
@@ -200,6 +225,11 @@ pub fn parallel_simulate<F>(
       simulate_tile(chunks, tile, &f, dirty_chunks, debug_gizmos, tick, jitter);
     });
     // Implicit barrier between phases due to sequential for loop
+
+    #[cfg(feature = "tracy")]
+    {
+      _phase_idx += 1;
+    }
   }
 }
 
@@ -547,16 +577,8 @@ fn swap_pixels(chunks: &Canvas<'_>, a: WorldPos, b: WorldPos) -> Option<[ChunkPo
 }
 
 /// Process a single tile, writing pixels that pass the filter.
-fn process_tile<F>(
-  chunks: &Canvas<'_>,
-  tile: TilePos,
-  rect: &WorldRect,
-  f: &F,
-  w_recip: f32,
-  h_recip: f32,
-  dirty_chunks: &Mutex<HashSet<ChunkPos>>,
-  dirty_tiles: Option<&Mutex<HashSet<TilePos>>>,
-) where
+fn process_tile<F>(chunks: &Canvas<'_>, tile: TilePos, ctx: &TileContext<'_>, f: &F)
+where
   F: Fn(WorldFragment) -> Option<Pixel> + Sync,
 {
   let tile_size = TILE_SIZE as i64;
@@ -572,7 +594,7 @@ fn process_tile<F>(
     let world_y = tile_y_start + dy as i64;
 
     // Skip if outside rect bounds
-    if world_y < rect.y || world_y >= rect.y + rect.height as i64 {
+    if world_y < ctx.rect.y || world_y >= ctx.rect.y + ctx.rect.height as i64 {
       continue;
     }
 
@@ -580,13 +602,13 @@ fn process_tile<F>(
       let world_x = tile_x_start + dx as i64;
 
       // Skip if outside rect bounds
-      if world_x < rect.x || world_x >= rect.x + rect.width as i64 {
+      if world_x < ctx.rect.x || world_x >= ctx.rect.x + ctx.rect.width as i64 {
         continue;
       }
 
       // Compute normalized coordinates
-      let u = (world_x - rect.x) as f32 * w_recip;
-      let v = (world_y - rect.y) as f32 * h_recip;
+      let u = (world_x - ctx.rect.x) as f32 * ctx.w_recip;
+      let v = (world_y - ctx.rect.y) as f32 * ctx.h_recip;
 
       let frag = WorldFragment {
         x: world_x,
@@ -622,15 +644,15 @@ fn process_tile<F>(
 
   // Merge local dirty set into global
   if !local_dirty.is_empty() {
-    if let Ok(mut global_dirty) = dirty_chunks.lock() {
+    if let Ok(mut global_dirty) = ctx.dirty_chunks.lock() {
       global_dirty.extend(local_dirty);
     }
 
     // Track this tile as dirty
-    if let Some(tiles_mutex) = dirty_tiles {
-      if let Ok(mut tiles) = tiles_mutex.lock() {
-        tiles.insert(tile);
-      }
+    if let Some(tiles_mutex) = ctx.dirty_tiles
+      && let Ok(mut tiles) = tiles_mutex.lock()
+    {
+      tiles.insert(tile);
     }
   }
 }
