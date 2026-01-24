@@ -11,7 +11,7 @@
 //! - Shift: Speed boost (5x)
 //! - Side panel: Material selection, brush size slider
 //!
-//! Run with: `cargo run -p pixel_world --example painting`
+//! Run with: `cargo run -p bevy_pixel_world --example painting`
 
 use bevy::camera::ScalingMode;
 use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
@@ -19,8 +19,8 @@ use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
 #[cfg(feature = "diagnostics")]
-use pixel_world::diagnostics::DiagnosticsPlugin;
-use pixel_world::{
+use bevy_pixel_world::diagnostics::DiagnosticsPlugin;
+use bevy_pixel_world::{
   material_ids, ColorIndex, MaterialId, MaterialSeeder, Materials, Pixel, PixelWorld,
   PixelWorldPlugin, SpawnPixelWorld, StreamingCamera, WorldRect,
 };
@@ -212,7 +212,7 @@ fn camera_input(
 fn paint_system(
   brush: Res<BrushState>,
   mut worlds: Query<&mut PixelWorld>,
-  gizmos: pixel_world::debug_shim::GizmosParam,
+  gizmos: bevy_pixel_world::debug_shim::GizmosParam,
 ) {
   if !brush.painting && !brush.erasing {
     return;

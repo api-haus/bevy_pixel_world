@@ -3,8 +3,8 @@
 //! Replicates the 2x2 checkerboard scheduling from parallel/blitter.rs
 //! but accepts tile_size as a runtime parameter.
 
-use pixel_world::primitives::Surface;
-use pixel_world::Pixel;
+use bevy_pixel_world::primitives::Surface;
+use bevy_pixel_world::Pixel;
 use rayon::prelude::*;
 
 /// Phase assignment for 2x2 checkerboard scheduling.

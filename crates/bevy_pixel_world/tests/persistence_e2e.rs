@@ -11,7 +11,7 @@ use std::sync::{Arc, RwLock};
 
 use tempfile::TempDir;
 
-use pixel_world::{
+use bevy_pixel_world::{
     material_ids, Chunk, ChunkPos, ChunkSeeder, ColorIndex, PersistenceSeeder, Pixel, WorldSave,
     CHUNK_SIZE,
 };

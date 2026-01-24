@@ -46,7 +46,7 @@ fn main() {
   app.add_plugins(visual_debug::VisualDebugPlugin);
 
   #[cfg(feature = "diagnostics")]
-  app.add_plugins(pixel_world::diagnostics::DiagnosticsPlugin);
+  app.add_plugins(bevy_pixel_world::diagnostics::DiagnosticsPlugin);
 
   app.run();
 }

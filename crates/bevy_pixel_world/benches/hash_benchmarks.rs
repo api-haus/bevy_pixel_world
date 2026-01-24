@@ -1,7 +1,7 @@
 //! Benchmarks for deterministic hash functions.
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use pixel_world::simulation::hash::*;
+use bevy_pixel_world::simulation::hash::*;
 
 const ITERATIONS: u64 = 10_000;
 

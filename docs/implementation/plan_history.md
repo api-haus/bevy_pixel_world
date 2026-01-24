@@ -115,7 +115,7 @@ Bevy integration for GPU rendering.
 Bevy app that blits an animated UV-colored quad into a chunk at 60 TPS. The quad bounces around with a pulsing blue
 channel.
 
-**Verification:** `cargo run -p pixel_world --example uv_quad`
+**Verification:** `cargo run -p bevy_pixel_world --example uv_quad`
 
 - [x] UV quad displays with correct gradient (red→right, green→down)
 - [x] Animation runs at stable 60 TPS
@@ -125,7 +125,7 @@ channel.
 
 ## Phase 1: Rolling Chunk Grid (Completed)
 
-**Deliverable:** `cargo run -p pixel_world --example rolling_grid`
+**Deliverable:** `cargo run -p bevy_pixel_world --example rolling_grid`
 
 ### 1.1 Constants & Coordinate Types
 
@@ -225,7 +225,7 @@ Terrain fill using `SuperSimplex` node:
 ### Verification
 
 ```bash
-cargo run -p pixel_world --example rolling_grid
+cargo run -p bevy_pixel_world --example rolling_grid
 ```
 
 - [x] WASD moves camera smoothly
@@ -325,7 +325,7 @@ Uses `PixelWorld::blit()` API for efficient parallel painting.
 ### Verification
 
 ```bash
-cargo run -p pixel_world --example painting
+cargo run -p bevy_pixel_world --example painting
 ```
 
 - [x] Cursor position tracks correctly at all zoom levels
@@ -388,7 +388,7 @@ Hash function provides per-pixel, per-tick randomness for natural behavior.
 ### Verification
 
 ```bash
-cargo run -p pixel_world --example painting
+cargo run -p bevy_pixel_world --example painting
 ```
 
 - [x] Sand falls and piles at angle of repose

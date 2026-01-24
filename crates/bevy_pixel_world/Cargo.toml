@@ -1,8 +1,12 @@
 [package]
-name = "pixel_world"
+name = "bevy_pixel_world"
 version.workspace = true
 edition.workspace = true
 description = "Infinite cellular automata simulation plugin for Bevy"
+license = "MIT"
+repository = "https://github.com/api-haus/bevy_pixel_world"
+keywords = ["bevy", "pixel", "simulation", "cellular-automata", "sandbox"]
+categories = ["game-development", "simulation"]
 
 [dependencies]
 bevy = { workspace = true }

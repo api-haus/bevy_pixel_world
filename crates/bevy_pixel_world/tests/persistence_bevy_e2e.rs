@@ -9,7 +9,7 @@
 use bevy::app::{TaskPoolOptions, TaskPoolPlugin};
 use bevy::ecs::world::Mut;
 use bevy::prelude::*;
-use pixel_world::{
+use bevy_pixel_world::{
     material_ids, ColorIndex, MaterialSeeder, PersistenceConfig, Pixel, PixelWorld, PixelWorldPlugin,
     SpawnPixelWorld, StreamingCamera, WorldPos, CHUNK_SIZE,
 };

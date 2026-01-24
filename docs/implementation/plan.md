@@ -17,7 +17,7 @@ See [plan_history.md](plan_history.md) for archived phases.
 - Cellular automata simulation (powder falls, liquid flows)
 - Debug overlays (chunk boundaries, dirty rects, tile phases)
 
-**Demo:** `cargo run -p pixel_world --example painting`
+**Demo:** `cargo run -p bevy_pixel_world --example painting`
 
 ---
 
@@ -37,7 +37,7 @@ See [plan_history.md](plan_history.md) for archived phases.
 
 ## Phase 5: Game Integration
 
-Integrate `pixel_world` simulation with the `game` crate player mechanics.
+Integrate `bevy_pixel_world` simulation with the `game` crate player mechanics.
 
 **Goal:** Player interacts with pixel world - collision, digging, building.
 

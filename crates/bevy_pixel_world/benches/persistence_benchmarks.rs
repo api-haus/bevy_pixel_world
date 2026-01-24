@@ -8,8 +8,8 @@
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use lz4_flex::{compress_prepend_size, decompress_size_prepended};
-use pixel_world::primitives::Surface;
-use pixel_world::{ColorIndex, MaterialId, Pixel};
+use bevy_pixel_world::primitives::Surface;
+use bevy_pixel_world::{ColorIndex, MaterialId, Pixel};
 use rand::prelude::*;
 use std::collections::HashMap;
 

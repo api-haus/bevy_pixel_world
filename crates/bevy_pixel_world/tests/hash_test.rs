@@ -1,6 +1,6 @@
 //! Existence tests for hash functions.
 
-use pixel_world::simulation::hash::*;
+use bevy_pixel_world::simulation::hash::*;
 
 #[test]
 fn all_hash_functions_exist() {
