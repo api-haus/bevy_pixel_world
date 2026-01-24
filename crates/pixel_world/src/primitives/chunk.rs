@@ -12,6 +12,11 @@ use crate::pixel::PixelSurface;
 /// Number of tiles per chunk (16x16 = 256).
 const TILE_COUNT: usize = (TILES_PER_CHUNK * TILES_PER_CHUNK) as usize;
 
+/// Tile-local bounding box: (min_x, min_y, max_x, max_y).
+///
+/// Coordinates are in the range 0..TILE_SIZE-1.
+pub type TileBounds = (u8, u8, u8, u8);
+
 /// Dirty rectangle within a tile for simulation scheduling.
 ///
 /// Coordinates are local to the tile (0 to TILE_SIZE-1).
@@ -20,9 +25,9 @@ const TILE_COUNT: usize = (TILES_PER_CHUNK * TILES_PER_CHUNK) as usize;
 #[derive(Clone, Copy, Debug, Default)]
 pub struct TileDirtyRect {
   /// Bounds for next frame (accumulated by expand() calls during simulation)
-  next: Option<(u8, u8, u8, u8)>,
+  next: Option<TileBounds>,
   /// Bounds to simulate this frame
-  current: Option<(u8, u8, u8, u8)>,
+  current: Option<TileBounds>,
   /// Frames until sleep (2 = active, 1 = cooling, 0 = sleeping)
   cooldown: u8,
 }
@@ -100,8 +105,8 @@ impl TileDirtyRect {
     }
   }
 
-  /// Returns the bounds as (min_x, min_y, max_x, max_y), or None if sleeping.
-  pub fn bounds(&self) -> Option<(u8, u8, u8, u8)> {
+  /// Returns the bounds, or None if sleeping.
+  pub fn bounds(&self) -> Option<TileBounds> {
     if self.cooldown > 0 {
       self.current
     } else {
