@@ -12,7 +12,7 @@
 #[cfg(all(feature = "avian2d", feature = "rapier2d"))]
 compile_error!("Cannot enable both avian2d and rapier2d features simultaneously");
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use bevy::prelude::*;
 
@@ -39,29 +39,14 @@ pub struct TileCollider {
     pub generation: u64,
 }
 
-/// Synchronizes physics colliders with the collision cache.
-///
-/// - Spawns colliders for cached meshes within proximity of query points
-/// - Despawns colliders when tiles are invalidated, leave proximity, or mesh is updated
-/// - Wakes sleeping dynamic bodies near changed tiles
-pub fn sync_physics_colliders(
-    mut commands: Commands,
-    mut registry: ResMut<PhysicsColliderRegistry>,
-    cache: Res<CollisionCache>,
-    config: Res<CollisionConfig>,
-    query_points: Query<&GlobalTransform, With<CollisionQueryPoint>>,
-    collider_entities: Query<(Entity, &TileCollider)>,
-    #[cfg(feature = "avian2d")] sleeping_bodies: Query<
-        (Entity, &GlobalTransform),
-        (With<RigidBody>, With<Sleeping>),
-    >,
-    #[cfg(feature = "rapier2d")] mut sleeping_bodies: Query<
-        (&GlobalTransform, &mut Sleeping),
-        With<RigidBody>,
-    >,
-) {
-    // Collect all tiles that should have colliders (within proximity of any query point)
-    let mut desired_tiles = std::collections::HashSet::new();
+/// Collects tiles within proximity of query points that have cached collision meshes.
+fn collect_desired_tiles(
+    query_points: &Query<&GlobalTransform, With<CollisionQueryPoint>>,
+    cache: &CollisionCache,
+    proximity_radius: u32,
+) -> HashSet<TilePos> {
+    let mut desired_tiles = HashSet::new();
+    let radius = proximity_radius as i64;
 
     for transform in query_points.iter() {
         let pos = transform.translation();
@@ -70,7 +55,6 @@ pub fn sync_physics_colliders(
             (pos.y as i64).div_euclid(TILE_SIZE as i64),
         );
 
-        let radius = config.proximity_radius as i64;
         for ty in (center_tile.y - radius)..=(center_tile.y + radius) {
             for tx in (center_tile.x - radius)..=(center_tile.x + radius) {
                 let tile = TilePos::new(tx, ty);
@@ -81,12 +65,19 @@ pub fn sync_physics_colliders(
         }
     }
 
-    // Despawn colliders for tiles that are:
-    // - No longer in proximity
-    // - No longer in cache
-    // - Have stale geometry (generation mismatch)
+    desired_tiles
+}
+
+/// Identifies colliders that should be despawned (out of range, not cached, or stale geometry).
+/// Returns (entities to despawn, tiles that had terrain changes requiring body wake).
+fn find_stale_colliders(
+    collider_entities: &Query<(Entity, &TileCollider)>,
+    desired_tiles: &HashSet<TilePos>,
+    cache: &CollisionCache,
+) -> (Vec<(Entity, TilePos)>, Vec<TilePos>) {
     let mut to_despawn = Vec::new();
     let mut stale_tiles = Vec::new();
+
     for (entity, tile_collider) in collider_entities.iter() {
         let out_of_range = !desired_tiles.contains(&tile_collider.tile);
         let not_cached = !cache.contains(tile_collider.tile);
@@ -103,56 +94,73 @@ pub fn sync_physics_colliders(
         }
     }
 
-    for (entity, tile) in to_despawn {
-        commands.entity(entity).despawn();
-        registry.entities.remove(&tile);
-    }
+    (to_despawn, stale_tiles)
+}
 
-    // Wake sleeping bodies near tiles that had their terrain changed
-    if !stale_tiles.is_empty() {
-        #[cfg(feature = "avian2d")]
-        for (entity, transform) in sleeping_bodies.iter() {
-            let pos = transform.translation();
-            let body_tile = TilePos::new(
-                (pos.x as i64).div_euclid(TILE_SIZE as i64),
-                (pos.y as i64).div_euclid(TILE_SIZE as i64),
-            );
+/// Wakes sleeping physics bodies near tiles that had terrain changes.
+fn wake_bodies_near_tiles(
+    commands: &mut Commands,
+    stale_tiles: &[TilePos],
+    #[cfg(feature = "avian2d")] sleeping_bodies: &Query<
+        (Entity, &GlobalTransform),
+        (With<RigidBody>, With<Sleeping>),
+    >,
+    #[cfg(feature = "rapier2d")] sleeping_bodies: &mut Query<
+        (&GlobalTransform, &mut Sleeping),
+        With<RigidBody>,
+    >,
+) {
+    let _ = commands; // Used only by avian2d
 
-            let should_wake = stale_tiles.iter().any(|stale_tile| {
-                (body_tile.x - stale_tile.x).abs() <= 1 && (body_tile.y - stale_tile.y).abs() <= 1
-            });
+    #[cfg(feature = "avian2d")]
+    for (entity, transform) in sleeping_bodies.iter() {
+        let pos = transform.translation();
+        let body_tile = TilePos::new(
+            (pos.x as i64).div_euclid(TILE_SIZE as i64),
+            (pos.y as i64).div_euclid(TILE_SIZE as i64),
+        );
 
-            if should_wake {
-                commands.entity(entity).remove::<Sleeping>();
-            }
-        }
+        let should_wake = stale_tiles.iter().any(|stale_tile| {
+            (body_tile.x - stale_tile.x).abs() <= 1 && (body_tile.y - stale_tile.y).abs() <= 1
+        });
 
-        #[cfg(feature = "rapier2d")]
-        for (transform, mut sleeping) in sleeping_bodies.iter_mut() {
-            if !sleeping.sleeping {
-                continue;
-            }
-
-            let pos = transform.translation();
-            let body_tile = TilePos::new(
-                (pos.x as i64).div_euclid(TILE_SIZE as i64),
-                (pos.y as i64).div_euclid(TILE_SIZE as i64),
-            );
-
-            let should_wake = stale_tiles.iter().any(|stale_tile| {
-                (body_tile.x - stale_tile.x).abs() <= 1 && (body_tile.y - stale_tile.y).abs() <= 1
-            });
-
-            if should_wake {
-                sleeping.sleeping = false;
-            }
+        if should_wake {
+            commands.entity(entity).remove::<Sleeping>();
         }
     }
 
-    // Spawn colliders for tiles that need them
-    for tile in desired_tiles {
+    #[cfg(feature = "rapier2d")]
+    for (transform, mut sleeping) in sleeping_bodies.iter_mut() {
+        if !sleeping.sleeping {
+            continue;
+        }
+
+        let pos = transform.translation();
+        let body_tile = TilePos::new(
+            (pos.x as i64).div_euclid(TILE_SIZE as i64),
+            (pos.y as i64).div_euclid(TILE_SIZE as i64),
+        );
+
+        let should_wake = stale_tiles.iter().any(|stale_tile| {
+            (body_tile.x - stale_tile.x).abs() <= 1 && (body_tile.y - stale_tile.y).abs() <= 1
+        });
+
+        if should_wake {
+            sleeping.sleeping = false;
+        }
+    }
+}
+
+/// Spawns physics colliders for tiles that need them.
+fn spawn_tile_colliders(
+    commands: &mut Commands,
+    registry: &mut PhysicsColliderRegistry,
+    cache: &CollisionCache,
+    desired_tiles: &HashSet<TilePos>,
+) {
+    for &tile in desired_tiles {
         if registry.entities.contains_key(&tile) {
-            continue; // Already has a collider with current generation
+            continue;
         }
 
         let Some(mesh) = cache.get(tile) else {
@@ -160,10 +168,9 @@ pub fn sync_physics_colliders(
         };
 
         if mesh.triangles.is_empty() {
-            continue; // No geometry to collide with
+            continue;
         }
 
-        // Build compound collider from triangles
         let tile_origin = Vec2::new(
             (tile.x * TILE_SIZE as i64) as f32,
             (tile.y * TILE_SIZE as i64) as f32,
@@ -188,7 +195,6 @@ pub fn sync_physics_colliders(
 
         let collider = Collider::compound(shapes);
         let generation = mesh.generation;
-
         let world_pos = Vec3::new(tile_origin.x, tile_origin.y, 0.0);
 
         #[cfg(feature = "avian2d")]
@@ -207,4 +213,44 @@ pub fn sync_physics_colliders(
 
         registry.entities.insert(tile, entity);
     }
+}
+
+/// Synchronizes physics colliders with the collision cache.
+///
+/// - Spawns colliders for cached meshes within proximity of query points
+/// - Despawns colliders when tiles are invalidated, leave proximity, or mesh is updated
+/// - Wakes sleeping dynamic bodies near changed tiles
+pub fn sync_physics_colliders(
+    mut commands: Commands,
+    mut registry: ResMut<PhysicsColliderRegistry>,
+    cache: Res<CollisionCache>,
+    config: Res<CollisionConfig>,
+    query_points: Query<&GlobalTransform, With<CollisionQueryPoint>>,
+    collider_entities: Query<(Entity, &TileCollider)>,
+    #[cfg(feature = "avian2d")] sleeping_bodies: Query<
+        (Entity, &GlobalTransform),
+        (With<RigidBody>, With<Sleeping>),
+    >,
+    #[cfg(feature = "rapier2d")] mut sleeping_bodies: Query<
+        (&GlobalTransform, &mut Sleeping),
+        With<RigidBody>,
+    >,
+) {
+    let desired_tiles = collect_desired_tiles(&query_points, &cache, config.proximity_radius);
+
+    let (to_despawn, stale_tiles) = find_stale_colliders(&collider_entities, &desired_tiles, &cache);
+
+    for (entity, tile) in to_despawn {
+        commands.entity(entity).despawn();
+        registry.entities.remove(&tile);
+    }
+
+    if !stale_tiles.is_empty() {
+        #[cfg(feature = "avian2d")]
+        wake_bodies_near_tiles(&mut commands, &stale_tiles, &sleeping_bodies);
+        #[cfg(feature = "rapier2d")]
+        wake_bodies_near_tiles(&mut commands, &stale_tiles, &mut sleeping_bodies);
+    }
+
+    spawn_tile_colliders(&mut commands, &mut registry, &cache, &desired_tiles);
 }
