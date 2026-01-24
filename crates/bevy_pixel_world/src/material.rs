@@ -49,6 +49,7 @@ pub mod ids {
   pub const STONE: MaterialId = MaterialId(2);
   pub const SAND: MaterialId = MaterialId(3);
   pub const WATER: MaterialId = MaterialId(4);
+  pub const WOOD: MaterialId = MaterialId(5);
 }
 
 /// Material registry with built-in definitions.
@@ -146,6 +147,25 @@ impl Materials {
           dispersion: 5,      // flows horizontally
           air_resistance: 16, // subtle splash effect
           air_drift: 12,
+        },
+        // WOOD (brown gradient) - solid, does not move
+        Material {
+          name: "Wood",
+          palette: [
+            rgb(205, 170, 125), // surface - light wood
+            rgb(185, 145, 100),
+            rgb(165, 120, 80),
+            rgb(145, 100, 65),
+            rgb(130, 85, 50),
+            rgb(110, 70, 40),
+            rgb(90, 55, 30),
+            rgb(70, 45, 25), // deep - dark wood grain
+          ],
+          state: PhysicsState::Solid,
+          density: 80, // lighter than stone, floats on water
+          dispersion: 0,
+          air_resistance: 0,
+          air_drift: 0,
         },
       ],
     }

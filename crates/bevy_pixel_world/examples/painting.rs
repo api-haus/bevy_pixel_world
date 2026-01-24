@@ -11,6 +11,7 @@
 //! - Shift: Speed boost (5x)
 //! - Space: Spawn random physics object at cursor (requires avian2d or rapier2d
 //!   feature)
+//! - P: Spawn pixel body at cursor (requires avian2d or rapier2d feature)
 //! - Side panel: Material selection, brush size slider
 //!
 //! Run with: `cargo run -p bevy_pixel_world --example painting`
@@ -32,8 +33,8 @@ use bevy_pixel_world::visual_debug::{
 };
 use bevy_pixel_world::{
   ColorIndex, MaterialId, MaterialSeeder, Materials, Pixel, PixelWorld, PixelWorldPlugin,
-  SpawnPixelWorld, StreamCulled, StreamingCamera, WorldRect, collision::CollisionQueryPoint,
-  material_ids,
+  SpawnPixelBody, SpawnPixelWorld, StreamCulled, StreamingCamera, WorldRect,
+  collision::CollisionQueryPoint, finalize_pending_pixel_bodies, material_ids,
 };
 #[cfg(feature = "rapier2d")]
 use bevy_rapier2d::prelude::*;
@@ -98,7 +99,23 @@ fn main() {
   }
 
   #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
-  app.add_systems(Update, spawn_physics_object);
+  app.add_systems(
+    Update,
+    (
+      spawn_physics_object,
+      spawn_pixel_body,
+      finalize_pending_pixel_bodies,
+    ),
+  );
+
+  // Pixel body blit/clear systems - blit early, clear late
+  // Blit writes pixels to Canvas so they're visible during rendering
+  // Clear removes them after rendering, before next frame's physics
+  #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+  {
+    app.add_systems(First, bevy_pixel_world::blit_pixel_bodies);
+    app.add_systems(Last, bevy_pixel_world::clear_pixel_bodies);
+  }
 
   app.run();
 }
@@ -112,6 +129,7 @@ struct BrushState {
   world_pos_f32: Option<Vec2>,
   material: MaterialId,
   spawn_requested: bool,
+  spawn_pixel_body_requested: bool,
 }
 
 impl Default for BrushState {
@@ -124,6 +142,7 @@ impl Default for BrushState {
       world_pos_f32: None,
       material: material_ids::SAND,
       spawn_requested: false,
+      spawn_pixel_body_requested: false,
     }
   }
 }
@@ -237,6 +256,7 @@ fn input_system(
   brush.painting = mouse_buttons.pressed(MouseButton::Left);
   brush.erasing = mouse_buttons.pressed(MouseButton::Right);
   brush.spawn_requested = keys.just_pressed(KeyCode::Space);
+  brush.spawn_pixel_body_requested = keys.just_pressed(KeyCode::KeyP);
 
   // Handle scroll wheel for radius
   for event in scroll_events.read() {
@@ -518,4 +538,19 @@ fn create_convex_mesh(vertices: &[Vec2]) -> Mesh {
   )
   .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
   .with_inserted_indices(Indices::U32(indices))
+}
+
+/// Spawns a pixel body at the cursor when P is pressed.
+#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+fn spawn_pixel_body(brush: Res<BrushState>, ui_state: Res<UiState>, mut commands: Commands) {
+  if !brush.spawn_pixel_body_requested || ui_state.pointer_over_ui {
+    return;
+  }
+
+  let Some(pos) = brush.world_pos_f32 else {
+    return;
+  };
+
+  // Spawn a wooden crate pixel body from box.png
+  commands.queue(SpawnPixelBody::new("box.png", material_ids::WOOD, pos));
 }

@@ -18,6 +18,7 @@ pub mod diagnostics;
 pub mod material;
 pub mod persistence;
 pub mod pixel;
+pub mod pixel_body;
 pub mod primitives;
 pub mod render;
 pub mod scheduling;
@@ -39,6 +40,11 @@ pub use culling::{CullingConfig, StreamCulled};
 pub use material::{Material, Materials, PhysicsState, ids as material_ids};
 pub use persistence::{WorldSave, WorldSaveResource};
 pub use pixel::{Pixel, PixelFlags, PixelSurface};
+pub use pixel_body::{
+  BlittedTransform, NeedsColliderRegen, PendingPixelBody, PixelBody, PixelBodyLoader,
+  SpawnPixelBody, SpawnPixelBodyFromImage, blit_pixel_bodies, clear_pixel_bodies,
+  finalize_pending_pixel_bodies, generate_collider,
+};
 pub use primitives::{Chunk, Surface};
 pub use render::{
   ChunkMaterial, Rgba, create_chunk_quad, create_palette_texture, create_pixel_texture,
