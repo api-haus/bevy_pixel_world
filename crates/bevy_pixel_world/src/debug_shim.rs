@@ -47,53 +47,41 @@ impl GizmosParam {
 }
 
 /// Emit a chunk dirty gizmo.
-#[cfg(feature = "visual-debug")]
 #[inline]
 pub fn emit_chunk(gizmos: DebugGizmos<'_>, pos: ChunkPos) {
+  #[cfg(feature = "visual-debug")]
   if let Some(g) = gizmos {
     g.push(crate::visual_debug::PendingGizmo::chunk(pos));
   }
+  let _ = (gizmos, pos);
 }
 
-#[cfg(not(feature = "visual-debug"))]
-#[inline]
-pub fn emit_chunk(_: DebugGizmos<'_>, _: ChunkPos) {}
-
 /// Emit a tile dirty gizmo.
-#[cfg(feature = "visual-debug")]
 #[inline]
 pub fn emit_tile(gizmos: DebugGizmos<'_>, pos: TilePos) {
+  #[cfg(feature = "visual-debug")]
   if let Some(g) = gizmos {
     g.push(crate::visual_debug::PendingGizmo::tile(pos));
   }
+  let _ = (gizmos, pos);
 }
 
-#[cfg(not(feature = "visual-debug"))]
-#[inline]
-pub fn emit_tile(_: DebugGizmos<'_>, _: TilePos) {}
-
 /// Emit a blit rect gizmo.
-#[cfg(feature = "visual-debug")]
 #[inline]
 pub fn emit_blit_rect(gizmos: DebugGizmos<'_>, rect: WorldRect) {
+  #[cfg(feature = "visual-debug")]
   if let Some(g) = gizmos {
     g.push(crate::visual_debug::PendingGizmo::blit_rect(rect));
   }
+  let _ = (gizmos, rect);
 }
 
-#[cfg(not(feature = "visual-debug"))]
-#[inline]
-pub fn emit_blit_rect(_: DebugGizmos<'_>, _: WorldRect) {}
-
 /// Emit a dirty rect gizmo.
-#[cfg(feature = "visual-debug")]
 #[inline]
 pub fn emit_dirty_rect(gizmos: DebugGizmos<'_>, tile: TilePos, bounds: (u8, u8, u8, u8)) {
+  #[cfg(feature = "visual-debug")]
   if let Some(g) = gizmos {
     g.push(crate::visual_debug::PendingGizmo::dirty_rect(tile, bounds));
   }
+  let _ = (gizmos, tile, bounds);
 }
-
-#[cfg(not(feature = "visual-debug"))]
-#[inline]
-pub fn emit_dirty_rect(_: DebugGizmos<'_>, _: TilePos, _: (u8, u8, u8, u8)) {}
