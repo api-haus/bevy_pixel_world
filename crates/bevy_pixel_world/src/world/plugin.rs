@@ -71,6 +71,14 @@ struct SeedingTask {
 #[cfg(not(feature = "headless"))]
 const MAX_SEEDING_TASKS: usize = 2;
 
+/// Creates and seeds a new chunk at the given position.
+fn seed_chunk(seeder: &(dyn crate::seeding::ChunkSeeder + Send + Sync), pos: ChunkPos) -> Chunk {
+  let mut chunk = Chunk::new(CHUNK_SIZE, CHUNK_SIZE);
+  chunk.set_pos(pos);
+  seeder.seed(pos, &mut chunk);
+  chunk
+}
+
 /// Tracks chunks unloading this frame.
 ///
 /// Populated by `tick_pixel_worlds` before pixel body save systems run.
@@ -251,6 +259,7 @@ fn initialize_palette(
 ///
 /// For each PixelWorld, checks if the camera has moved to a new chunk
 /// and updates the streaming window accordingly.
+#[allow(clippy::too_many_arguments)]
 #[cfg_attr(feature = "tracy", tracing::instrument(skip_all))]
 fn tick_pixel_worlds(
   mut commands: Commands,
@@ -427,12 +436,7 @@ fn dispatch_seeding(
 
       // Spawn async seeding task
       let seeder = world.seeder().clone();
-      let task = task_pool.spawn(async move {
-        let mut chunk = Chunk::new(CHUNK_SIZE, CHUNK_SIZE);
-        chunk.set_pos(pos);
-        seeder.seed(pos, &mut chunk);
-        chunk
-      });
+      let task = task_pool.spawn(async move { seed_chunk(seeder.as_ref(), pos) });
 
       seeding_tasks.tasks.push(SeedingTask {
         world_entity,
@@ -472,10 +476,7 @@ fn dispatch_seeding(
 
     for (pos, slot_idx) in unseeded {
       // Seed synchronously
-      let seeder = world.seeder().clone();
-      let mut chunk = Chunk::new(CHUNK_SIZE, CHUNK_SIZE);
-      chunk.set_pos(pos);
-      seeder.seed(pos, &mut chunk);
+      let chunk = seed_chunk(world.seeder().as_ref(), pos);
 
       // Copy seeded data into slot
       let slot = world.slot_mut(slot_idx);

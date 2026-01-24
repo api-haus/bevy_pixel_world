@@ -14,7 +14,7 @@ pub struct Triangle {
   pub c: usize,
 }
 
-type CDT = ConstrainedDelaunayTriangulation<Point2<f64>>;
+type Cdt = ConstrainedDelaunayTriangulation<Point2<f64>>;
 
 /// Validates that a polygon can be triangulated.
 fn validate_polygon(polygon: &[Vec2]) -> bool {
@@ -22,8 +22,8 @@ fn validate_polygon(polygon: &[Vec2]) -> bool {
 }
 
 /// Builds a CDT with polygon vertices and edge constraints.
-fn build_constrained_cdt(polygon: &[Vec2]) -> Option<(CDT, Vec<FixedVertexHandle>)> {
-  let mut cdt = CDT::new();
+fn build_constrained_cdt(polygon: &[Vec2]) -> Option<(Cdt, Vec<FixedVertexHandle>)> {
+  let mut cdt = Cdt::new();
 
   // Insert vertices and collect handles
   let handles: Vec<_> = polygon
@@ -47,7 +47,7 @@ fn build_constrained_cdt(polygon: &[Vec2]) -> Option<(CDT, Vec<FixedVertexHandle
 
 /// Extracts interior triangles from a CDT.
 fn extract_interior_triangles(
-  cdt: &CDT,
+  cdt: &Cdt,
   handles: &[FixedVertexHandle],
   polygon: &[Vec2],
 ) -> Vec<Triangle> {
