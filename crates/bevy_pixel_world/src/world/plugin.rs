@@ -18,6 +18,7 @@ use crate::collision::{
   SampleMesh, draw_collision_gizmos, draw_sample_mesh_gizmos, update_sample_mesh,
 };
 use crate::coords::{CHUNK_SIZE, ChunkPos, WorldPos, WorldRect};
+use crate::culling::{CullingConfig, update_entity_culling};
 use crate::debug_shim;
 use crate::material::Materials;
 use crate::persistence::{
@@ -72,7 +73,8 @@ impl Plugin for PixelWorldStreamingPlugin {
       .init_resource::<PersistenceTasks>()
       .init_resource::<CollisionCache>()
       .init_resource::<CollisionTasks>()
-      .init_resource::<CollisionConfig>();
+      .init_resource::<CollisionConfig>()
+      .init_resource::<CullingConfig>();
 
     #[cfg(not(feature = "headless"))]
     app.add_systems(Startup, setup_shared_resources);
@@ -92,6 +94,7 @@ impl Plugin for PixelWorldStreamingPlugin {
       (
         initialize_palette,
         tick_pixel_worlds,
+        update_entity_culling,
         dispatch_seeding,
         poll_seeding_tasks,
         update_simulation_bounds,
@@ -120,6 +123,7 @@ impl Plugin for PixelWorldStreamingPlugin {
       Update,
       (
         tick_pixel_worlds,
+        update_entity_culling,
         dispatch_seeding,
         update_simulation_bounds,
         run_simulation,

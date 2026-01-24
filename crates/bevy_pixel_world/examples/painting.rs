@@ -32,7 +32,8 @@ use bevy_pixel_world::visual_debug::{
 };
 use bevy_pixel_world::{
   ColorIndex, MaterialId, MaterialSeeder, Materials, Pixel, PixelWorld, PixelWorldPlugin,
-  SpawnPixelWorld, StreamingCamera, WorldRect, collision::CollisionQueryPoint, material_ids,
+  SpawnPixelWorld, StreamCulled, StreamingCamera, WorldRect, collision::CollisionQueryPoint,
+  material_ids,
 };
 #[cfg(feature = "rapier2d")]
 use bevy_rapier2d::prelude::*;
@@ -422,6 +423,7 @@ fn spawn_physics_object(
       commands.spawn((
         PhysicsObject,
         CollisionQueryPoint,
+        StreamCulled,
         RigidBody::Dynamic,
         collider,
         Transform::from_translation(pos.extend(0.0)),
@@ -440,6 +442,7 @@ fn spawn_physics_object(
       commands.spawn((
         PhysicsObject,
         CollisionQueryPoint,
+        StreamCulled,
         RigidBody::Dynamic,
         collider,
         Transform::from_translation(pos.extend(0.0)),
@@ -471,6 +474,7 @@ fn spawn_physics_object(
         commands.spawn((
           PhysicsObject,
           CollisionQueryPoint,
+          StreamCulled,
           RigidBody::Dynamic,
           collider,
           Transform::from_translation(pos.extend(0.0)),

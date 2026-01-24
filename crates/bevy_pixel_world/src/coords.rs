@@ -14,10 +14,10 @@ pub const CHUNK_SIZE: u32 = 512;
 pub const TILE_SIZE: u32 = 32;
 
 /// Width of the streaming window in chunks.
-pub(crate) const WINDOW_WIDTH: u32 = 4;
+pub const WINDOW_WIDTH: u32 = 4;
 
 /// Height of the streaming window in chunks.
-pub(crate) const WINDOW_HEIGHT: u32 = 3;
+pub const WINDOW_HEIGHT: u32 = 3;
 
 /// Number of chunks in the pool (derived from window size).
 pub(crate) const POOL_SIZE: usize = (WINDOW_WIDTH * WINDOW_HEIGHT) as usize;

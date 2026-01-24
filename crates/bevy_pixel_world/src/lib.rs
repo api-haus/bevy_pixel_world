@@ -11,6 +11,7 @@ use bevy::sprite_render::Material2dPlugin;
 
 pub mod collision;
 pub mod coords;
+pub mod culling;
 pub mod debug_shim;
 #[cfg(feature = "diagnostics")]
 pub mod diagnostics;
@@ -34,6 +35,7 @@ pub use coords::{
   CHUNK_SIZE, ChunkPos, ColorIndex, LocalPos, MaterialId, TILE_SIZE, TilePos, WorldFragment,
   WorldPos, WorldRect,
 };
+pub use culling::{CullingConfig, StreamCulled};
 pub use material::{Material, Materials, PhysicsState, ids as material_ids};
 pub use persistence::{WorldSave, WorldSaveResource};
 pub use pixel::{Pixel, PixelFlags, PixelSurface};
@@ -123,6 +125,7 @@ impl PersistenceConfig {
 /// - Async background seeding
 /// - GPU texture upload for dirty chunks
 /// - Automatic chunk persistence (when enabled)
+/// - Entity culling outside the streaming window (when enabled)
 ///
 /// To use automatic streaming, spawn a `PixelWorldBundle` and mark a camera
 /// with `StreamingCamera`.
@@ -132,6 +135,8 @@ pub struct PixelWorldPlugin {
   pub config: PixelWorldConfig,
   /// Persistence configuration.
   pub persistence: PersistenceConfig,
+  /// Culling configuration.
+  pub culling: culling::CullingConfig,
 }
 
 impl PixelWorldPlugin {
@@ -140,12 +145,19 @@ impl PixelWorldPlugin {
     Self {
       config: PixelWorldConfig::default(),
       persistence: PersistenceConfig::new(app_name),
+      culling: culling::CullingConfig::default(),
     }
   }
 
   /// Sets the persistence configuration.
   pub fn persistence(mut self, config: PersistenceConfig) -> Self {
     self.persistence = config;
+    self
+  }
+
+  /// Sets the culling configuration.
+  pub fn culling(mut self, config: culling::CullingConfig) -> Self {
+    self.culling = config;
     self
   }
 }
@@ -167,6 +179,9 @@ impl Plugin for PixelWorldPlugin {
 
     // Store persistence config
     app.insert_resource(DefaultPersistenceConfig(self.persistence.clone()));
+
+    // Store culling config
+    app.insert_resource(self.culling.clone());
 
     // Initialize world save if persistence is enabled
     if self.persistence.enabled {
