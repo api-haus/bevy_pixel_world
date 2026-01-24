@@ -25,6 +25,11 @@ pub struct ChunkSlot {
   /// Whether the chunk's CPU data differs from GPU texture.
   /// When true, the chunk needs upload.
   pub dirty: bool,
+  /// Whether the chunk has been modified by user actions (paint, erase, swap).
+  /// Set when modified, cleared when saved to disk.
+  pub modified: bool,
+  /// Whether the chunk has been persisted to disk since last modification.
+  pub persisted: bool,
   /// Entity displaying this chunk (when active).
   pub entity: Option<Entity>,
   /// Texture handle for GPU upload.
@@ -41,6 +46,8 @@ impl ChunkSlot {
       pos: None,
       seeded: false,
       dirty: false,
+      modified: false,
+      persisted: false,
       entity: None,
       texture: None,
       material: None,
@@ -53,12 +60,28 @@ impl ChunkSlot {
   }
 
   /// Resets the slot to pool state.
-  pub(crate) fn release(&mut self) {
+  ///
+  /// Returns true if the chunk needs saving (was dirty but not persisted).
+  pub(crate) fn release(&mut self) -> bool {
+    let needs_save = self.needs_save();
     self.chunk.clear_pos();
     self.pos = None;
     self.seeded = false;
     self.dirty = false;
+    self.modified = false;
+    self.persisted = false;
     self.entity = None;
     // Keep texture and material handles - they'll be reused
+    needs_save
+  }
+
+  /// Returns true if the chunk has modifications that need saving.
+  pub fn needs_save(&self) -> bool {
+    self.seeded && self.modified && !self.persisted
+  }
+
+  /// Marks the chunk as persisted to disk.
+  pub fn mark_persisted(&mut self) {
+    self.persisted = true;
   }
 }

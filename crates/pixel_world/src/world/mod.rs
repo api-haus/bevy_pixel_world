@@ -20,13 +20,14 @@ use crate::coords::{ChunkPos, TilePos, WorldFragment, WorldPos, WorldRect, POOL_
 use crate::debug_shim::{self, DebugGizmos};
 use crate::pixel::Pixel;
 use crate::primitives::Chunk;
+#[cfg(not(feature = "headless"))]
 use crate::render::ChunkMaterial;
 use crate::scheduling::blitter::{parallel_blit, ChunkAccess};
 use crate::seeding::ChunkSeeder;
 
 pub use bundle::{PixelWorldBundle, SpawnPixelWorld};
 pub(crate) use slot::{ChunkSlot, SlotIndex};
-pub(crate) use streaming::StreamingDelta;
+pub(crate) use streaming::{ChunkSaveData, StreamingDelta};
 use streaming::visible_positions;
 
 /// Configuration for pixel world simulation behavior.
@@ -290,6 +291,8 @@ impl PixelWorld {
         slot.chunk.set_pos(pos);
         slot.seeded = false;
         slot.dirty = false;
+        slot.modified = false;
+        slot.persisted = false;
         self.active.insert(pos, idx);
         to_spawn.push((pos, idx));
       } else {
@@ -300,6 +303,7 @@ impl PixelWorld {
     StreamingDelta {
       to_despawn: vec![],
       to_spawn,
+      to_save: vec![],
     }
   }
 
@@ -316,6 +320,7 @@ impl PixelWorld {
       return StreamingDelta {
         to_despawn: vec![],
         to_spawn: vec![],
+        to_save: vec![],
       };
     }
 
@@ -326,10 +331,20 @@ impl PixelWorld {
 
     // Find chunks to release (in old but not new)
     let mut to_despawn = Vec::new();
+    let mut to_save = Vec::new();
     for pos in old_set.difference(&new_set) {
       if let Some(idx) = self.active.remove(pos) {
         let slot = &mut self.slots[idx.0];
         let entity = slot.entity;
+
+        // Clone pixel data for saving before release
+        if slot.needs_save() {
+          to_save.push(ChunkSaveData {
+            pos: *pos,
+            pixels: slot.chunk.pixels.as_bytes().to_vec(),
+          });
+        }
+
         slot.release();
         if let Some(entity) = entity {
           to_despawn.push((*pos, entity));
@@ -346,6 +361,8 @@ impl PixelWorld {
         slot.chunk.set_pos(*pos);
         slot.seeded = false;
         slot.dirty = false;
+        slot.modified = false;
+        slot.persisted = false;
         self.active.insert(*pos, idx);
         to_spawn.push((*pos, idx));
       } else {
@@ -356,10 +373,12 @@ impl PixelWorld {
     StreamingDelta {
       to_despawn,
       to_spawn,
+      to_save,
     }
   }
 
   /// Registers entity and render resources for a slot.
+  #[cfg(not(feature = "headless"))]
   pub(crate) fn register_slot_entity(
     &mut self,
     index: SlotIndex,
@@ -371,6 +390,13 @@ impl PixelWorld {
     slot.entity = Some(entity);
     slot.texture = Some(texture);
     slot.material = Some(material);
+  }
+
+  /// Registers entity for a slot (headless mode - no render resources).
+  #[cfg(feature = "headless")]
+  pub(crate) fn register_slot_entity_headless(&mut self, index: SlotIndex, entity: Entity) {
+    let slot = &mut self.slots[index.0];
+    slot.entity = Some(entity);
   }
 
   // === Pixel access API ===
@@ -435,6 +461,8 @@ impl PixelWorld {
       slot.chunk.pixels[la] = pixel_b;
       slot.chunk.pixels[lb] = pixel_a;
       slot.dirty = true;
+      slot.modified = true;
+      slot.persisted = false;
     } else {
       // Different chunks - need to swap across
       // SAFETY: idx_a != idx_b since chunk_a != chunk_b and active map is 1:1
@@ -450,7 +478,11 @@ impl PixelWorld {
       let lb = (local_b.x as u32, local_b.y as u32);
       std::mem::swap(&mut slot_a.chunk.pixels[la], &mut slot_b.chunk.pixels[lb]);
       slot_a.dirty = true;
+      slot_a.modified = true;
+      slot_a.persisted = false;
       slot_b.dirty = true;
+      slot_b.modified = true;
+      slot_b.persisted = false;
     }
 
     true
@@ -475,6 +507,8 @@ impl PixelWorld {
     slot.chunk.pixels[(local_pos.x as u32, local_pos.y as u32)] = pixel;
     let was_clean = !slot.dirty;
     slot.dirty = true;
+    slot.modified = true;
+    slot.persisted = false; // Needs saving again
 
     // Emit chunk gizmo if this is the first modification
     if was_clean {
@@ -517,10 +551,12 @@ impl PixelWorld {
       .into_iter()
       .collect();
 
-    // Mark affected chunks as dirty
+    // Mark affected chunks as dirty and needing save
     for &pos in &dirty {
       if let Some(&idx) = self.active.get(&pos) {
         self.slots[idx.0].dirty = true;
+        self.slots[idx.0].modified = true;
+        self.slots[idx.0].persisted = false;
       }
     }
 
