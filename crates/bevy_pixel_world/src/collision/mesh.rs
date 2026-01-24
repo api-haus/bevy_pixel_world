@@ -17,6 +17,10 @@ pub struct TileCollisionMesh {
     /// Each entry contains the polygon vertices and triangle indices.
     pub triangles: Vec<PolygonMesh>,
 
+    /// Generation counter for cache invalidation tracking.
+    /// Incremented each time the mesh is regenerated.
+    pub generation: u64,
+
     /// Time spent generating this mesh (only with diagnostics feature).
     #[cfg(feature = "diagnostics")]
     pub generation_time_ms: f32,

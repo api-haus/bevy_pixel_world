@@ -16,6 +16,8 @@ pub struct CollisionCache {
     meshes: HashMap<TilePos, TileCollisionMesh>,
     /// Tiles currently being generated (avoid duplicate tasks).
     in_flight: HashSet<TilePos>,
+    /// Global generation counter, incremented on each mesh insert.
+    generation: u64,
 }
 
 impl CollisionCache {
@@ -43,9 +45,11 @@ impl CollisionCache {
     ///
     /// Returns true if the mesh was inserted, false if the tile was
     /// invalidated while in-flight (and thus the result should be discarded).
-    pub fn insert(&mut self, tile: TilePos, mesh: TileCollisionMesh) -> bool {
+    pub fn insert(&mut self, tile: TilePos, mut mesh: TileCollisionMesh) -> bool {
         // Only insert if tile is still in-flight (wasn't invalidated)
         if self.in_flight.remove(&tile) {
+            self.generation += 1;
+            mesh.generation = self.generation;
             self.meshes.insert(tile, mesh);
             true
         } else {
@@ -58,7 +62,9 @@ impl CollisionCache {
     ///
     /// Use this for immediate caching (e.g., empty tiles detected synchronously).
     /// Does NOT check in_flight status.
-    pub fn insert_direct(&mut self, tile: TilePos, mesh: TileCollisionMesh) {
+    pub fn insert_direct(&mut self, tile: TilePos, mut mesh: TileCollisionMesh) {
+        self.generation += 1;
+        mesh.generation = self.generation;
         self.meshes.insert(tile, mesh);
     }
 

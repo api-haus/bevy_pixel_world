@@ -154,6 +154,7 @@ pub fn dispatch_collision_tasks(
                     TileCollisionMesh {
                         polylines: simplified,
                         triangles,
+                        generation: 0, // Set by cache on insert
                         #[cfg(feature = "diagnostics")]
                         generation_time_ms: start.elapsed().as_secs_f32() * 1000.0,
                     }

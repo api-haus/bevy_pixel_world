@@ -123,6 +123,75 @@ When in doubt, write concrete code. Extract abstractions later when the shape be
 
 ---
 
+## Conditional Compilation
+
+### No Duplicate Entrypoints
+
+Never write the same function, type, or entrypoint twice with different `#[cfg]` attributes. This creates:
+
+- Duplicate code that drifts out of sync
+- Maintenance burden when signatures change
+- Review confusion about which version is "real"
+
+**Wrong:**
+
+```rust
+#[cfg(feature = "physics")]
+pub fn setup(mut commands: Commands) {
+    commands.spawn(Camera2d);
+    commands.spawn(PhysicsWorld::default());
+}
+
+#[cfg(not(feature = "physics"))]
+pub fn setup(mut commands: Commands) {
+    commands.spawn(Camera2d);
+}
+```
+
+**Right:**
+
+```rust
+pub fn setup(mut commands: Commands) {
+    commands.spawn(Camera2d);
+    #[cfg(feature = "physics")]
+    commands.spawn(PhysicsWorld::default());
+}
+```
+
+### Apply `#[cfg]` to Internals
+
+Use conditional compilation on the smallest possible scope:
+
+- Individual struct fields
+- Single statements within a function
+- Specific expressions or blocks
+- Import statements
+
+Keep the outer definition unconditional. Let the internals vary.
+
+**For types:**
+
+```rust
+pub struct GameWorld {
+    entities: Vec<Entity>,
+    #[cfg(feature = "physics")]
+    physics: PhysicsEngine,
+}
+```
+
+**For functions:**
+
+```rust
+pub fn init_systems(app: &mut App) {
+    app.add_systems(Update, movement);
+
+    #[cfg(feature = "debug")]
+    app.add_systems(Update, debug_overlay);
+}
+```
+
+---
+
 ## Documentation
 
 ### Plans Stay High-Level
@@ -162,3 +231,4 @@ of text. Use:
 4. Defer abstraction until patterns emerge
 5. Visual verification is valid verification
 6. Plans describe what, not how
+7. Apply `#[cfg]` to internals, never duplicate entrypoints

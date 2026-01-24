@@ -11,7 +11,7 @@ use super::{PhysicsColliderRegistry, TileCollider};
 /// Synchronizes physics colliders with the collision cache.
 ///
 /// - Spawns colliders for cached meshes within proximity of query points
-/// - Despawns colliders when tiles are invalidated or leave proximity
+/// - Despawns colliders when tiles are invalidated, leave proximity, or mesh is updated
 pub fn sync_physics_colliders(
     mut commands: Commands,
     mut registry: ResMut<PhysicsColliderRegistry>,
@@ -41,10 +41,20 @@ pub fn sync_physics_colliders(
         }
     }
 
-    // Despawn colliders for tiles no longer desired or no longer cached
+    // Despawn colliders for tiles that are:
+    // - No longer in proximity
+    // - No longer in cache
+    // - Have stale geometry (generation mismatch)
     let mut to_despawn = Vec::new();
     for (entity, tile_collider) in collider_entities.iter() {
-        if !desired_tiles.contains(&tile_collider.tile) || !cache.contains(tile_collider.tile) {
+        let dominated = !desired_tiles.contains(&tile_collider.tile);
+        let not_cached = !cache.contains(tile_collider.tile);
+        let stale = cache
+            .get(tile_collider.tile)
+            .map(|m| m.generation != tile_collider.generation)
+            .unwrap_or(false);
+
+        if dominated || not_cached || stale {
             to_despawn.push((entity, tile_collider.tile));
         }
     }
@@ -57,7 +67,7 @@ pub fn sync_physics_colliders(
     // Spawn colliders for tiles that need them
     for tile in desired_tiles {
         if registry.entities.contains_key(&tile) {
-            continue; // Already has a collider
+            continue; // Already has a collider with current generation
         }
 
         let Some(mesh) = cache.get(tile) else {
@@ -95,6 +105,7 @@ pub fn sync_physics_colliders(
         }
 
         let collider = Collider::compound(shapes);
+        let generation = mesh.generation;
 
         // Spawn at tile world position
         let world_pos = Vec3::new(tile_origin.x, tile_origin.y, 0.0);
@@ -104,7 +115,7 @@ pub fn sync_physics_colliders(
                 RigidBody::Fixed,
                 collider,
                 Transform::from_translation(world_pos),
-                TileCollider { tile },
+                TileCollider { tile, generation },
             ))
             .id();
 

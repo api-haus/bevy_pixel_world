@@ -34,4 +34,7 @@ pub struct PhysicsColliderRegistry {
 #[derive(Component)]
 pub struct TileCollider {
     pub tile: TilePos,
+    /// Generation of the mesh when this collider was created.
+    /// Used to detect when the collider needs regeneration.
+    pub generation: u64,
 }

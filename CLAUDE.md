@@ -19,6 +19,12 @@
 - Defer abstraction until patterns repeat. Three concrete cases reveal the right abstraction.
 - Minimal public surface. Expose only what callers need.
 
+## Conditional Compilation
+
+- Never duplicate functions, types, or entrypoints for `#[cfg]` gating.
+- Apply `#[cfg]` to inner fields, statements, and scopes instead.
+- One function/type definition with conditional internals, not two definitions with conditional attributes.
+
 ## Documentation
 
 - Plans describe *what* to build, not *how*.
