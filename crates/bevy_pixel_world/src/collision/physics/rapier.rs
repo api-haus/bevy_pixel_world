@@ -12,6 +12,7 @@ use super::{PhysicsColliderRegistry, TileCollider};
 ///
 /// - Spawns colliders for cached meshes within proximity of query points
 /// - Despawns colliders when tiles are invalidated, leave proximity, or mesh is updated
+/// - Wakes sleeping dynamic bodies near changed tiles
 pub fn sync_physics_colliders(
     mut commands: Commands,
     mut registry: ResMut<PhysicsColliderRegistry>,
@@ -19,6 +20,7 @@ pub fn sync_physics_colliders(
     config: Res<CollisionConfig>,
     query_points: Query<&GlobalTransform, With<CollisionQueryPoint>>,
     collider_entities: Query<(Entity, &TileCollider)>,
+    mut sleeping_bodies: Query<(&GlobalTransform, &mut Sleeping), With<RigidBody>>,
 ) {
     // Collect all tiles that should have colliders (within proximity of any query point)
     let mut desired_tiles = std::collections::HashSet::new();
@@ -46,6 +48,7 @@ pub fn sync_physics_colliders(
     // - No longer in cache
     // - Have stale geometry (generation mismatch)
     let mut to_despawn = Vec::new();
+    let mut stale_tiles = Vec::new();
     for (entity, tile_collider) in collider_entities.iter() {
         let dominated = !desired_tiles.contains(&tile_collider.tile);
         let not_cached = !cache.contains(tile_collider.tile);
@@ -56,12 +59,39 @@ pub fn sync_physics_colliders(
 
         if dominated || not_cached || stale {
             to_despawn.push((entity, tile_collider.tile));
+            if stale || not_cached {
+                stale_tiles.push(tile_collider.tile);
+            }
         }
     }
 
     for (entity, tile) in to_despawn {
         commands.entity(entity).despawn();
         registry.entities.remove(&tile);
+    }
+
+    // Wake sleeping bodies near tiles that had their terrain changed
+    if !stale_tiles.is_empty() {
+        for (transform, mut sleeping) in sleeping_bodies.iter_mut() {
+            if !sleeping.sleeping {
+                continue;
+            }
+
+            let pos = transform.translation();
+            let body_tile = TilePos::new(
+                (pos.x as i64).div_euclid(TILE_SIZE as i64),
+                (pos.y as i64).div_euclid(TILE_SIZE as i64),
+            );
+
+            // Wake if body is on or adjacent to any stale tile
+            let should_wake = stale_tiles.iter().any(|stale_tile| {
+                (body_tile.x - stale_tile.x).abs() <= 1 && (body_tile.y - stale_tile.y).abs() <= 1
+            });
+
+            if should_wake {
+                sleeping.sleeping = false;
+            }
+        }
     }
 
     // Spawn colliders for tiles that need them
