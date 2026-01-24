@@ -19,7 +19,7 @@ pub mod material;
 pub mod persistence;
 #[cfg(feature = "tracy")]
 mod tracy_init;
-pub(crate) mod scheduling;
+pub mod scheduling;
 pub mod pixel;
 pub mod primitives;
 pub mod render;
@@ -35,15 +35,15 @@ pub use coords::{
 };
 pub use text::{draw_text, rasterize_text, stamp_text, CpuFont, TextMask};
 pub use material::{ids as material_ids, Material, Materials, PhysicsState};
-pub use pixel::{Pixel, PixelSurface};
-pub use primitives::{Chunk, RgbaSurface, Surface};
+pub use pixel::{Pixel, PixelFlags, PixelSurface};
+pub use primitives::{Chunk, Surface};
 pub use render::{
   create_chunk_quad, create_palette_texture, create_pixel_texture, create_texture, materialize,
-  spawn_static_chunk, upload_palette, upload_pixels, upload_surface, ChunkMaterial, Rgba,
+  rgb, spawn_static_chunk, upload_palette, upload_pixels, upload_surface, ChunkMaterial, Rgba,
 };
 pub use seeding::{ChunkSeeder, MaterialSeeder, NoiseSeeder, PersistenceSeeder};
 pub use simulation::simulate_tick;
-pub use world::plugin::{SharedChunkMesh, SharedPaletteTexture, StreamingCamera};
+pub use world::plugin::StreamingCamera;
 pub use world::{PixelWorld, PixelWorldBundle, PixelWorldConfig, SpawnPixelWorld};
 pub use persistence::{WorldSave, WorldSaveResource};
 pub use collision::{CollisionCache, CollisionConfig, CollisionQueryPoint, CollisionTasks};
@@ -51,7 +51,6 @@ pub use collision::{CollisionCache, CollisionConfig, CollisionQueryPoint, Collis
 #[cfg(feature = "tracy")]
 pub use tracy_init::init_tracy;
 
-pub use self::primitives::rect::Rect;
 
 /// Configuration for chunk persistence.
 #[derive(Clone, Debug)]

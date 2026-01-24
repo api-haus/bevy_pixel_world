@@ -15,7 +15,9 @@ spade = "2"
 dirs = "5"
 fastnoise2 = "0.4"
 lz4_flex = "0.11"
+palette = { version = "0.7", default-features = false, features = ["std"] }
 paste = "1.0"
+bitflags = "2"
 rayon = "1.10"
 bevy_egui = { version = "0.37", optional = true }
 tracing = { version = "0.1", optional = true }
@@ -38,6 +40,10 @@ harness = false
 
 [[bench]]
 name = "persistence_benchmarks"
+harness = false
+
+[[bench]]
+name = "collision_benchmarks"
 harness = false
 
 [[test]]

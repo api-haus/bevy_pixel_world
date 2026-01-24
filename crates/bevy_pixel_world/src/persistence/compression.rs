@@ -57,7 +57,7 @@ impl DeltaEntry {
         buf.push(self.pixel.material.0);
         buf.push(self.pixel.color.0);
         buf.push(self.pixel.damage);
-        buf.push(self.pixel.flags);
+        buf.push(self.pixel.flags_bits());
     }
 
     /// Reads an entry from a byte slice.
@@ -66,12 +66,13 @@ impl DeltaEntry {
             return None;
         }
         let position = (data[0] as u32) | ((data[1] as u32) << 8) | ((data[2] as u32) << 16);
-        let pixel = Pixel {
+        let mut pixel = Pixel {
             material: crate::coords::MaterialId(data[3]),
             color: crate::coords::ColorIndex(data[4]),
             damage: data[5],
-            flags: data[6],
+            flags: crate::pixel::PixelFlags::empty(),
         };
+        pixel.set_flags_bits(data[6]);
         Some(Self { position, pixel })
     }
 }

@@ -23,7 +23,7 @@ pub type TileBounds = (u8, u8, u8, u8);
 /// Uses a two-phase cooldown: tiles stay active for 2 frames after
 /// last activity to handle oscillating patterns in falling sand.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct TileDirtyRect {
+pub(crate) struct TileDirtyRect {
   /// Bounds for next frame (accumulated by expand() calls during simulation)
   next: Option<TileBounds>,
   /// Bounds to simulate this frame
@@ -159,13 +159,13 @@ impl Chunk {
   }
 
   /// Returns the dirty rect for the tile at (tx, ty) within this chunk.
-  pub fn tile_dirty_rect(&self, tx: u32, ty: u32) -> &TileDirtyRect {
+  pub(crate) fn tile_dirty_rect(&self, tx: u32, ty: u32) -> &TileDirtyRect {
     let idx = (ty * TILES_PER_CHUNK + tx) as usize;
     &self.tile_dirty_rects[idx]
   }
 
   /// Returns a mutable reference to the dirty rect for the tile at (tx, ty).
-  pub fn tile_dirty_rect_mut(&mut self, tx: u32, ty: u32) -> &mut TileDirtyRect {
+  pub(crate) fn tile_dirty_rect_mut(&mut self, tx: u32, ty: u32) -> &mut TileDirtyRect {
     let idx = (ty * TILES_PER_CHUNK + tx) as usize;
     &mut self.tile_dirty_rects[idx]
   }

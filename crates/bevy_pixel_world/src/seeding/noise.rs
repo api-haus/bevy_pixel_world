@@ -4,7 +4,7 @@ use fastnoise2::generator::prelude::{Generator, GeneratorWrapper};
 use fastnoise2::generator::simplex::supersimplex_scaled;
 use fastnoise2::SafeNode;
 
-use super::sdf::distance_to_air;
+use super::sdf::distance_to_void;
 use super::ChunkSeeder;
 use crate::coords::{ColorIndex, CHUNK_SIZE};
 use crate::material::ids as material_ids;
@@ -62,7 +62,7 @@ impl ChunkSeeder for NoiseSeeder {
 /// Material-based terrain seeder with SDF-feathered boundaries.
 ///
 /// Generates pixelated terrain with:
-/// - Hard solid/air boundary from primary noise threshold
+/// - Hard solid/void boundary from primary noise threshold
 /// - Stone base terrain
 /// - Surface sand patches and water pools via islet noise
 /// - Noise-feathered material boundaries for natural edges
@@ -77,7 +77,7 @@ pub struct MaterialSeeder {
   /// Noise for water islet placement.
   water_noise: GeneratorWrapper<SafeNode>,
   seed: i32,
-  /// Solid/air cutoff threshold (noise values below this are solid).
+  /// Solid/void cutoff threshold (noise values below this are solid).
   threshold: f32,
   /// Secondary noise influence on boundaries.
   feather_scale: f32,
@@ -85,14 +85,14 @@ pub struct MaterialSeeder {
   islet_scale: f32,
   /// Threshold for islet activation (higher = fewer islets).
   islet_threshold: f32,
-  /// Max distance from air for islets to appear.
+  /// Max distance from void for islets to appear.
   islet_depth: u8,
 }
 
 impl MaterialSeeder {
   /// Default feature scale (controls primary terrain feature size).
   const DEFAULT_FEATURE_SCALE: f32 = 200.0;
-  /// Default solid/air threshold.
+  /// Default solid/void threshold.
   const DEFAULT_THRESHOLD: f32 = 0.0;
   /// Default secondary noise influence.
   const DEFAULT_FEATHER_SCALE: f32 = 3.0;
@@ -100,7 +100,7 @@ impl MaterialSeeder {
   const DEFAULT_ISLET_SCALE: f32 = 30.0;
   /// Default islet threshold (higher = fewer islets).
   const DEFAULT_ISLET_THRESHOLD: f32 = 0.6;
-  /// Default max depth from air for islets.
+  /// Default max depth from void for islets.
   const DEFAULT_ISLET_DEPTH: u8 = 3;
 
   /// Creates a new material seeder with the given seed and default parameters.
@@ -141,7 +141,7 @@ impl MaterialSeeder {
     self
   }
 
-  /// Sets the solid/air threshold (noise values below this are solid).
+  /// Sets the solid/void threshold (noise values below this are solid).
   pub fn threshold(mut self, threshold: f32) -> Self {
     self.threshold = threshold;
     self
@@ -167,7 +167,7 @@ impl MaterialSeeder {
     self
   }
 
-  /// Sets the max depth from air for islets to appear.
+  /// Sets the max depth from void for islets to appear.
   pub fn islet_depth(mut self, depth: u8) -> Self {
     self.islet_depth = depth;
     self
@@ -187,20 +187,20 @@ impl ChunkSeeder for MaterialSeeder {
         let wy = base_y + ly as f32;
 
         let value = self.primary.gen_single_2d(wx, wy, self.seed);
-        // 0 = air, 1 = solid
+        // 0 = void, 1 = solid
         mask.set(lx, ly, if value < self.threshold { 1 } else { 0 });
       }
     }
 
-    // Pass 2: Compute SDF (distance to air)
-    let sdf = distance_to_air(&mask);
+    // Pass 2: Compute SDF (distance to void)
+    let sdf = distance_to_void(&mask);
 
     // Pass 3: Assign materials with feathered colors
     for ly in 0..CHUNK_SIZE {
       for lx in 0..CHUNK_SIZE {
         let dist = sdf[(lx, ly)];
         if dist == 0 {
-          chunk.pixels.set(lx, ly, Pixel::AIR);
+          chunk.pixels.set(lx, ly, Pixel::VOID);
         } else {
           // Sample secondary noise for feathering
           let wx = base_x + lx as f32;

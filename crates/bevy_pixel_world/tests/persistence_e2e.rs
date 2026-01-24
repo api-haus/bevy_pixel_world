@@ -16,16 +16,16 @@ use bevy_pixel_world::{
     CHUNK_SIZE,
 };
 
-/// Minimal seeder that fills chunk with air.
+/// Minimal seeder that fills chunk with void.
 /// Used as fallback when loading persisted chunks.
 struct NoopSeeder;
 
 impl ChunkSeeder for NoopSeeder {
     fn seed(&self, _pos: ChunkPos, chunk: &mut Chunk) {
-        // Fill with air
+        // Fill with void
         for y in 0..chunk.pixels.height() {
             for x in 0..chunk.pixels.width() {
-                chunk.pixels[(x, y)] = Pixel::AIR;
+                chunk.pixels[(x, y)] = Pixel::VOID;
             }
         }
     }
@@ -87,8 +87,8 @@ fn chunk_roundtrip_preserves_painted_pixels() {
     assert_eq!(loaded_chunk.pixels[(100, 119)].material, paint_material);
     assert_eq!(loaded_chunk.pixels[(119, 100)].material, paint_material);
 
-    // Check outside the painted region is air (from NoopSeeder fallback in delta,
-    // or original air in full storage)
+    // Check outside the painted region is void (from NoopSeeder fallback in delta,
+    // or original void in full storage)
     assert_eq!(loaded_chunk.pixels[(99, 99)].material.0, 0);
     assert_eq!(loaded_chunk.pixels[(120, 120)].material.0, 0);
 }

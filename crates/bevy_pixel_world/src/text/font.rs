@@ -5,7 +5,8 @@
 
 use ab_glyph::{Font, FontRef, Glyph, PxScale, ScaleFont};
 
-use crate::{Rgba, RgbaSurface};
+use crate::primitives::RgbaSurface;
+use crate::render::Rgba;
 
 /// Default font embedded in the binary.
 const DEFAULT_FONT_BYTES: &[u8] = include_bytes!("fonts/ProggyClean.ttf");

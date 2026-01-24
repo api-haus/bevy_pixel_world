@@ -34,7 +34,7 @@ pub struct StreamingCamera;
 
 /// Resource holding async seeding tasks.
 #[derive(Resource, Default)]
-pub struct SeedingTasks {
+pub(crate) struct SeedingTasks {
   #[cfg(not(feature = "headless"))]
   tasks: Vec<SeedingTask>,
 }
@@ -119,11 +119,11 @@ impl Plugin for PixelWorldStreamingPlugin {
 
 /// Shared mesh resource for chunk quads.
 #[derive(Resource)]
-pub struct SharedChunkMesh(pub Handle<Mesh>);
+pub(crate) struct SharedChunkMesh(pub Handle<Mesh>);
 
 /// Shared palette texture for GPU-side color lookup.
 #[derive(Resource)]
-pub struct SharedPaletteTexture {
+pub(crate) struct SharedPaletteTexture {
   pub handle: Handle<Image>,
   /// Whether the palette has been populated from Materials.
   pub initialized: bool,
@@ -410,7 +410,7 @@ fn dispatch_seeding(
       }
 
       let slot = world.slot(slot_idx);
-      if slot.seeded {
+      if slot.is_seeded() {
         continue;
       }
 
@@ -457,7 +457,7 @@ fn dispatch_seeding(mut worlds: Query<&mut PixelWorld>, gizmos: debug_shim::Gizm
     // Collect unseeded chunks
     let unseeded: Vec<_> = world
       .active_chunks()
-      .filter(|(_, idx)| !world.slot(*idx).seeded)
+      .filter(|(_, idx)| !world.slot(*idx).is_seeded())
       .collect();
 
     for (pos, slot_idx) in unseeded {
@@ -472,7 +472,6 @@ fn dispatch_seeding(mut worlds: Query<&mut PixelWorld>, gizmos: debug_shim::Gizm
       slot.chunk.pixels = chunk.pixels;
       slot.chunk.set_all_dirty_rects_full();
       slot.lifecycle = super::slot::ChunkLifecycle::Active;
-      slot.seeded = true;
       slot.dirty = true;
 
       // If loaded from disk, mark as persisted
@@ -511,7 +510,6 @@ fn poll_seeding_tasks(
           slot.chunk.pixels = seeded_chunk.pixels;
           slot.chunk.set_all_dirty_rects_full();
           slot.lifecycle = super::slot::ChunkLifecycle::Active;
-          slot.seeded = true;
           slot.dirty = true;
 
           // If loaded from disk, mark as persisted (no need to save again)
@@ -622,7 +620,7 @@ fn upload_dirty_chunks(
       .active_chunks()
       .filter_map(|(pos, idx)| {
         let slot = world.slot(idx);
-        if slot.dirty && slot.seeded {
+        if slot.dirty && slot.is_seeded() {
           Some((pos, idx, slot.texture.clone()?, slot.material.clone()?))
         } else {
           None

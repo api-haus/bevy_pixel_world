@@ -40,10 +40,6 @@ pub struct ChunkSlot {
   pub lifecycle: ChunkLifecycle,
   /// World position if active, None if in pool.
   pub pos: Option<crate::coords::ChunkPos>,
-  /// Whether the chunk has valid pixel data for its position.
-  /// When false, the chunk needs seeding before it can participate in
-  /// simulation.
-  pub seeded: bool,
   /// Whether the chunk's CPU data differs from GPU texture.
   /// When true, the chunk needs upload.
   pub dirty: bool,
@@ -67,7 +63,6 @@ impl ChunkSlot {
       chunk: Chunk::new(CHUNK_SIZE, CHUNK_SIZE),
       lifecycle: ChunkLifecycle::InPool,
       pos: None,
-      seeded: false,
       dirty: false,
       modified: false,
       persisted: false,
@@ -82,6 +77,13 @@ impl ChunkSlot {
     self.lifecycle == ChunkLifecycle::InPool
   }
 
+  /// Returns true if the chunk has valid pixel data for its position.
+  /// Derived from lifecycle state: true when Active.
+  #[inline]
+  pub fn is_seeded(&self) -> bool {
+    self.lifecycle == ChunkLifecycle::Active
+  }
+
   /// Resets the slot to pool state.
   ///
   /// Returns true if the chunk needs saving (was dirty but not persisted).
@@ -90,7 +92,6 @@ impl ChunkSlot {
     self.chunk.clear_pos();
     self.lifecycle = ChunkLifecycle::InPool;
     self.pos = None;
-    self.seeded = false;
     self.dirty = false;
     self.modified = false;
     self.persisted = false;
@@ -101,7 +102,7 @@ impl ChunkSlot {
 
   /// Returns true if the chunk has modifications that need saving.
   pub fn needs_save(&self) -> bool {
-    self.seeded && self.modified && !self.persisted
+    self.is_seeded() && self.modified && !self.persisted
   }
 
   /// Marks the chunk as persisted to disk.

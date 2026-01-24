@@ -1,8 +1,43 @@
 //! Parallel tile blitter with 2x2 checkerboard scheduling.
 //!
-//! Tiles are grouped into four phases (A, B, C, D) based on their position
-//! modulo 2. Tiles in the same phase are never adjacent, allowing safe parallel
-//! execution.
+//! This module solves the cross-chunk boundary problem for parallel pixel operations.
+//! When processing falling sand physics or painting operations, adjacent pixels may
+//! swap across chunk boundaries. Naive parallelization would cause data races.
+//!
+//! # Checkerboard Scheduling
+//!
+//! Tiles are grouped into four phases (A, B, C, D) based on their position modulo 2:
+//!
+//! ```text
+//! ┌───┬───┬───┬───┐
+//! │ A │ B │ A │ B │
+//! ├───┼───┼───┼───┤
+//! │ C │ D │ C │ D │
+//! ├───┼───┼───┼───┤
+//! │ A │ B │ A │ B │
+//! └───┴───┴───┴───┘
+//! ```
+//!
+//! Tiles in the same phase are never adjacent (horizontally, vertically, or diagonally),
+//! guaranteeing that parallel threads cannot access overlapping pixel regions. Each phase
+//! is processed sequentially, with tiles within that phase processed in parallel.
+//!
+//! # Data Hierarchy
+//!
+//! - [`Canvas`] - Unified view over multiple chunks for cross-boundary access
+//! - `HashMap<ChunkPos, &mut Chunk>` - The underlying chunk storage
+//! - `Chunk::pixels: Surface<Pixel>` - Per-chunk pixel data
+//!
+//! The Canvas provides safe mutable access to multiple chunks by leveraging the
+//! checkerboard invariant: since tiles in the same phase never overlap, raw pointer
+//! access is sound.
+//!
+//! # Key Functions
+//!
+//! - [`parallel_blit`] - Paint operations with custom pixel shaders
+//! - [`parallel_simulate`] - Cellular automata physics simulation
+//!
+//! See `docs/architecture/scheduling.md` for detailed design rationale.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
@@ -362,7 +397,7 @@ fn union_dirty_bounds(
 
 /// Marks a pixel position as collision dirty if the material changed.
 ///
-/// We mark dirty if either pixel is non-air, since collision depends on
+/// We mark dirty if either pixel is non-void, since collision depends on
 /// material state which we don't have access to here. The collision system
 /// will determine actual collision status using the material registry.
 ///
@@ -370,9 +405,9 @@ fn union_dirty_bounds(
 /// since collision meshes sample a 1px border from neighbors.
 #[inline]
 fn mark_collision_dirty_if_changed(chunk: &mut Chunk, local_x: u32, local_y: u32, old: &Pixel, new: &Pixel) {
-  // If either old or new is non-air, mark dirty (material may have collision)
+  // If either old or new is non-void, mark dirty (material may have collision)
   // This is conservative but correct - the collision system will filter further
-  if !old.is_air() || !new.is_air() {
+  if !old.is_void() || !new.is_void() {
     let tx = local_x / TILE_SIZE;
     let ty = local_y / TILE_SIZE;
     chunk.mark_tile_collision_dirty(tx, ty);

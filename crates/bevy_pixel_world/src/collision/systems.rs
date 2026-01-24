@@ -66,7 +66,7 @@ fn extract_tile_grid(
             let pos = crate::coords::WorldPos::new(world_x, world_y);
 
             if let Some(pixel) = world.get_pixel(pos) {
-                if pixel.is_air() {
+                if pixel.is_void() {
                     continue;
                 }
 
@@ -269,7 +269,7 @@ pub fn invalidate_dirty_tiles(mut cache: ResMut<CollisionCache>, worlds: Query<&
     for world in worlds.iter() {
         for (chunk_pos, slot_idx) in world.active_chunks() {
             let slot = world.slot(slot_idx);
-            if !slot.seeded {
+            if !slot.is_seeded() {
                 continue;
             }
 

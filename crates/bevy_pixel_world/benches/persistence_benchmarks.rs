@@ -9,7 +9,7 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use lz4_flex::{compress_prepend_size, decompress_size_prepended};
 use bevy_pixel_world::primitives::Surface;
-use bevy_pixel_world::{ColorIndex, MaterialId, Pixel};
+use bevy_pixel_world::{ColorIndex, MaterialId, Pixel, PixelFlags};
 use rand::prelude::*;
 use std::collections::HashMap;
 
@@ -21,7 +21,7 @@ const BYTES_PER_CHUNK: usize = PIXELS_PER_CHUNK * 4;
 // Data Generation Helpers
 // ============================================================================
 
-/// All air - best case for compression
+/// All void - best case for compression
 fn generate_empty_chunk() -> Surface<Pixel> {
     Surface::<Pixel>::new(CHUNK_SIZE, CHUNK_SIZE)
 }
@@ -47,7 +47,7 @@ fn generate_random_chunk(seed: u64) -> Surface<Pixel> {
                 material: MaterialId(rng.gen_range(0..=255)),
                 color: ColorIndex(rng.gen_range(0..=255)),
                 damage: rng.gen_range(0..=255),
-                flags: rng.gen_range(0..=255),
+                flags: PixelFlags::from_bits_truncate(rng.gen_range(0..=255)),
             };
             surface.set(x, y, pixel);
         }
@@ -79,8 +79,8 @@ fn generate_terrain_chunk(seed: u64) -> Surface<Pixel> {
                 // Grass/topsoil
                 Pixel::new(MaterialId(1), ColorIndex(rng.gen_range(0..2)))
             } else {
-                // Air
-                Pixel::AIR
+                // Void
+                Pixel::VOID
             };
             surface.set(x, y, pixel);
         }
@@ -323,7 +323,7 @@ fn compute_delta(original: &Surface<Pixel>, modified: &Surface<Pixel>) -> Vec<(u
                     material: MaterialId(mod_pixel[0]),
                     color: ColorIndex(mod_pixel[1]),
                     damage: mod_pixel[2],
-                    flags: mod_pixel[3],
+                    flags: PixelFlags::from_bits_truncate(mod_pixel[3]),
                 },
             ));
         }

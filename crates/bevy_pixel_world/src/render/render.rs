@@ -13,8 +13,7 @@ use bevy::sprite_render::MeshMaterial2d;
 use super::material::ChunkMaterial;
 use crate::material::Materials;
 use crate::pixel::PixelSurface;
-use crate::render::Rgba;
-use crate::RgbaSurface;
+use crate::primitives::RgbaSurface;
 
 /// Creates an RGBA8 texture with nearest-neighbor sampling.
 ///
@@ -91,13 +90,13 @@ pub fn upload_palette(materials: &Materials, image: &mut Image) {
     let material = materials.get(crate::coords::MaterialId(material_id as u8));
     let base = material_id * 8 * 4; // 8 colors * 4 bytes per color
 
-    for (color_idx, &Rgba { r, g, b, a }) in material.palette.iter().enumerate() {
+    for (color_idx, color) in material.palette.iter().enumerate() {
       let offset = base + color_idx * 4;
       if offset + 4 <= data.len() {
-        data[offset] = r;
-        data[offset + 1] = g;
-        data[offset + 2] = b;
-        data[offset + 3] = a;
+        data[offset] = color.red;
+        data[offset + 1] = color.green;
+        data[offset + 2] = color.blue;
+        data[offset + 3] = color.alpha;
       }
     }
   }

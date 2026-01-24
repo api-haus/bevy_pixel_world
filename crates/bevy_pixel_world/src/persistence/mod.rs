@@ -288,10 +288,10 @@ impl LoadedChunk {
     pub fn apply_to(&self, chunk: &mut Chunk) -> Result<(), LoadError> {
         match self.storage_type {
             StorageType::Empty => {
-                // Fill with air
+                // Fill with void
                 for y in 0..chunk.pixels.height() {
                     for x in 0..chunk.pixels.width() {
-                        chunk.pixels[(x, y)] = crate::pixel::Pixel::AIR;
+                        chunk.pixels[(x, y)] = crate::pixel::Pixel::VOID;
                     }
                 }
             }

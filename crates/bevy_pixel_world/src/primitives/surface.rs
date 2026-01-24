@@ -18,6 +18,10 @@ use std::ops::{Index, IndexMut};
 
 use crate::render::Rgba;
 
+// Ensure Rgba has the correct size for as_bytes() to work correctly.
+// palette::Srgba<u8> should be 4 bytes (u8 x 4) with #[repr(C)].
+const _: () = assert!(std::mem::size_of::<Rgba>() == 4);
+
 /// A 2D buffer of elements.
 ///
 /// Data is stored in row-major order (y * width + x).

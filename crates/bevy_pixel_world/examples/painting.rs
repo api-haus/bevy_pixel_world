@@ -5,7 +5,7 @@
 //!
 //! Controls:
 //! - LMB: Paint with selected material
-//! - RMB: Erase (paint with air)
+//! - RMB: Erase (paint with void)
 //! - Scroll wheel: Adjust brush radius
 //! - WASD/Arrow keys: Move camera
 //! - Shift: Speed boost (5x)
@@ -116,7 +116,7 @@ fn ui_system(mut contexts: EguiContexts, mut brush: ResMut<BrushState>, material
       ui.heading("Brush");
       ui.separator();
 
-      // Material picker (skip AIR)
+      // Material picker (skip VOID)
       for id in [
         material_ids::SOIL,
         material_ids::STONE,
@@ -232,9 +232,9 @@ fn paint_system(
     return;
   };
 
-  // Use selected material for painting, AIR for erasing
+  // Use selected material for painting, VOID for erasing
   let (material, color) = if brush.erasing {
-    (material_ids::AIR, ColorIndex(0))
+    (material_ids::VOID, ColorIndex(0))
   } else {
     (brush.material, ColorIndex(128))
   };

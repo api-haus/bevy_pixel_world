@@ -18,8 +18,8 @@ pub fn compute_swap(
 ) -> Option<WorldPos> {
   let pixel = get_pixel(chunks, pos)?;
 
-  // Skip air
-  if pixel.is_air() {
+  // Skip void
+  if pixel.is_void() {
     return None;
   }
 
@@ -221,7 +221,7 @@ fn can_swap_into(
     return false; // Target chunk not loaded
   };
 
-  if dst_pixel.is_air() {
+  if dst_pixel.is_void() {
     return true;
   }
 

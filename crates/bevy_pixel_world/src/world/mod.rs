@@ -248,7 +248,7 @@ impl PixelWorld {
       .active
       .iter()
       .filter_map(|(&pos, &idx)| {
-        if self.slots[idx.0].seeded {
+        if self.slots[idx.0].is_seeded() {
           Some((pos, idx))
         } else {
           None
@@ -290,7 +290,6 @@ impl PixelWorld {
         slot.lifecycle = slot::ChunkLifecycle::Seeding;
         slot.pos = Some(pos);
         slot.chunk.set_pos(pos);
-        slot.seeded = false;
         slot.dirty = false;
         slot.modified = false;
         slot.persisted = false;
@@ -361,7 +360,6 @@ impl PixelWorld {
         slot.lifecycle = slot::ChunkLifecycle::Seeding;
         slot.pos = Some(*pos);
         slot.chunk.set_pos(*pos);
-        slot.seeded = false;
         slot.dirty = false;
         slot.modified = false;
         slot.persisted = false;
@@ -410,7 +408,7 @@ impl PixelWorld {
     let (chunk_pos, local_pos) = pos.to_chunk_and_local();
     let idx = self.active.get(&chunk_pos)?;
     let slot = &self.slots[idx.0];
-    if !slot.seeded {
+    if !slot.is_seeded() {
       return None;
     }
     Some(&slot.chunk.pixels[(local_pos.x as u32, local_pos.y as u32)])
@@ -424,7 +422,7 @@ impl PixelWorld {
     let (chunk_pos, local_pos) = pos.to_chunk_and_local();
     let idx = self.active.get(&chunk_pos)?;
     let slot = &mut self.slots[idx.0];
-    if !slot.seeded {
+    if !slot.is_seeded() {
       return None;
     }
     Some(&mut slot.chunk.pixels[(local_pos.x as u32, local_pos.y as u32)])
@@ -447,7 +445,7 @@ impl PixelWorld {
     };
 
     // Check both are seeded
-    if !self.slots[idx_a.0].seeded || !self.slots[idx_b.0].seeded {
+    if !self.slots[idx_a.0].is_seeded() || !self.slots[idx_b.0].is_seeded() {
       return false;
     }
 
@@ -503,7 +501,7 @@ impl PixelWorld {
       return false;
     };
     let slot = &mut self.slots[idx.0];
-    if !slot.seeded {
+    if !slot.is_seeded() {
       return false;
     }
     slot.chunk.pixels[(local_pos.x as u32, local_pos.y as u32)] = pixel;

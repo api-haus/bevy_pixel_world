@@ -1,7 +1,7 @@
 //! Material definitions and registry.
 
 use crate::coords::{ColorIndex, MaterialId};
-use crate::render::Rgba;
+use crate::render::{rgb, Rgba};
 
 /// Physics state determines movement behavior.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -44,7 +44,7 @@ impl Material {
 /// Built-in material IDs.
 pub mod ids {
   use super::MaterialId;
-  pub const AIR: MaterialId = MaterialId(0);
+  pub const VOID: MaterialId = MaterialId(0);
   pub const SOIL: MaterialId = MaterialId(1);
   pub const STONE: MaterialId = MaterialId(2);
   pub const SAND: MaterialId = MaterialId(3);
@@ -61,9 +61,9 @@ impl Materials {
   pub fn new() -> Self {
     Self {
       entries: vec![
-        // AIR (transparent) - density 0 means everything sinks through
+        // VOID (transparent) - density 0 means everything sinks through
         Material {
-          name: "Air",
+          name: "Void",
           palette: [Rgba::new(135, 206, 235, 0); 8], // sky blue, transparent
           state: PhysicsState::Gas,
           density: 0,
@@ -75,14 +75,14 @@ impl Materials {
         Material {
           name: "Soil",
           palette: [
-            Rgba::rgb(139, 90, 43), // surface - lighter brown
-            Rgba::rgb(130, 82, 38),
-            Rgba::rgb(121, 74, 33),
-            Rgba::rgb(112, 66, 28),
-            Rgba::rgb(103, 58, 23),
-            Rgba::rgb(94, 50, 18),
-            Rgba::rgb(85, 42, 13),
-            Rgba::rgb(76, 34, 8), // deep - darker brown
+            rgb(139, 90, 43), // surface - lighter brown
+            rgb(130, 82, 38),
+            rgb(121, 74, 33),
+            rgb(112, 66, 28),
+            rgb(103, 58, 23),
+            rgb(94, 50, 18),
+            rgb(85, 42, 13),
+            rgb(76, 34, 8), // deep - darker brown
           ],
           state: PhysicsState::Powder,
           density: 150,
@@ -94,14 +94,14 @@ impl Materials {
         Material {
           name: "Stone",
           palette: [
-            Rgba::rgb(128, 128, 128), // surface - lighter gray
-            Rgba::rgb(118, 118, 118),
-            Rgba::rgb(108, 108, 108),
-            Rgba::rgb(98, 98, 98),
-            Rgba::rgb(88, 88, 88),
-            Rgba::rgb(78, 78, 78),
-            Rgba::rgb(68, 68, 68),
-            Rgba::rgb(58, 58, 58), // deep - darker gray
+            rgb(128, 128, 128), // surface - lighter gray
+            rgb(118, 118, 118),
+            rgb(108, 108, 108),
+            rgb(98, 98, 98),
+            rgb(88, 88, 88),
+            rgb(78, 78, 78),
+            rgb(68, 68, 68),
+            rgb(58, 58, 58), // deep - darker gray
           ],
           state: PhysicsState::Solid,
           density: 200,
@@ -113,14 +113,14 @@ impl Materials {
         Material {
           name: "Sand",
           palette: [
-            Rgba::rgb(237, 201, 175), // surface - light tan
-            Rgba::rgb(225, 191, 146),
-            Rgba::rgb(218, 180, 130),
-            Rgba::rgb(210, 170, 115),
-            Rgba::rgb(200, 160, 100),
-            Rgba::rgb(190, 150, 85),
-            Rgba::rgb(180, 140, 70),
-            Rgba::rgb(170, 130, 60), // deep - darker tan
+            rgb(237, 201, 175), // surface - light tan
+            rgb(225, 191, 146),
+            rgb(218, 180, 130),
+            rgb(210, 170, 115),
+            rgb(200, 160, 100),
+            rgb(190, 150, 85),
+            rgb(180, 140, 70),
+            rgb(170, 130, 60), // deep - darker tan
           ],
           state: PhysicsState::Powder,
           density: 160,
