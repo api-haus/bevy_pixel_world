@@ -5,11 +5,13 @@
 
 #[cfg(feature = "avian2d")]
 use avian2d::prelude::Collider;
+#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 use bevy::math::Vec2;
 #[cfg(feature = "rapier2d")]
 use bevy_rapier2d::prelude::Collider;
 
 use super::PixelBody;
+#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 use crate::collision::{simplify_polylines, triangulate_polygons};
 
 /// Generates a physics collider from a pixel body's shape mask.
@@ -91,6 +93,7 @@ pub fn generate_collider_with_tolerance(body: &PixelBody, tolerance: f32) -> Opt
 }
 
 /// Builds a boolean grid from the shape mask for marching squares.
+#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 fn build_marching_grid(body: &PixelBody) -> Vec<Vec<bool>> {
   let width = body.width() as usize;
   let height = body.height() as usize;
@@ -116,6 +119,7 @@ fn build_marching_grid(body: &PixelBody) -> Vec<Vec<bool>> {
 /// Extracts contour polylines from a dynamic-sized grid.
 ///
 /// Similar to marching_squares but works with arbitrary grid sizes.
+#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 fn extract_contours(grid: &[Vec<bool>], width: usize, height: usize) -> Vec<Vec<Vec2>> {
   // Edge segment lookup table (same as in marching.rs)
   type EdgeSegment = ((f32, f32), (f32, f32));
@@ -166,6 +170,7 @@ fn extract_contours(grid: &[Vec<bool>], width: usize, height: usize) -> Vec<Vec<
 }
 
 /// Connects edge segments into closed polylines.
+#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 fn connect_segments(segments: Vec<(Vec2, Vec2)>) -> Vec<Vec<Vec2>> {
   use std::collections::HashMap;
 

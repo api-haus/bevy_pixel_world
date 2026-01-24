@@ -9,17 +9,14 @@
 //! - Scroll wheel: Adjust brush radius
 //! - WASD/Arrow keys: Move camera
 //! - Shift: Speed boost (5x)
-//! - Space: Spawn random physics object at cursor (requires avian2d or rapier2d
+//! - Space: Spawn random pixel body at cursor (requires avian2d or rapier2d
 //!   feature)
-//! - P: Spawn pixel body at cursor (requires avian2d or rapier2d feature)
 //! - Side panel: Material selection, brush size slider
 //!
 //! Run with: `cargo run -p bevy_pixel_world --example painting`
 //! With physics: `cargo run -p bevy_pixel_world --example painting --features
 //! avian2d`
 
-#[cfg(feature = "avian2d")]
-use avian2d::prelude::*;
 use bevy::camera::ScalingMode;
 use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
@@ -33,11 +30,10 @@ use bevy_pixel_world::visual_debug::{
 };
 use bevy_pixel_world::{
   ColorIndex, MaterialId, MaterialSeeder, Materials, Pixel, PixelWorld, PixelWorldPlugin,
-  SpawnPixelBody, SpawnPixelWorld, StreamCulled, StreamingCamera, WorldRect,
-  collision::CollisionQueryPoint, finalize_pending_pixel_bodies, material_ids,
+  SpawnPixelWorld, StreamingCamera, WorldRect, collision::CollisionQueryPoint, material_ids,
 };
-#[cfg(feature = "rapier2d")]
-use bevy_rapier2d::prelude::*;
+#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+use bevy_pixel_world::{SpawnPixelBody, finalize_pending_pixel_bodies};
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 use rand::Rng;
 
@@ -99,14 +95,7 @@ fn main() {
   }
 
   #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
-  app.add_systems(
-    Update,
-    (
-      spawn_physics_object,
-      spawn_pixel_body,
-      finalize_pending_pixel_bodies,
-    ),
-  );
+  app.add_systems(Update, (spawn_pixel_body, finalize_pending_pixel_bodies));
 
   // Pixel body blit/clear systems - blit early, clear late
   // Blit writes pixels to Canvas so they're visible during rendering
@@ -129,7 +118,6 @@ struct BrushState {
   world_pos_f32: Option<Vec2>,
   material: MaterialId,
   spawn_requested: bool,
-  spawn_pixel_body_requested: bool,
 }
 
 impl Default for BrushState {
@@ -142,7 +130,6 @@ impl Default for BrushState {
       world_pos_f32: None,
       material: material_ids::SAND,
       spawn_requested: false,
-      spawn_pixel_body_requested: false,
     }
   }
 }
@@ -256,7 +243,6 @@ fn input_system(
   brush.painting = mouse_buttons.pressed(MouseButton::Left);
   brush.erasing = mouse_buttons.pressed(MouseButton::Right);
   brush.spawn_requested = keys.just_pressed(KeyCode::Space);
-  brush.spawn_pixel_body_requested = keys.just_pressed(KeyCode::KeyP);
 
   // Handle scroll wheel for radius
   for event in scroll_events.read() {
@@ -390,28 +376,9 @@ fn update_collision_query_point(
   }
 }
 
-/// Marker component for spawned physics objects.
+/// Spawns a random pixel body at the cursor when Space is pressed.
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
-#[derive(Component)]
-struct PhysicsObject;
-
-/// Shape types for random spawning.
-#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
-#[derive(Clone, Copy)]
-enum ShapeType {
-  Circle,
-  Box,
-  Polygon,
-}
-
-#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
-fn spawn_physics_object(
-  brush: Res<BrushState>,
-  ui_state: Res<UiState>,
-  mut commands: Commands,
-  mut meshes: ResMut<Assets<Mesh>>,
-  mut materials: ResMut<Assets<ColorMaterial>>,
-) {
+fn spawn_pixel_body(brush: Res<BrushState>, ui_state: Res<UiState>, mut commands: Commands) {
   if !brush.spawn_requested || ui_state.pointer_over_ui {
     return;
   }
@@ -420,137 +387,13 @@ fn spawn_physics_object(
     return;
   };
 
+  // Randomly choose between box.png and femur.png
   let mut rng = rand::thread_rng();
-
-  // Random shape type
-  let shape_type = match rng.gen_range(0..3) {
-    0 => ShapeType::Circle,
-    1 => ShapeType::Box,
-    _ => ShapeType::Polygon,
+  let sprite = if rng.gen_bool(0.5) {
+    "box.png"
+  } else {
+    "femur.png"
   };
 
-  // Random color
-  let color = Color::hsl(rng.gen_range(0.0..360.0), 0.7, 0.5);
-
-  match shape_type {
-    ShapeType::Circle => {
-      let radius = rng.gen_range(10.0..30.0);
-      #[cfg(feature = "avian2d")]
-      let collider = Collider::circle(radius);
-      #[cfg(feature = "rapier2d")]
-      let collider = Collider::ball(radius);
-
-      commands.spawn((
-        PhysicsObject,
-        CollisionQueryPoint,
-        StreamCulled,
-        RigidBody::Dynamic,
-        collider,
-        Transform::from_translation(pos.extend(0.0)),
-        Mesh2d(meshes.add(Circle::new(radius))),
-        MeshMaterial2d(materials.add(ColorMaterial::from_color(color))),
-      ));
-    }
-    ShapeType::Box => {
-      let half_width = rng.gen_range(10.0..30.0);
-      let half_height = rng.gen_range(10.0..30.0);
-      #[cfg(feature = "avian2d")]
-      let collider = Collider::rectangle(half_width * 2.0, half_height * 2.0);
-      #[cfg(feature = "rapier2d")]
-      let collider = Collider::cuboid(half_width, half_height);
-
-      commands.spawn((
-        PhysicsObject,
-        CollisionQueryPoint,
-        StreamCulled,
-        RigidBody::Dynamic,
-        collider,
-        Transform::from_translation(pos.extend(0.0)),
-        Mesh2d(meshes.add(Rectangle::new(half_width * 2.0, half_height * 2.0))),
-        MeshMaterial2d(materials.add(ColorMaterial::from_color(color))),
-      ));
-    }
-    ShapeType::Polygon => {
-      let num_vertices = rng.gen_range(5..=8);
-      let base_radius = rng.gen_range(15.0..30.0);
-
-      // Generate random vertices around a circle with varying radii
-      let vertices: Vec<Vec2> = (0..num_vertices)
-        .map(|i| {
-          let angle =
-            (i as f32 / num_vertices as f32) * std::f32::consts::TAU + rng.gen_range(-0.2..0.2);
-          let r = base_radius * rng.gen_range(0.7..1.3);
-          Vec2::new(angle.cos() * r, angle.sin() * r)
-        })
-        .collect();
-
-      #[cfg(feature = "avian2d")]
-      let collider = Collider::convex_hull(vertices.clone());
-      #[cfg(feature = "rapier2d")]
-      let collider = Collider::convex_hull(&vertices);
-
-      if let Some(collider) = collider {
-        let mesh = create_convex_mesh(&vertices);
-        commands.spawn((
-          PhysicsObject,
-          CollisionQueryPoint,
-          StreamCulled,
-          RigidBody::Dynamic,
-          collider,
-          Transform::from_translation(pos.extend(0.0)),
-          Mesh2d(meshes.add(mesh)),
-          MeshMaterial2d(materials.add(ColorMaterial::from_color(color))),
-        ));
-      }
-    }
-  }
-}
-
-/// Creates a simple mesh from convex vertices using a triangle fan.
-#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
-fn create_convex_mesh(vertices: &[Vec2]) -> Mesh {
-  use bevy::asset::RenderAssetUsages;
-  use bevy::mesh::{Indices, PrimitiveTopology};
-
-  let mut positions: Vec<[f32; 3]> = Vec::with_capacity(vertices.len() + 1);
-  let mut indices: Vec<u32> = Vec::with_capacity(vertices.len() * 3);
-
-  // Center point
-  let center: Vec2 = vertices.iter().copied().sum::<Vec2>() / vertices.len() as f32;
-  positions.push([center.x, center.y, 0.0]);
-
-  // Add vertices
-  for v in vertices {
-    positions.push([v.x, v.y, 0.0]);
-  }
-
-  // Create triangles from center to each edge
-  for i in 0..vertices.len() {
-    let next = (i + 1) % vertices.len();
-    indices.push(0); // center
-    indices.push(i as u32 + 1);
-    indices.push(next as u32 + 1);
-  }
-
-  Mesh::new(
-    PrimitiveTopology::TriangleList,
-    RenderAssetUsages::default(),
-  )
-  .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
-  .with_inserted_indices(Indices::U32(indices))
-}
-
-/// Spawns a pixel body at the cursor when P is pressed.
-#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
-fn spawn_pixel_body(brush: Res<BrushState>, ui_state: Res<UiState>, mut commands: Commands) {
-  if !brush.spawn_pixel_body_requested || ui_state.pointer_over_ui {
-    return;
-  }
-
-  let Some(pos) = brush.world_pos_f32 else {
-    return;
-  };
-
-  // Spawn a wooden crate pixel body from box.png
-  commands.queue(SpawnPixelBody::new("box.png", material_ids::WOOD, pos));
+  commands.queue(SpawnPixelBody::new(sprite, material_ids::WOOD, pos));
 }

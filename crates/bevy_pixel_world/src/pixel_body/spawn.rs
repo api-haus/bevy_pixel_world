@@ -9,8 +9,10 @@ use bevy::prelude::*;
 use bevy_rapier2d::prelude::RigidBody;
 
 use super::{BlittedTransform, PixelBodyLoader};
+#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 use crate::collision::CollisionQueryPoint;
 use crate::coords::MaterialId;
+#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 use crate::culling::StreamCulled;
 
 /// Command to spawn a pixel body from an image asset.
