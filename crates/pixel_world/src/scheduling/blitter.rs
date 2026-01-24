@@ -146,7 +146,13 @@ pub fn parallel_simulate<F>(
 ) where
   F: Fn(WorldPos, &ChunkAccess<'_>) -> Option<WorldPos> + Sync,
 {
-  for phase_tiles in &tiles_by_phase {
+  #[cfg(feature = "tracy")]
+  let _span = tracing::info_span!("parallel_simulate").entered();
+
+  for (_phase_idx, phase_tiles) in tiles_by_phase.iter().enumerate() {
+    #[cfg(feature = "tracy")]
+    let _phase_span = tracing::info_span!("phase", phase = _phase_idx).entered();
+
     phase_tiles.par_iter().for_each(|&tile| {
       simulate_tile(chunks, tile, &f, dirty_chunks, debug_gizmos, tick, jitter);
     });

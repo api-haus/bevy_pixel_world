@@ -37,6 +37,7 @@ pub struct SimContext {
 /// Processes all four phases sequentially. Each phase processes all tiles
 /// of that phase in parallel, which are never adjacent, ensuring thread-safe
 /// access.
+#[cfg_attr(feature = "tracy", tracing::instrument(skip_all, fields(tick = world.tick())))]
 pub fn simulate_tick(world: &mut PixelWorld, materials: &Materials, debug_gizmos: DebugGizmos<'_>) {
   // Get context before borrowing chunks
   let center = world.center();
@@ -95,6 +96,7 @@ pub fn simulate_tick(world: &mut PixelWorld, materials: &Materials, debug_gizmos
 ///
 /// When `bounds` is `Some`, only tiles overlapping the bounds are collected.
 /// The bounds should already include any desired margin.
+#[cfg_attr(feature = "tracy", tracing::instrument(skip_all, name = "collect_tiles"))]
 fn collect_tiles_by_phase(center: ChunkPos, bounds: Option<WorldRect>) -> [Vec<TilePos>; 4] {
   let mut phases: [Vec<TilePos>; 4] = [vec![], vec![], vec![], vec![]];
 

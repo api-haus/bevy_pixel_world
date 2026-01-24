@@ -98,6 +98,7 @@ fn setup_shared_resources(
 }
 
 /// System: Initializes the palette texture when Materials becomes available.
+#[cfg_attr(feature = "tracy", tracing::instrument(skip_all))]
 fn initialize_palette(
   mut palette: ResMut<SharedPaletteTexture>,
   mut images: ResMut<Assets<Image>>,
@@ -121,6 +122,7 @@ fn initialize_palette(
 ///
 /// For each PixelWorld, checks if the camera has moved to a new chunk
 /// and updates the streaming window accordingly.
+#[cfg_attr(feature = "tracy", tracing::instrument(skip_all))]
 fn tick_pixel_worlds(
   mut commands: Commands,
   camera_query: Query<&GlobalTransform, With<StreamingCamera>>,
@@ -232,6 +234,7 @@ fn spawn_chunk_entity(
 }
 
 /// System: Dispatches async seeding tasks for unseeded chunks.
+#[cfg_attr(feature = "tracy", tracing::instrument(skip_all))]
 fn dispatch_seeding(
   mut seeding_tasks: ResMut<SeedingTasks>,
   mut worlds: Query<(Entity, &mut PixelWorld)>,
@@ -299,6 +302,7 @@ fn dispatch_seeding(
 }
 
 /// System: Polls completed seeding tasks and swaps in seeded chunks.
+#[cfg_attr(feature = "tracy", tracing::instrument(skip_all))]
 fn poll_seeding_tasks(
   mut seeding_tasks: ResMut<SeedingTasks>,
   mut worlds: Query<&mut PixelWorld>,
@@ -374,6 +378,7 @@ fn update_simulation_bounds(
 }
 
 /// System: Runs cellular automata simulation on all pixel worlds.
+#[cfg_attr(feature = "tracy", tracing::instrument(skip_all))]
 fn run_simulation(
   mut worlds: Query<&mut PixelWorld>,
   mat_registry: Option<Res<Materials>>,
@@ -403,6 +408,7 @@ fn run_simulation(
 /// System: Uploads dirty chunks to GPU.
 ///
 /// Uploads raw pixel data directly. Color lookup happens in the shader.
+#[cfg_attr(feature = "tracy", tracing::instrument(skip_all))]
 fn upload_dirty_chunks(
   mut worlds: Query<&mut PixelWorld>,
   mut images: ResMut<Assets<Image>>,

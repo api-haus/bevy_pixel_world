@@ -12,6 +12,8 @@ pub mod text;
 #[cfg(feature = "diagnostics")]
 pub mod diagnostics;
 pub mod material;
+#[cfg(feature = "tracy")]
+mod tracy_init;
 pub(crate) mod scheduling;
 pub mod pixel;
 pub mod primitives;
@@ -38,6 +40,9 @@ pub use seeding::{ChunkSeeder, MaterialSeeder, NoiseSeeder};
 pub use simulation::simulate_tick;
 pub use world::plugin::{SharedChunkMesh, SharedPaletteTexture, StreamingCamera};
 pub use world::{PixelWorld, PixelWorldBundle, PixelWorldConfig, SpawnPixelWorld};
+
+#[cfg(feature = "tracy")]
+pub use tracy_init::init_tracy;
 
 pub use self::primitives::rect::Rect;
 
