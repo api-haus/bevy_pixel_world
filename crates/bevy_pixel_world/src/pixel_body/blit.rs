@@ -6,10 +6,10 @@
 use bevy::prelude::*;
 
 use super::PixelBody;
-use crate::coords::WorldPos;
+use crate::coords::{WorldPos, WorldRect};
 use crate::debug_shim::GizmosParam;
 use crate::material::ids as material_ids;
-use crate::pixel::Pixel;
+use crate::pixel::{Pixel, PixelFlags};
 use crate::world::PixelWorld;
 
 /// Stores the transform used during the last blit operation.
@@ -62,37 +62,84 @@ pub fn blit_pixel_bodies(
   }
 }
 
-/// Writes a single pixel body to the world canvas.
+/// Computes the axis-aligned bounding box of a rotated pixel body in world
+/// space.
+fn compute_world_aabb(body: &PixelBody, transform: &GlobalTransform) -> WorldRect {
+  let width = body.width() as f32;
+  let height = body.height() as f32;
+  let ox = body.origin.x as f32;
+  let oy = body.origin.y as f32;
+
+  let corners = [
+    Vec3::new(ox, oy, 0.0),
+    Vec3::new(ox + width, oy, 0.0),
+    Vec3::new(ox, oy + height, 0.0),
+    Vec3::new(ox + width, oy + height, 0.0),
+  ];
+
+  let (mut min_x, mut max_x) = (f32::INFINITY, f32::NEG_INFINITY);
+  let (mut min_y, mut max_y) = (f32::INFINITY, f32::NEG_INFINITY);
+  for c in corners {
+    let w = transform.transform_point(c);
+    min_x = min_x.min(w.x);
+    max_x = max_x.max(w.x);
+    min_y = min_y.min(w.y);
+    max_y = max_y.max(w.y);
+  }
+
+  WorldRect::new(
+    min_x.floor() as i64,
+    min_y.floor() as i64,
+    (max_x.ceil() - min_x.floor()) as u32 + 1,
+    (max_y.ceil() - min_y.floor()) as u32 + 1,
+  )
+}
+
+/// Writes a single pixel body to the world canvas using inverse transform.
+///
+/// Iterates world pixels in the body's AABB and maps each back to local space.
+/// This guarantees every world pixel in the body's footprint is filled.
 fn blit_single_body(
   world: &mut PixelWorld,
   body: &PixelBody,
   transform: &GlobalTransform,
   debug_gizmos: crate::debug_shim::DebugGizmos<'_>,
 ) {
-  let width = body.width();
-  let height = body.height();
+  let width = body.width() as i32;
+  let height = body.height() as i32;
   let origin = body.origin;
 
-  for y in 0..height {
-    for x in 0..width {
-      if !body.is_solid(x, y) {
+  let aabb = compute_world_aabb(body, transform);
+  let inverse = transform.affine().inverse();
+
+  for world_y in aabb.y..(aabb.y + aabb.height as i64) {
+    for world_x in aabb.x..(aabb.x + aabb.width as i64) {
+      let world_point = Vec3::new(world_x as f32 + 0.5, world_y as f32 + 0.5, 0.0);
+      let local_point = inverse.transform_point3(world_point);
+
+      let local_x = (local_point.x - origin.x as f32).floor() as i32;
+      let local_y = (local_point.y - origin.y as f32).floor() as i32;
+
+      if local_x < 0 || local_x >= width || local_y < 0 || local_y >= height {
         continue;
       }
 
-      let Some(pixel) = body.get_pixel(x, y) else {
+      let (lx, ly) = (local_x as u32, local_y as u32);
+      if !body.is_solid(lx, ly) {
+        continue;
+      }
+
+      let Some(pixel) = body.get_pixel(lx, ly) else {
         continue;
       };
+      let mut pixel_with_flag = *pixel;
+      pixel_with_flag.flags.insert(PixelFlags::PIXEL_BODY);
 
-      // Transform local coordinates to world coordinates
-      let local_pos = Vec3::new(
-        x as f32 + origin.x as f32 + 0.5,
-        y as f32 + origin.y as f32 + 0.5,
-        0.0,
+      world.set_pixel(
+        WorldPos::new(world_x, world_y),
+        pixel_with_flag,
+        debug_gizmos,
       );
-      let world_pos_vec = transform.transform_point(local_pos);
-      let world_pos = WorldPos::new(world_pos_vec.x as i64, world_pos_vec.y as i64);
-
-      world.set_pixel(world_pos, *pixel, debug_gizmos);
     }
   }
 }
@@ -120,34 +167,42 @@ pub fn clear_pixel_bodies(
   }
 }
 
-/// Clears a single pixel body from the world canvas.
+/// Clears a single pixel body from the world canvas using inverse transform.
+///
+/// Uses the same AABB iteration as blit to ensure all written pixels are
+/// cleared.
 fn clear_single_body(
   world: &mut PixelWorld,
   body: &PixelBody,
   transform: &GlobalTransform,
   debug_gizmos: crate::debug_shim::DebugGizmos<'_>,
 ) {
-  let width = body.width();
-  let height = body.height();
+  let width = body.width() as i32;
+  let height = body.height() as i32;
   let origin = body.origin;
   let void = Pixel::new(material_ids::VOID, crate::coords::ColorIndex(0));
 
-  for y in 0..height {
-    for x in 0..width {
-      if !body.is_solid(x, y) {
+  let aabb = compute_world_aabb(body, transform);
+  let inverse = transform.affine().inverse();
+
+  for world_y in aabb.y..(aabb.y + aabb.height as i64) {
+    for world_x in aabb.x..(aabb.x + aabb.width as i64) {
+      let world_point = Vec3::new(world_x as f32 + 0.5, world_y as f32 + 0.5, 0.0);
+      let local_point = inverse.transform_point3(world_point);
+
+      let local_x = (local_point.x - origin.x as f32).floor() as i32;
+      let local_y = (local_point.y - origin.y as f32).floor() as i32;
+
+      if local_x < 0 || local_x >= width || local_y < 0 || local_y >= height {
         continue;
       }
 
-      // Transform local coordinates to world coordinates
-      let local_pos = Vec3::new(
-        x as f32 + origin.x as f32 + 0.5,
-        y as f32 + origin.y as f32 + 0.5,
-        0.0,
-      );
-      let world_pos_vec = transform.transform_point(local_pos);
-      let world_pos = WorldPos::new(world_pos_vec.x as i64, world_pos_vec.y as i64);
+      let (lx, ly) = (local_x as u32, local_y as u32);
+      if !body.is_solid(lx, ly) {
+        continue;
+      }
 
-      world.set_pixel(world_pos, void, debug_gizmos);
+      world.set_pixel(WorldPos::new(world_x, world_y), void, debug_gizmos);
     }
   }
 }

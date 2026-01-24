@@ -12,6 +12,7 @@ use super::simplify::simplify_polylines;
 use super::triangulate::triangulate_polygon;
 use crate::coords::{TILE_SIZE, TILES_PER_CHUNK, TilePos};
 use crate::material::{Materials, PhysicsState};
+use crate::pixel::PixelFlags;
 use crate::world::PixelWorld;
 
 /// Marker component for entities that trigger collision mesh generation.
@@ -66,6 +67,9 @@ fn extract_tile_grid(
 
       if let Some(pixel) = world.get_pixel(pos) {
         if pixel.is_void() {
+          continue;
+        }
+        if pixel.flags.contains(PixelFlags::PIXEL_BODY) {
           continue;
         }
 

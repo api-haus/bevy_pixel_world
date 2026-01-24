@@ -16,6 +16,8 @@ bitflags::bitflags! {
     const BURNING = 0b0000_1000;
     /// Pixel is wet (reserved for future use).
     const WET = 0b0001_0000;
+    /// Pixel belongs to a pixel body (excluded from terrain collision).
+    const PIXEL_BODY = 0b0010_0000;
   }
 }
 

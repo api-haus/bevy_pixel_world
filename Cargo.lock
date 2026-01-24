@@ -396,6 +396,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "bevy-yoleck"
+version = "0.29.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "218dc4beeb01afd923fe9ff44099898d333d9e4fcc9ae8d03d2ebc070628a1da"
+dependencies = [
+ "bevy",
+ "bevy-yoleck-macros",
+ "bevy_egui",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "uuid",
+]
+
+[[package]]
+name = "bevy-yoleck-macros"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8ed721396209f8172af6a86b5397b5be9784776f57f6a22107051c9caf07d586"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "bevy_a11y"
 version = "0.17.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2847,6 +2873,7 @@ name = "game"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "bevy-yoleck",
  "bevy_common_assets",
  "bevy_egui",
  "bevy_enhanced_input",
