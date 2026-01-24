@@ -15,24 +15,27 @@ use crate::pixel::Pixel;
 use crate::primitives::Chunk;
 use crate::simulation::hash::hash21uu64;
 
-/// Direct chunk access without locks.
+/// Unified drawing surface spanning multiple chunks.
+///
+/// Provides a single coordinate space for pixel operations across chunk
+/// boundaries, used by both painting (blit) and simulation.
 ///
 /// # Safety
 /// This type provides interior mutability without runtime checks.
 /// It is only safe to use with the 2x2 checkerboard scheduling, which
 /// guarantees tiles in the same phase never access overlapping pixels.
-pub struct ChunkAccess<'a> {
+pub struct Canvas<'a> {
   chunks: HashMap<ChunkPos, *mut Chunk>,
   _marker: std::marker::PhantomData<&'a mut Chunk>,
 }
 
 // SAFETY: The 2x2 checkerboard scheduling guarantees that tiles processed
 // in parallel never access overlapping pixel regions.
-unsafe impl Send for ChunkAccess<'_> {}
-unsafe impl Sync for ChunkAccess<'_> {}
+unsafe impl Send for Canvas<'_> {}
+unsafe impl Sync for Canvas<'_> {}
 
-impl<'a> ChunkAccess<'a> {
-  /// Creates a new chunk access wrapper from mutable chunk references.
+impl<'a> Canvas<'a> {
+  /// Creates a canvas from mutable chunk references.
   pub fn new(chunks: HashMap<ChunkPos, &'a mut Chunk>) -> Self {
     let ptrs = chunks
       .into_iter()
@@ -78,7 +81,7 @@ impl<'a> ChunkAccess<'a> {
 /// Executes a blit operation across tiles in parallel using 2x2 checkerboard
 /// scheduling.
 pub fn parallel_blit<F>(
-  chunks: &ChunkAccess<'_>,
+  chunks: &Canvas<'_>,
   rect: WorldRect,
   f: F,
   dirty_chunks: &Mutex<HashSet<ChunkPos>>,
@@ -136,7 +139,7 @@ pub fn parallel_blit<F>(
 /// boundaries appear at different world positions, preventing artifacts
 /// from accumulating at fixed seams.
 pub fn parallel_simulate<F>(
-  chunks: &ChunkAccess<'_>,
+  chunks: &Canvas<'_>,
   tiles_by_phase: [Vec<TilePos>; 4],
   f: F,
   dirty_chunks: &Mutex<HashSet<ChunkPos>>,
@@ -144,7 +147,7 @@ pub fn parallel_simulate<F>(
   tick: u64,
   jitter: (i64, i64),
 ) where
-  F: Fn(WorldPos, &ChunkAccess<'_>) -> Option<WorldPos> + Sync,
+  F: Fn(WorldPos, &Canvas<'_>) -> Option<WorldPos> + Sync,
 {
   #[cfg(feature = "tracy")]
   let _span = tracing::info_span!("parallel_simulate").entered();
@@ -170,7 +173,7 @@ pub fn parallel_simulate<F>(
 /// so we union their dirty bounds for iteration but still mark dirty using
 /// original (non-jittered) tile coordinates.
 fn simulate_tile<F>(
-  chunks: &ChunkAccess<'_>,
+  chunks: &Canvas<'_>,
   tile: TilePos,
   f: &F,
   dirty_chunks: &Mutex<HashSet<ChunkPos>>,
@@ -178,7 +181,7 @@ fn simulate_tile<F>(
   tick: u64,
   jitter: (i64, i64),
 ) where
-  F: Fn(WorldPos, &ChunkAccess<'_>) -> Option<WorldPos> + Sync,
+  F: Fn(WorldPos, &Canvas<'_>) -> Option<WorldPos> + Sync,
 {
   let tile_size = TILE_SIZE as i64;
   let (jitter_x, jitter_y) = jitter;
@@ -283,7 +286,7 @@ fn simulate_tile<F>(
 /// - Original tile (tx, ty+1) - if jy > 0
 /// - Original tile (tx+1, ty+1) - if jx > 0 and jy > 0
 fn union_dirty_bounds(
-  chunks: &ChunkAccess<'_>,
+  chunks: &Canvas<'_>,
   tile: TilePos,
   jitter: (i64, i64),
 ) -> Option<(u8, u8, u8, u8)> {
@@ -360,7 +363,7 @@ fn union_dirty_bounds(
 /// Swaps two pixels at the given world positions.
 ///
 /// Returns the chunk positions that were modified, or None if swap failed.
-fn swap_pixels(chunks: &ChunkAccess<'_>, a: WorldPos, b: WorldPos) -> Option<[ChunkPos; 2]> {
+fn swap_pixels(chunks: &Canvas<'_>, a: WorldPos, b: WorldPos) -> Option<[ChunkPos; 2]> {
   let (chunk_a, local_a) = a.to_chunk_and_local();
   let (chunk_b, local_b) = b.to_chunk_and_local();
 
@@ -390,7 +393,7 @@ fn swap_pixels(chunks: &ChunkAccess<'_>, a: WorldPos, b: WorldPos) -> Option<[Ch
 
 /// Process a single tile, writing pixels that pass the filter.
 fn process_tile<F>(
-  chunks: &ChunkAccess<'_>,
+  chunks: &Canvas<'_>,
   tile: TilePos,
   rect: &WorldRect,
   f: &F,

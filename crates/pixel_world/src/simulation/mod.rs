@@ -16,7 +16,7 @@ use crate::coords::{
 };
 use crate::debug_shim::DebugGizmos;
 use crate::material::Materials;
-use crate::scheduling::blitter::{parallel_simulate, ChunkAccess};
+use crate::scheduling::blitter::{parallel_simulate, Canvas};
 use crate::world::PixelWorld;
 
 /// Context passed to simulation rules for deterministic randomness.
@@ -73,7 +73,7 @@ pub fn simulate_tick(world: &mut PixelWorld, materials: &Materials, debug_gizmos
     return;
   }
 
-  let chunk_access = ChunkAccess::new(chunks_map);
+  let chunk_access = Canvas::new(chunks_map);
   let dirty = Mutex::new(HashSet::new());
 
   parallel_simulate(

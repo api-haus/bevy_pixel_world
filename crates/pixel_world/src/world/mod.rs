@@ -22,7 +22,7 @@ use crate::pixel::Pixel;
 use crate::primitives::Chunk;
 #[cfg(not(feature = "headless"))]
 use crate::render::ChunkMaterial;
-use crate::scheduling::blitter::{parallel_blit, ChunkAccess};
+use crate::scheduling::blitter::{parallel_blit, Canvas};
 use crate::seeding::ChunkSeeder;
 
 pub use bundle::{PixelWorldBundle, SpawnPixelWorld};
@@ -287,6 +287,7 @@ impl PixelWorld {
     for pos in positions {
       if let Some(idx) = self.acquire_slot() {
         let slot = &mut self.slots[idx.0];
+        slot.lifecycle = slot::ChunkLifecycle::Seeding;
         slot.pos = Some(pos);
         slot.chunk.set_pos(pos);
         slot.seeded = false;
@@ -357,6 +358,7 @@ impl PixelWorld {
     for pos in new_set.difference(&old_set) {
       if let Some(idx) = self.acquire_slot() {
         let slot = &mut self.slots[idx.0];
+        slot.lifecycle = slot::ChunkLifecycle::Seeding;
         slot.pos = Some(*pos);
         slot.chunk.set_pos(*pos);
         slot.seeded = false;
@@ -534,7 +536,7 @@ impl PixelWorld {
     F: Fn(WorldFragment) -> Option<Pixel> + Sync,
   {
     let chunks = self.collect_seeded_chunks();
-    let chunk_access = ChunkAccess::new(chunks);
+    let chunk_access = Canvas::new(chunks);
     let dirty_chunks = std::sync::Mutex::new(std::collections::HashSet::new());
     let dirty_tiles = std::sync::Mutex::new(std::collections::HashSet::<TilePos>::new());
 

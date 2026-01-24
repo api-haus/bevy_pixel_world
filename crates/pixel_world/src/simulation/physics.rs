@@ -6,13 +6,13 @@ use super::hash::hash41uu64;
 use super::SimContext;
 use crate::coords::WorldPos;
 use crate::material::{Materials, PhysicsState};
-use crate::scheduling::blitter::ChunkAccess;
+use crate::scheduling::blitter::Canvas;
 use crate::pixel::Pixel;
 
 /// Returns the position to swap with, or None if pixel stays.
 pub fn compute_swap(
   pos: WorldPos,
-  chunks: &ChunkAccess<'_>,
+  chunks: &Canvas<'_>,
   materials: &Materials,
   ctx: SimContext,
 ) -> Option<WorldPos> {
@@ -40,7 +40,7 @@ const CH_AIR_DRIFT: u64 = 0x3c6e_f372_fe94_f82a;
 /// Computes swap target for powder (sand, soil) behavior.
 fn compute_powder_swap(
   pos: WorldPos,
-  chunks: &ChunkAccess<'_>,
+  chunks: &Canvas<'_>,
   materials: &Materials,
   ctx: SimContext,
 ) -> Option<WorldPos> {
@@ -115,7 +115,7 @@ fn compute_powder_swap(
 /// Computes swap target for liquid (water) behavior.
 fn compute_liquid_swap(
   pos: WorldPos,
-  chunks: &ChunkAccess<'_>,
+  chunks: &Canvas<'_>,
   materials: &Materials,
   ctx: SimContext,
 ) -> Option<WorldPos> {
@@ -203,7 +203,7 @@ fn compute_liquid_swap(
 
 /// Reads a pixel from chunks.
 #[inline]
-fn get_pixel(chunks: &ChunkAccess<'_>, pos: WorldPos) -> Option<Pixel> {
+fn get_pixel(chunks: &Canvas<'_>, pos: WorldPos) -> Option<Pixel> {
   let (chunk_pos, local) = pos.to_chunk_and_local();
   let chunk = chunks.get(chunk_pos)?;
   Some(chunk.pixels[(local.x as u32, local.y as u32)])
@@ -212,7 +212,7 @@ fn get_pixel(chunks: &ChunkAccess<'_>, pos: WorldPos) -> Option<Pixel> {
 /// Checks if a pixel with the given density can swap into the target position.
 #[inline]
 fn can_swap_into(
-  chunks: &ChunkAccess<'_>,
+  chunks: &Canvas<'_>,
   materials: &Materials,
   src_density: u8,
   target: WorldPos,
