@@ -12,12 +12,12 @@ pub fn distance_to_void(mask: &Surface<u8>) -> Surface<u8> {
 
   let w = mask.width();
   let h = mask.height();
-  let mut dist = Surface::<u16>::new(w, h);
+  let mut dist = Surface::<u8>::new(w, h);
 
-  // Initialize: 0 for void, large for solid
+  // Initialize: 0 for void, 255 for solid
   for y in 0..h {
     for x in 0..w {
-      dist.set(x, y, if mask[(x, y)] == 0 { 0 } else { 10000 });
+      dist.set(x, y, if mask[(x, y)] == 0 { 0 } else { 255 });
     }
   }
 
@@ -26,10 +26,10 @@ pub fn distance_to_void(mask: &Surface<u8>) -> Surface<u8> {
     for x in 0..w {
       let mut d = dist[(x, y)];
       if x > 0 {
-        d = d.min(dist[(x - 1, y)] + 1);
+        d = d.min(dist[(x - 1, y)].saturating_add(1));
       }
       if y > 0 {
-        d = d.min(dist[(x, y - 1)] + 1);
+        d = d.min(dist[(x, y - 1)].saturating_add(1));
       }
       dist.set(x, y, d);
     }
@@ -40,21 +40,14 @@ pub fn distance_to_void(mask: &Surface<u8>) -> Surface<u8> {
     for x in (0..w).rev() {
       let mut d = dist[(x, y)];
       if x < w - 1 {
-        d = d.min(dist[(x + 1, y)] + 1);
+        d = d.min(dist[(x + 1, y)].saturating_add(1));
       }
       if y < h - 1 {
-        d = d.min(dist[(x, y + 1)] + 1);
+        d = d.min(dist[(x, y + 1)].saturating_add(1));
       }
       dist.set(x, y, d);
     }
   }
 
-  // Convert to u8
-  let mut result = Surface::<u8>::new(w, h);
-  for y in 0..h {
-    for x in 0..w {
-      result.set(x, y, dist[(x, y)].min(255) as u8);
-    }
-  }
-  result
+  dist
 }

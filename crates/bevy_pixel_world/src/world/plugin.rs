@@ -341,24 +341,19 @@ fn dispatch_seeding(
   let task_pool = AsyncComputeTaskPool::get();
 
   for (world_entity, world) in worlds.iter_mut() {
-    // Count existing tasks for this world
-    let in_flight = seeding_tasks
-      .tasks
-      .iter()
-      .filter(|t| t.world_entity == world_entity)
-      .count();
+    // Count existing tasks and collect in-flight slots in one pass
+    let mut in_flight = 0;
+    let mut in_flight_slots = std::collections::HashSet::new();
+    for task in seeding_tasks.tasks.iter() {
+      if task.world_entity == world_entity {
+        in_flight += 1;
+        in_flight_slots.insert(task.slot_index);
+      }
+    }
 
     if in_flight >= MAX_SEEDING_TASKS {
       continue;
     }
-
-    // Find unseeded slots without in-flight tasks
-    let in_flight_slots: std::collections::HashSet<_> = seeding_tasks
-      .tasks
-      .iter()
-      .filter(|t| t.world_entity == world_entity)
-      .map(|t| t.slot_index)
-      .collect();
 
     for (pos, slot_idx) in world.active_chunks() {
       if in_flight_slots.contains(&slot_idx) {
@@ -387,13 +382,8 @@ fn dispatch_seeding(
       });
 
       // Respect concurrency limit
-      if seeding_tasks
-        .tasks
-        .iter()
-        .filter(|t| t.world_entity == world_entity)
-        .count()
-        >= MAX_SEEDING_TASKS
-      {
+      in_flight += 1;
+      if in_flight >= MAX_SEEDING_TASKS {
         break;
       }
     }

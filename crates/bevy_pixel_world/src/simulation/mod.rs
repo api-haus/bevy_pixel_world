@@ -11,8 +11,7 @@ use std::sync::Mutex;
 use hash::hash21uu64;
 
 use crate::coords::{
-  CHUNK_SIZE, ChunkPos, Phase, TILE_SIZE, TILES_PER_CHUNK, TilePos, WINDOW_HEIGHT, WINDOW_WIDTH,
-  WorldRect,
+  ChunkPos, Phase, TILE_SIZE, TILES_PER_CHUNK, TilePos, WINDOW_HEIGHT, WINDOW_WIDTH, WorldRect,
 };
 use crate::debug_shim::DebugGizmos;
 use crate::material::Materials;
@@ -105,17 +104,13 @@ fn collect_tiles_by_phase(center: ChunkPos, bounds: Option<WorldRect>) -> [Vec<T
 
   let hw = WINDOW_WIDTH as i32 / 2;
   let hh = WINDOW_HEIGHT as i32 / 2;
-  let tile_size = TILE_SIZE as i64;
 
   // Compute streaming window tile bounds
-  let window_min_cx = center.x - hw;
-  let window_max_cx = center.x + hw;
-  let window_min_cy = center.y - hh;
-  let window_max_cy = center.y + hh;
-  let window_min_tx = window_min_cx as i64 * TILES_PER_CHUNK as i64;
-  let window_max_tx = window_max_cx as i64 * TILES_PER_CHUNK as i64;
-  let window_min_ty = window_min_cy as i64 * TILES_PER_CHUNK as i64;
-  let window_max_ty = window_max_cy as i64 * TILES_PER_CHUNK as i64;
+  let tiles_per_chunk = TILES_PER_CHUNK as i64;
+  let window_min_tx = (center.x - hw) as i64 * tiles_per_chunk;
+  let window_max_tx = (center.x + hw) as i64 * tiles_per_chunk;
+  let window_min_ty = (center.y - hh) as i64 * tiles_per_chunk;
+  let window_max_ty = (center.y + hh) as i64 * tiles_per_chunk;
 
   if let Some(rect) = bounds {
     // Collect only tiles that overlap bounds AND are in streaming window
@@ -132,23 +127,11 @@ fn collect_tiles_by_phase(center: ChunkPos, bounds: Option<WorldRect>) -> [Vec<T
     }
   } else {
     // No bounds - collect all tiles in streaming window
-    let tiles_per_chunk = TILES_PER_CHUNK as i64;
-
-    for cy in window_min_cy..window_max_cy {
-      for cx in window_min_cx..window_max_cx {
-        let chunk_origin_x = cx as i64 * CHUNK_SIZE as i64;
-        let chunk_origin_y = cy as i64 * CHUNK_SIZE as i64;
-
-        for ty in 0..tiles_per_chunk {
-          for tx in 0..tiles_per_chunk {
-            let tile_world_x = chunk_origin_x + tx * tile_size;
-            let tile_world_y = chunk_origin_y + ty * tile_size;
-            let tile = TilePos::new(tile_world_x / tile_size, tile_world_y / tile_size);
-
-            let phase = Phase::from_tile(tile);
-            phases[phase.index()].push(tile);
-          }
-        }
+    for tile_y in window_min_ty..window_max_ty {
+      for tile_x in window_min_tx..window_max_tx {
+        let tile = TilePos::new(tile_x, tile_y);
+        let phase = Phase::from_tile(tile);
+        phases[phase.index()].push(tile);
       }
     }
   }

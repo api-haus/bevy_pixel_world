@@ -222,6 +222,18 @@ pub struct PageTableEntry {
   pub _reserved: [u8; 2],
 }
 
+/// Updates a CRC8 value with a new byte using polynomial 0x07 (CRC-8-CCITT).
+fn crc8_update(crc: &mut u8, byte: u8) {
+  *crc ^= byte;
+  for _ in 0..8 {
+    *crc = if *crc & 0x80 != 0 {
+      (*crc << 1) ^ 0x07
+    } else {
+      *crc << 1
+    };
+  }
+}
+
 impl PageTableEntry {
   /// Entry size in bytes.
   pub const SIZE: usize = 24;
@@ -249,49 +261,20 @@ impl PageTableEntry {
   /// Computes CRC8 checksum of the entry (excluding checksum field).
   pub fn compute_checksum(&self) -> u8 {
     // Simple CRC8 using polynomial 0x07 (CRC-8-CCITT)
-    let bytes = [self.chunk_x.to_le_bytes(), self.chunk_y.to_le_bytes()];
     let mut crc: u8 = 0;
-    for &byte_arr in &bytes {
-      for &byte in &byte_arr {
-        crc ^= byte;
-        for _ in 0..8 {
-          if crc & 0x80 != 0 {
-            crc = (crc << 1) ^ 0x07;
-          } else {
-            crc <<= 1;
-          }
-        }
-      }
+    for &byte in &self.chunk_x.to_le_bytes() {
+      crc8_update(&mut crc, byte);
     }
-    // Include offset and size
+    for &byte in &self.chunk_y.to_le_bytes() {
+      crc8_update(&mut crc, byte);
+    }
     for byte in self.data_offset.to_le_bytes() {
-      crc ^= byte;
-      for _ in 0..8 {
-        if crc & 0x80 != 0 {
-          crc = (crc << 1) ^ 0x07;
-        } else {
-          crc <<= 1;
-        }
-      }
+      crc8_update(&mut crc, byte);
     }
     for byte in self.data_size.to_le_bytes() {
-      crc ^= byte;
-      for _ in 0..8 {
-        if crc & 0x80 != 0 {
-          crc = (crc << 1) ^ 0x07;
-        } else {
-          crc <<= 1;
-        }
-      }
+      crc8_update(&mut crc, byte);
     }
-    crc ^= self.storage_type as u8;
-    for _ in 0..8 {
-      if crc & 0x80 != 0 {
-        crc = (crc << 1) ^ 0x07;
-      } else {
-        crc <<= 1;
-      }
-    }
+    crc8_update(&mut crc, self.storage_type as u8);
     crc
   }
 
