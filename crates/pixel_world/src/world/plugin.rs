@@ -450,6 +450,7 @@ fn dispatch_seeding(mut worlds: Query<&mut PixelWorld>, gizmos: debug_shim::Gizm
       let slot = world.slot_mut(slot_idx);
       slot.chunk.pixels = chunk.pixels;
       slot.chunk.set_all_dirty_rects_full();
+      slot.lifecycle = super::slot::ChunkLifecycle::Active;
       slot.seeded = true;
       slot.dirty = true;
 
@@ -488,6 +489,7 @@ fn poll_seeding_tasks(
           let slot = world.slot_mut(task.slot_index);
           slot.chunk.pixels = seeded_chunk.pixels;
           slot.chunk.set_all_dirty_rects_full();
+          slot.lifecycle = super::slot::ChunkLifecycle::Active;
           slot.seeded = true;
           slot.dirty = true;
 
