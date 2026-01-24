@@ -123,7 +123,7 @@ impl Plugin for PixelWorldStreamingPlugin {
       .add_message::<PersistenceComplete>();
 
     #[cfg(not(feature = "headless"))]
-    app.add_systems(Startup, setup_shared_resources);
+    app.add_systems(PreStartup, setup_shared_resources);
 
     #[cfg(feature = "visual-debug")]
     app.init_resource::<SampleMesh>();
@@ -213,8 +213,8 @@ pub(crate) struct SharedPaletteTexture {
 
 /// Sets up shared resources used by all PixelWorlds.
 ///
-/// This is an exclusive system to ensure resources are immediately available,
-/// avoiding race conditions with other Startup systems that use Commands.
+/// Runs in PreStartup to ensure resources are available before user Startup
+/// systems that spawn PixelWorlds.
 #[cfg(not(feature = "headless"))]
 fn setup_shared_resources(world: &mut World) {
   let mesh = {
