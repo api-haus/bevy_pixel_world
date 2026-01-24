@@ -35,8 +35,35 @@ pub use blit::{BlittedTransform, blit_pixel_bodies, clear_pixel_bodies};
 pub use collider::generate_collider;
 pub use loader::PixelBodyLoader;
 pub use spawn::{
-  PendingPixelBody, SpawnPixelBody, SpawnPixelBodyFromImage, finalize_pending_pixel_bodies,
+  PendingPixelBody, PixelBodyIdGenerator, SpawnPixelBody, SpawnPixelBodyFromImage,
+  finalize_pending_pixel_bodies,
 };
+
+/// Stable identifier for pixel bodies across sessions.
+///
+/// Each pixel body gets a unique ID when spawned. This ID persists across
+/// save/load cycles and is used to track bodies for persistence.
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct PixelBodyId(pub u64);
+
+impl PixelBodyId {
+  /// Creates a new pixel body ID.
+  pub fn new(id: u64) -> Self {
+    Self(id)
+  }
+
+  /// Returns the raw ID value.
+  pub fn value(&self) -> u64 {
+    self.0
+  }
+}
+
+/// Marker for pixel bodies that should persist with chunks.
+///
+/// When a chunk unloads, pixel bodies with this component are saved to disk.
+/// They are restored when the chunk loads again.
+#[derive(Component, Default)]
+pub struct Persistable;
 
 use crate::pixel::Pixel;
 use crate::primitives::Surface;

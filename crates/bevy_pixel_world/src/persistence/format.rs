@@ -45,8 +45,10 @@ pub struct Header {
   pub tile_size: u16,
   /// Bytes per pixel.
   pub pixel_size: u8,
+  /// File offset where entity section starts (0 = no entities).
+  pub entity_section_ptr: u64,
   /// Reserved for future use.
-  pub _reserved: [u8; 11],
+  pub _reserved: [u8; 3],
 }
 
 impl Header {
@@ -73,7 +75,8 @@ impl Header {
       chunk_size: CHUNK_SIZE as u16,
       tile_size: TILE_SIZE as u16,
       pixel_size: std::mem::size_of::<Pixel>() as u8,
-      _reserved: [0; 11],
+      entity_section_ptr: 0, // No entities initially
+      _reserved: [0; 3],
     }
   }
 
@@ -120,6 +123,7 @@ impl Header {
     writer.write_all(&self.chunk_size.to_le_bytes())?;
     writer.write_all(&self.tile_size.to_le_bytes())?;
     writer.write_all(&[self.pixel_size])?;
+    writer.write_all(&self.entity_section_ptr.to_le_bytes())?;
     writer.write_all(&self._reserved)?;
     Ok(())
   }
@@ -142,7 +146,8 @@ impl Header {
       chunk_size: u16::from_le_bytes([buf[48], buf[49]]),
       tile_size: u16::from_le_bytes([buf[50], buf[51]]),
       pixel_size: buf[52],
-      _reserved: buf[53..64].try_into().unwrap(),
+      entity_section_ptr: u64::from_le_bytes(buf[53..61].try_into().unwrap()),
+      _reserved: buf[61..64].try_into().unwrap(),
     })
   }
 }
@@ -311,6 +316,168 @@ impl PageTableEntry {
       checksum: buf[21],
       _reserved: [buf[22], buf[23]],
     })
+  }
+}
+
+/// Entity section header (8 bytes).
+///
+/// Precedes the array of PixelBodyRecord entries.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct EntitySectionHeader {
+  /// Number of pixel body records in this section.
+  pub entity_count: u32,
+  /// Reserved for future use.
+  pub _reserved: u32,
+}
+
+impl EntitySectionHeader {
+  /// Header size in bytes.
+  pub const SIZE: usize = 8;
+
+  /// Writes the header to a writer.
+  pub fn write_to<W: Write>(&self, writer: &mut W) -> io::Result<()> {
+    writer.write_all(&self.entity_count.to_le_bytes())?;
+    writer.write_all(&self._reserved.to_le_bytes())?;
+    Ok(())
+  }
+
+  /// Reads a header from a reader.
+  pub fn read_from<R: Read>(reader: &mut R) -> io::Result<Self> {
+    let mut buf = [0u8; Self::SIZE];
+    reader.read_exact(&mut buf)?;
+    Ok(Self {
+      entity_count: u32::from_le_bytes(buf[0..4].try_into().unwrap()),
+      _reserved: u32::from_le_bytes(buf[4..8].try_into().unwrap()),
+    })
+  }
+}
+
+/// Fixed-size header for a pixel body record (64 bytes).
+///
+/// The variable-size data (pixel data, shape mask, extension data) follows
+/// immediately after this header.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct PixelBodyRecordHeader {
+  /// Stable ID for this pixel body.
+  pub stable_id: u64,
+  /// World X position.
+  pub position_x: f32,
+  /// World Y position.
+  pub position_y: f32,
+  /// Rotation in radians.
+  pub rotation: f32,
+  /// Linear velocity X.
+  pub linear_velocity_x: f32,
+  /// Linear velocity Y.
+  pub linear_velocity_y: f32,
+  /// Angular velocity.
+  pub angular_velocity: f32,
+  /// Width of pixel grid.
+  pub width: u32,
+  /// Height of pixel grid.
+  pub height: u32,
+  /// Origin X offset.
+  pub origin_x: i32,
+  /// Origin Y offset.
+  pub origin_y: i32,
+  /// Size of compressed pixel data.
+  pub pixel_data_size: u32,
+  /// Size of compressed shape mask data.
+  pub shape_mask_size: u32,
+  /// Size of extension data.
+  pub extension_data_size: u32,
+  /// Checksum for corruption detection.
+  pub checksum: u8,
+  /// Reserved for future use.
+  pub _reserved: [u8; 3],
+}
+
+impl PixelBodyRecordHeader {
+  /// Header size in bytes.
+  pub const SIZE: usize = 64;
+
+  /// Computes CRC8 checksum of the header (excluding checksum field).
+  pub fn compute_checksum(&self) -> u8 {
+    let mut crc: u8 = 0;
+    for &byte in &self.stable_id.to_le_bytes() {
+      crc8_update(&mut crc, byte);
+    }
+    for &byte in &self.position_x.to_le_bytes() {
+      crc8_update(&mut crc, byte);
+    }
+    for &byte in &self.position_y.to_le_bytes() {
+      crc8_update(&mut crc, byte);
+    }
+    for &byte in &self.rotation.to_le_bytes() {
+      crc8_update(&mut crc, byte);
+    }
+    for &byte in &self.width.to_le_bytes() {
+      crc8_update(&mut crc, byte);
+    }
+    for &byte in &self.height.to_le_bytes() {
+      crc8_update(&mut crc, byte);
+    }
+    crc
+  }
+
+  /// Validates the header checksum.
+  pub fn validate_checksum(&self) -> bool {
+    self.checksum == self.compute_checksum()
+  }
+
+  /// Writes the header to a writer.
+  pub fn write_to<W: Write>(&self, writer: &mut W) -> io::Result<()> {
+    writer.write_all(&self.stable_id.to_le_bytes())?;
+    writer.write_all(&self.position_x.to_le_bytes())?;
+    writer.write_all(&self.position_y.to_le_bytes())?;
+    writer.write_all(&self.rotation.to_le_bytes())?;
+    writer.write_all(&self.linear_velocity_x.to_le_bytes())?;
+    writer.write_all(&self.linear_velocity_y.to_le_bytes())?;
+    writer.write_all(&self.angular_velocity.to_le_bytes())?;
+    writer.write_all(&self.width.to_le_bytes())?;
+    writer.write_all(&self.height.to_le_bytes())?;
+    writer.write_all(&self.origin_x.to_le_bytes())?;
+    writer.write_all(&self.origin_y.to_le_bytes())?;
+    writer.write_all(&self.pixel_data_size.to_le_bytes())?;
+    writer.write_all(&self.shape_mask_size.to_le_bytes())?;
+    writer.write_all(&self.extension_data_size.to_le_bytes())?;
+    writer.write_all(&[self.checksum])?;
+    writer.write_all(&self._reserved)?;
+    Ok(())
+  }
+
+  /// Reads a header from a reader.
+  pub fn read_from<R: Read>(reader: &mut R) -> io::Result<Self> {
+    let mut buf = [0u8; Self::SIZE];
+    reader.read_exact(&mut buf)?;
+
+    Ok(Self {
+      stable_id: u64::from_le_bytes(buf[0..8].try_into().unwrap()),
+      position_x: f32::from_le_bytes(buf[8..12].try_into().unwrap()),
+      position_y: f32::from_le_bytes(buf[12..16].try_into().unwrap()),
+      rotation: f32::from_le_bytes(buf[16..20].try_into().unwrap()),
+      linear_velocity_x: f32::from_le_bytes(buf[20..24].try_into().unwrap()),
+      linear_velocity_y: f32::from_le_bytes(buf[24..28].try_into().unwrap()),
+      angular_velocity: f32::from_le_bytes(buf[28..32].try_into().unwrap()),
+      width: u32::from_le_bytes(buf[32..36].try_into().unwrap()),
+      height: u32::from_le_bytes(buf[36..40].try_into().unwrap()),
+      origin_x: i32::from_le_bytes(buf[40..44].try_into().unwrap()),
+      origin_y: i32::from_le_bytes(buf[44..48].try_into().unwrap()),
+      pixel_data_size: u32::from_le_bytes(buf[48..52].try_into().unwrap()),
+      shape_mask_size: u32::from_le_bytes(buf[52..56].try_into().unwrap()),
+      extension_data_size: u32::from_le_bytes(buf[56..60].try_into().unwrap()),
+      checksum: buf[60],
+      _reserved: [buf[61], buf[62], buf[63]],
+    })
+  }
+
+  /// Returns the total size of variable data following this header.
+  pub fn variable_data_size(&self) -> usize {
+    self.pixel_data_size as usize
+      + self.shape_mask_size as usize
+      + self.extension_data_size as usize
   }
 }
 

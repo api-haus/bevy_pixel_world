@@ -113,6 +113,18 @@ impl<T> Surface<T> {
     // SAFETY: Surface data is contiguous and T is expected to be repr(C)
     unsafe { std::slice::from_raw_parts(ptr, len) }
   }
+
+  /// Returns a slice of the underlying data.
+  #[inline]
+  pub fn as_slice(&self) -> &[T] {
+    &self.data
+  }
+
+  /// Returns a mutable slice of the underlying data.
+  #[inline]
+  pub fn as_slice_mut(&mut self) -> &mut [T] {
+    &mut self.data
+  }
 }
 
 impl<T> Index<(u32, u32)> for Surface<T> {

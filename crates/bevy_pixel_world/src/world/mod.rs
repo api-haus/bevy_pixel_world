@@ -7,6 +7,7 @@
 //! - Uses async background seeding with proper state tracking
 
 mod bundle;
+pub mod control;
 pub mod plugin;
 pub(crate) mod slot;
 mod streaming;

@@ -11,11 +11,15 @@
 //! - Shift: Speed boost (5x)
 //! - Space: Spawn random pixel body at cursor (requires avian2d or rapier2d
 //!   feature)
+//! - Ctrl+S: Manual save
 //! - Side panel: Material selection, brush size slider
 //!
 //! Run with: `cargo run -p bevy_pixel_world --example painting`
 //! With physics: `cargo run -p bevy_pixel_world --example painting --features
 //! avian2d`
+
+use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use bevy::camera::ScalingMode;
 use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
@@ -29,19 +33,57 @@ use bevy_pixel_world::visual_debug::{
   SettingsPersistence, VisualDebugSettings, visual_debug_checkboxes,
 };
 use bevy_pixel_world::{
-  ColorIndex, MaterialId, MaterialSeeder, Materials, Pixel, PixelWorld, PixelWorldPlugin,
-  SpawnPixelWorld, StreamingCamera, WorldRect, collision::CollisionQueryPoint, material_ids,
+  ColorIndex, MaterialId, MaterialSeeder, Materials, PersistenceControl, Pixel, PixelWorld,
+  PixelWorldPlugin, SpawnPixelWorld, StreamingCamera, WorldRect, collision::CollisionQueryPoint,
+  material_ids,
 };
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 use bevy_pixel_world::{SpawnPixelBody, finalize_pending_pixel_bodies};
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 
 const CAMERA_SPEED: f32 = 500.0;
 const SPEED_BOOST: f32 = 5.0;
 const MIN_RADIUS: u32 = 2;
 const MAX_RADIUS: u32 = 100;
 const DEFAULT_RADIUS: u32 = 15;
+
+const CAMERA_SETTINGS_FILE: &str = "camera_position.toml";
+const CAMERA_DEBOUNCE_DURATION: Duration = Duration::from_millis(500);
+
+/// Serializable camera position.
+#[derive(Serialize, Deserialize, Default, Clone, Copy)]
+struct CameraPosition {
+  x: f32,
+  y: f32,
+}
+
+/// Tracks camera position changes for debounced saving.
+#[derive(Resource)]
+struct CameraPersistence {
+  last_change: Option<Instant>,
+  save_pending: bool,
+  settings_path: Option<PathBuf>,
+  last_position: CameraPosition,
+}
+
+impl Default for CameraPersistence {
+  fn default() -> Self {
+    Self {
+      last_change: None,
+      save_pending: false,
+      settings_path: get_camera_settings_path(),
+      last_position: CameraPosition::default(),
+    }
+  }
+}
+
+fn get_camera_settings_path() -> Option<PathBuf> {
+  let data_dir = dirs::data_dir()?;
+  let app_dir = data_dir.join("bevy_pixel_world");
+  Some(app_dir.join(CAMERA_SETTINGS_FILE))
+}
 
 fn main() {
   let mut app = App::new();
@@ -60,15 +102,21 @@ fn main() {
     .add_plugins(EguiPlugin::default())
     .insert_resource(BrushState::default())
     .init_resource::<UiState>()
-    .add_systems(Startup, setup)
+    .add_systems(
+      Startup,
+      (load_camera_position, setup, apply_camera_position).chain(),
+    )
     .add_systems(EguiPrimaryContextPass, ui_system)
     .add_systems(
       Update,
       (
         input_system,
         camera_input,
+        track_camera_changes,
+        save_camera_position,
         paint_system,
         update_collision_query_point,
+        handle_save_hotkey,
       )
         .chain(),
     );
@@ -396,4 +444,121 @@ fn spawn_pixel_body(brush: Res<BrushState>, ui_state: Res<UiState>, mut commands
   };
 
   commands.queue(SpawnPixelBody::new(sprite, material_ids::WOOD, pos));
+}
+
+/// Loads camera position from disk on startup.
+fn load_camera_position(mut commands: Commands) {
+  let position = match get_camera_settings_path() {
+    Some(path) if path.exists() => match std::fs::read_to_string(&path) {
+      Ok(contents) => match toml::from_str(&contents) {
+        Ok(pos) => {
+          info!("Loaded camera position from {}", path.display());
+          pos
+        }
+        Err(e) => {
+          warn!("Failed to parse camera position: {e}, using default");
+          CameraPosition::default()
+        }
+      },
+      Err(e) => {
+        warn!("Failed to read camera position: {e}, using default");
+        CameraPosition::default()
+      }
+    },
+    _ => CameraPosition::default(),
+  };
+
+  commands.insert_resource(CameraPersistence {
+    last_position: position,
+    ..default()
+  });
+}
+
+/// Applies loaded camera position to the camera transform.
+fn apply_camera_position(
+  persistence: Res<CameraPersistence>,
+  mut camera: Query<&mut Transform, With<StreamingCamera>>,
+) {
+  if let Ok(mut transform) = camera.single_mut() {
+    transform.translation.x = persistence.last_position.x;
+    transform.translation.y = persistence.last_position.y;
+  }
+}
+
+/// Tracks camera movement and marks persistence as changed.
+fn track_camera_changes(
+  camera: Query<&Transform, With<StreamingCamera>>,
+  mut persistence: ResMut<CameraPersistence>,
+) {
+  let Ok(transform) = camera.single() else {
+    return;
+  };
+
+  let current = CameraPosition {
+    x: transform.translation.x,
+    y: transform.translation.y,
+  };
+
+  if (current.x - persistence.last_position.x).abs() > 0.01
+    || (current.y - persistence.last_position.y).abs() > 0.01
+  {
+    persistence.last_position = current;
+    persistence.last_change = Some(Instant::now());
+    persistence.save_pending = true;
+  }
+}
+
+/// Saves camera position to disk when changed (debounced).
+fn save_camera_position(mut persistence: ResMut<CameraPersistence>) {
+  if !persistence.save_pending {
+    return;
+  }
+
+  let Some(last_change) = persistence.last_change else {
+    return;
+  };
+
+  if last_change.elapsed() < CAMERA_DEBOUNCE_DURATION {
+    return;
+  }
+
+  persistence.save_pending = false;
+
+  let Some(path) = &persistence.settings_path else {
+    return;
+  };
+
+  if let Some(parent) = path.parent()
+    && let Err(e) = std::fs::create_dir_all(parent)
+  {
+    warn!("Failed to create settings directory: {e}");
+    return;
+  }
+
+  match toml::to_string_pretty(&persistence.last_position) {
+    Ok(contents) => {
+      if let Err(e) = std::fs::write(path, contents) {
+        warn!("Failed to write camera position: {e}");
+      } else {
+        debug!("Saved camera position to {}", path.display());
+      }
+    }
+    Err(e) => {
+      warn!("Failed to serialize camera position: {e}");
+    }
+  }
+}
+
+/// Handles Ctrl+S to trigger manual save.
+fn handle_save_hotkey(
+  keys: Res<ButtonInput<KeyCode>>,
+  mut persistence: ResMut<PersistenceControl>,
+) {
+  let ctrl_pressed = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
+  let s_pressed = keys.just_pressed(KeyCode::KeyS);
+
+  if ctrl_pressed && s_pressed {
+    let handle = persistence.request_save();
+    info!("Manual save requested (id: {})", handle.id());
+  }
 }

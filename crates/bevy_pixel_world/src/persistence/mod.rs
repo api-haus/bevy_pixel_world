@@ -9,6 +9,7 @@
 pub mod compression;
 pub mod format;
 pub mod index;
+pub mod pixel_body;
 
 use std::fs::{self, File};
 use std::io::{self, BufReader, Read, Seek, SeekFrom, Write};
@@ -20,8 +21,9 @@ use compression::{
   apply_delta, compute_delta, decode_delta, decode_full, encode_delta, encode_full,
   should_use_delta,
 };
-use format::{Header, HeaderError, PageTableEntry, StorageType};
-use index::ChunkIndex;
+use format::{EntitySectionHeader, Header, HeaderError, PageTableEntry, StorageType};
+use index::{ChunkIndex, PixelBodyIndex, PixelBodyIndexEntry};
+pub use pixel_body::{PixelBodyReadError, PixelBodyRecord};
 
 use crate::coords::ChunkPos;
 use crate::primitives::Chunk;
@@ -53,6 +55,8 @@ pub struct WorldSave {
   pub(crate) header: Header,
   /// Runtime index mapping positions to page table entries.
   pub(crate) index: ChunkIndex,
+  /// Runtime index for pixel bodies.
+  pub(crate) body_index: PixelBodyIndex,
   /// Current write position in data region (for append).
   pub(crate) data_write_pos: u64,
   /// Whether the save has been modified since last flush.
@@ -84,6 +88,7 @@ impl WorldSave {
       path,
       header,
       index: ChunkIndex::new(),
+      body_index: PixelBodyIndex::new(),
       data_write_pos,
       dirty: false,
     })
@@ -104,6 +109,15 @@ impl WorldSave {
     // Read page table
     let index = ChunkIndex::read_from(&mut file, header.chunk_count as usize)?;
 
+    // Read entity section if present
+    let body_index = if header.entity_section_ptr != 0 {
+      file.seek(SeekFrom::Start(header.entity_section_ptr))?;
+      let entity_header = EntitySectionHeader::read_from(&mut file)?;
+      PixelBodyIndex::read_from(&mut file, entity_header.entity_count as usize)?
+    } else {
+      PixelBodyIndex::new()
+    };
+
     // Data write position is where the page table currently is
     // (page table will be rewritten on flush)
     let data_write_pos = header.data_region_ptr;
@@ -112,6 +126,7 @@ impl WorldSave {
       path,
       header,
       index,
+      body_index,
       data_write_pos,
       dirty: false,
     })
@@ -145,6 +160,94 @@ impl WorldSave {
   /// Returns the number of persisted chunks.
   pub fn chunk_count(&self) -> usize {
     self.index.len()
+  }
+
+  /// Returns the number of persisted pixel bodies.
+  pub fn body_count(&self) -> usize {
+    self.body_index.len()
+  }
+
+  /// Returns true if a pixel body with the given ID is persisted.
+  pub fn contains_body(&self, stable_id: u64) -> bool {
+    self.body_index.contains(stable_id)
+  }
+
+  /// Returns all pixel body records for a given chunk.
+  pub fn load_bodies_for_chunk(&self, pos: ChunkPos) -> Vec<PixelBodyRecord> {
+    let mut records = Vec::new();
+
+    for entry in self.body_index.get_chunk(pos) {
+      match self.load_body_record(entry) {
+        Ok(record) => records.push(record),
+        Err(e) => {
+          eprintln!(
+            "Warning: failed to load pixel body {}: {}",
+            entry.stable_id, e
+          );
+        }
+      }
+    }
+
+    records
+  }
+
+  /// Loads a single pixel body record by its index entry.
+  fn load_body_record(
+    &self,
+    entry: &PixelBodyIndexEntry,
+  ) -> Result<PixelBodyRecord, PixelBodyReadError> {
+    let mut file = BufReader::new(File::open(&self.path)?);
+    file.seek(SeekFrom::Start(entry.data_offset))?;
+    PixelBodyRecord::read_from(&mut file)
+  }
+
+  /// Saves a pixel body to the file.
+  pub fn save_body(&mut self, record: &PixelBodyRecord) -> io::Result<()> {
+    // Serialize to buffer first to get size
+    let mut buf = Vec::new();
+    record.write_to(&mut buf)?;
+
+    // Open file for append
+    let mut file = File::options().write(true).open(&self.path)?;
+
+    // Seek to write position
+    file.seek(SeekFrom::Start(self.data_write_pos))?;
+
+    // Write record data
+    file.write_all(&buf)?;
+
+    // Create index entry
+    let entry = PixelBodyIndexEntry {
+      stable_id: record.stable_id,
+      data_offset: self.data_write_pos,
+      data_size: buf.len() as u32,
+      chunk_pos: record.chunk_pos(),
+    };
+
+    // Update state
+    self.body_index.insert(entry);
+    self.data_write_pos += buf.len() as u64;
+    self.dirty = true;
+
+    Ok(())
+  }
+
+  /// Removes a pixel body from the index.
+  ///
+  /// Note: This only removes from the index, not the file data.
+  /// Space is reclaimed on next compaction (not yet implemented).
+  pub fn remove_body(&mut self, stable_id: u64) {
+    if self.body_index.remove(stable_id).is_some() {
+      self.dirty = true;
+    }
+  }
+
+  /// Removes all pixel bodies associated with a chunk.
+  pub fn remove_bodies_for_chunk(&mut self, pos: ChunkPos) {
+    let removed = self.body_index.remove_chunk(pos);
+    if !removed.is_empty() {
+      self.dirty = true;
+    }
   }
 
   /// Loads a chunk from the save file.
@@ -231,10 +334,11 @@ impl WorldSave {
     Ok(())
   }
 
-  /// Flushes the page table and header to disk.
+  /// Flushes the page table, entity section, and header to disk.
   ///
-  /// Rewrites header in-place and appends page table at end of file.
-  /// The page table location is stored in the header.
+  /// Rewrites header in-place and appends page table and entity section at end
+  /// of file. The page table and entity section locations are stored in the
+  /// header.
   pub fn flush(&mut self) -> io::Result<()> {
     if !self.dirty {
       return Ok(());
@@ -253,13 +357,36 @@ impl WorldSave {
     // Page table goes after data region
     self.header.data_region_ptr = self.data_write_pos;
 
-    // Write updated header
-    file.seek(SeekFrom::Start(0))?;
-    self.header.write_to(&mut file)?;
-
     // Write page table at end of data region
     file.seek(SeekFrom::Start(self.data_write_pos))?;
     self.index.write_to(&mut file)?;
+
+    // Entity section goes after page table
+    let entity_section_start = self.data_write_pos + self.index.serialized_size() as u64;
+    self.header.entity_section_ptr = if self.body_index.is_empty() {
+      0
+    } else {
+      entity_section_start
+    };
+
+    // Write entity section if we have bodies
+    if !self.body_index.is_empty() {
+      file.seek(SeekFrom::Start(entity_section_start))?;
+
+      // Write entity section header
+      let entity_header = EntitySectionHeader {
+        entity_count: self.body_index.len() as u32,
+        _reserved: 0,
+      };
+      entity_header.write_to(&mut file)?;
+
+      // Write entity index
+      self.body_index.write_to(&mut file)?;
+    }
+
+    // Write updated header
+    file.seek(SeekFrom::Start(0))?;
+    self.header.write_to(&mut file)?;
 
     file.sync_all()?;
     self.dirty = false;
@@ -379,11 +506,27 @@ pub struct SaveTask {
   pub storage_type: StorageType,
 }
 
+/// Task for saving a pixel body.
+pub struct BodySaveTask {
+  /// The pixel body record to save.
+  pub record: PixelBodyRecord,
+}
+
+/// Task for removing a pixel body from persistence.
+pub struct BodyRemoveTask {
+  /// Stable ID of the body to remove.
+  pub stable_id: u64,
+}
+
 /// Resource for pending persistence operations.
 #[derive(Resource, Default)]
 pub struct PersistenceTasks {
   /// Chunks queued for saving.
   pub save_queue: Vec<SaveTask>,
+  /// Pixel bodies queued for saving.
+  pub body_save_queue: Vec<BodySaveTask>,
+  /// Pixel bodies queued for removal.
+  pub body_remove_queue: Vec<BodyRemoveTask>,
 }
 
 impl PersistenceTasks {
@@ -394,5 +537,15 @@ impl PersistenceTasks {
       data,
       storage_type,
     });
+  }
+
+  /// Queues a pixel body for saving.
+  pub fn queue_body_save(&mut self, record: PixelBodyRecord) {
+    self.body_save_queue.push(BodySaveTask { record });
+  }
+
+  /// Queues a pixel body for removal.
+  pub fn queue_body_remove(&mut self, stable_id: u64) {
+    self.body_remove_queue.push(BodyRemoveTask { stable_id });
   }
 }

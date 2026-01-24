@@ -8,12 +8,57 @@ use bevy::prelude::*;
 #[cfg(feature = "rapier2d")]
 use bevy_rapier2d::prelude::RigidBody;
 
-use super::{BlittedTransform, PixelBodyLoader};
+use super::{BlittedTransform, Persistable, PixelBodyId, PixelBodyLoader};
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 use crate::collision::CollisionQueryPoint;
 use crate::coords::MaterialId;
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 use crate::culling::StreamCulled;
+
+/// Resource that generates unique IDs for pixel bodies.
+///
+/// Uses a simple counter combined with a timestamp seed for uniqueness
+/// across sessions.
+#[derive(Resource)]
+pub struct PixelBodyIdGenerator {
+  counter: u64,
+  session_seed: u64,
+}
+
+impl Default for PixelBodyIdGenerator {
+  fn default() -> Self {
+    // Use current time as session seed to avoid ID collisions across sessions
+    let session_seed = std::time::SystemTime::now()
+      .duration_since(std::time::UNIX_EPOCH)
+      .map(|d| d.as_nanos() as u64)
+      .unwrap_or(0);
+    Self {
+      counter: 0,
+      session_seed,
+    }
+  }
+}
+
+impl PixelBodyIdGenerator {
+  /// Generates a new unique pixel body ID.
+  pub fn next(&mut self) -> PixelBodyId {
+    self.counter += 1;
+    // Combine session seed and counter with XOR and rotation for better
+    // distribution
+    let id = self.session_seed.wrapping_add(self.counter);
+    PixelBodyId::new(id)
+  }
+
+  /// Sets the counter to at least the given value.
+  ///
+  /// Used when loading persisted bodies to avoid ID collisions.
+  pub fn ensure_above(&mut self, min_id: u64) {
+    if min_id >= self.session_seed {
+      let needed_counter = min_id - self.session_seed + 1;
+      self.counter = self.counter.max(needed_counter);
+    }
+  }
+}
 
 /// Command to spawn a pixel body from an image asset.
 ///
@@ -134,6 +179,7 @@ pub fn finalize_pending_pixel_bodies(
   mut commands: Commands,
   pending: Query<(Entity, &PendingPixelBody)>,
   images: Res<Assets<Image>>,
+  mut id_generator: ResMut<PixelBodyIdGenerator>,
 ) {
   for (entity, pending_body) in pending.iter() {
     let Some(image) = images.get(&pending_body.image) else {
@@ -155,6 +201,9 @@ pub fn finalize_pending_pixel_bodies(
       continue;
     };
 
+    // Generate unique ID for this body
+    let body_id = id_generator.next();
+
     // Replace the pending entity with the full pixel body
     commands
       .entity(entity)
@@ -167,6 +216,8 @@ pub fn finalize_pending_pixel_bodies(
         StreamCulled,
         BlittedTransform::default(),
         Transform::from_translation(pending_body.position.extend(0.0)),
+        body_id,
+        Persistable,
       ));
   }
 }
@@ -177,6 +228,7 @@ pub fn finalize_pending_pixel_bodies(
   mut commands: Commands,
   pending: Query<(Entity, &PendingPixelBody)>,
   images: Res<Assets<Image>>,
+  mut id_generator: ResMut<PixelBodyIdGenerator>,
 ) {
   for (entity, pending_body) in pending.iter() {
     let Some(image) = images.get(&pending_body.image) else {
@@ -189,6 +241,9 @@ pub fn finalize_pending_pixel_bodies(
       continue;
     };
 
+    // Generate unique ID for this body
+    let body_id = id_generator.next();
+
     commands
       .entity(entity)
       .remove::<PendingPixelBody>()
@@ -196,6 +251,8 @@ pub fn finalize_pending_pixel_bodies(
         body,
         BlittedTransform::default(),
         Transform::from_translation(pending_body.position.extend(0.0)),
+        body_id,
+        Persistable,
       ));
   }
 }

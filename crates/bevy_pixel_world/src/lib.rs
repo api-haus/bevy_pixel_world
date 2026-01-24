@@ -38,12 +38,12 @@ pub use coords::{
 };
 pub use culling::{CullingConfig, StreamCulled};
 pub use material::{Material, Materials, PhysicsState, ids as material_ids};
-pub use persistence::{WorldSave, WorldSaveResource};
+pub use persistence::{PixelBodyRecord, WorldSave, WorldSaveResource};
 pub use pixel::{Pixel, PixelFlags, PixelSurface};
 pub use pixel_body::{
-  BlittedTransform, NeedsColliderRegen, PendingPixelBody, PixelBody, PixelBodyLoader,
-  SpawnPixelBody, SpawnPixelBodyFromImage, blit_pixel_bodies, clear_pixel_bodies,
-  finalize_pending_pixel_bodies, generate_collider,
+  BlittedTransform, NeedsColliderRegen, PendingPixelBody, Persistable, PixelBody, PixelBodyId,
+  PixelBodyIdGenerator, PixelBodyLoader, SpawnPixelBody, SpawnPixelBodyFromImage,
+  blit_pixel_bodies, clear_pixel_bodies, finalize_pending_pixel_bodies, generate_collider,
 };
 pub use primitives::{Chunk, Surface};
 pub use render::{
@@ -56,7 +56,11 @@ pub use simulation::simulate_tick;
 pub use text::{CpuFont, TextMask, TextStyle, draw_text, rasterize_text, stamp_text};
 #[cfg(feature = "tracy")]
 pub use tracy_init::init_tracy;
-pub use world::plugin::StreamingCamera;
+pub use world::control::{
+  AutoSaveConfig, PersistenceComplete, PersistenceControl, PersistenceFuture, PersistenceHandle,
+  RequestPersistence, SimulationState,
+};
+pub use world::plugin::{LoadedChunks, StreamingCamera, UnloadingChunks};
 pub use world::{PixelWorld, PixelWorldBundle, PixelWorldConfig, SpawnPixelWorld};
 
 /// Configuration for chunk persistence.
@@ -179,6 +183,9 @@ impl Plugin for PixelWorldPlugin {
 
     // Initialize Materials registry (users can override by inserting before plugin)
     app.init_resource::<Materials>();
+
+    // Initialize pixel body ID generator
+    app.init_resource::<pixel_body::PixelBodyIdGenerator>();
 
     // Store default config as resource for SpawnPixelWorld
     app.insert_resource(DefaultPixelWorldConfig(self.config.clone()));

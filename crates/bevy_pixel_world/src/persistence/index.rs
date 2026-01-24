@@ -119,6 +119,182 @@ impl ChunkIndex {
   }
 }
 
+/// Index entry for a persisted pixel body.
+#[derive(Clone, Copy, Debug)]
+pub struct PixelBodyIndexEntry {
+  /// Stable ID of the pixel body.
+  pub stable_id: u64,
+  /// File offset to the PixelBodyRecordHeader.
+  pub data_offset: u64,
+  /// Total size of the record (header + variable data).
+  pub data_size: u32,
+  /// Chunk position where this body's center is located.
+  pub chunk_pos: ChunkPos,
+}
+
+impl PixelBodyIndexEntry {
+  /// Entry size in bytes for serialization.
+  pub const SIZE: usize = 28;
+
+  /// Writes this entry to a writer.
+  pub fn write_to<W: Write>(&self, writer: &mut W) -> io::Result<()> {
+    writer.write_all(&self.stable_id.to_le_bytes())?;
+    writer.write_all(&self.data_offset.to_le_bytes())?;
+    writer.write_all(&self.data_size.to_le_bytes())?;
+    writer.write_all(&self.chunk_pos.x.to_le_bytes())?;
+    writer.write_all(&self.chunk_pos.y.to_le_bytes())?;
+    Ok(())
+  }
+
+  /// Reads an entry from a reader.
+  pub fn read_from<R: Read>(reader: &mut R) -> io::Result<Self> {
+    let mut buf = [0u8; Self::SIZE];
+    reader.read_exact(&mut buf)?;
+    Ok(Self {
+      stable_id: u64::from_le_bytes(buf[0..8].try_into().unwrap()),
+      data_offset: u64::from_le_bytes(buf[8..16].try_into().unwrap()),
+      data_size: u32::from_le_bytes(buf[16..20].try_into().unwrap()),
+      chunk_pos: ChunkPos::new(
+        i32::from_le_bytes(buf[20..24].try_into().unwrap()),
+        i32::from_le_bytes(buf[24..28].try_into().unwrap()),
+      ),
+    })
+  }
+}
+
+/// Runtime index for pixel bodies.
+///
+/// Maps chunk positions to the pixel bodies whose centers are in that chunk.
+/// Also maintains a by-ID lookup for deduplication.
+#[derive(Debug, Default)]
+pub struct PixelBodyIndex {
+  /// Bodies indexed by their stable ID.
+  by_id: HashMap<u64, PixelBodyIndexEntry>,
+  /// Bodies indexed by chunk position.
+  by_chunk: HashMap<ChunkPos, Vec<u64>>,
+}
+
+impl PixelBodyIndex {
+  /// Creates an empty index.
+  pub fn new() -> Self {
+    Self::default()
+  }
+
+  /// Returns the number of indexed bodies.
+  pub fn len(&self) -> usize {
+    self.by_id.len()
+  }
+
+  /// Returns true if the index is empty.
+  pub fn is_empty(&self) -> bool {
+    self.by_id.is_empty()
+  }
+
+  /// Looks up an entry by stable ID.
+  pub fn get(&self, stable_id: u64) -> Option<&PixelBodyIndexEntry> {
+    self.by_id.get(&stable_id)
+  }
+
+  /// Returns all bodies in a given chunk.
+  pub fn get_chunk(&self, pos: ChunkPos) -> impl Iterator<Item = &PixelBodyIndexEntry> {
+    self
+      .by_chunk
+      .get(&pos)
+      .into_iter()
+      .flat_map(|ids| ids.iter())
+      .filter_map(|id| self.by_id.get(id))
+  }
+
+  /// Inserts or updates an entry.
+  pub fn insert(&mut self, entry: PixelBodyIndexEntry) {
+    // Remove from old chunk if exists
+    if let Some(old) = self.by_id.get(&entry.stable_id) {
+      if old.chunk_pos != entry.chunk_pos {
+        if let Some(ids) = self.by_chunk.get_mut(&old.chunk_pos) {
+          ids.retain(|&id| id != entry.stable_id);
+        }
+      }
+    }
+
+    // Add to new chunk
+    self
+      .by_chunk
+      .entry(entry.chunk_pos)
+      .or_default()
+      .push(entry.stable_id);
+
+    // Update by-ID index
+    self.by_id.insert(entry.stable_id, entry);
+  }
+
+  /// Removes an entry by stable ID.
+  pub fn remove(&mut self, stable_id: u64) -> Option<PixelBodyIndexEntry> {
+    if let Some(entry) = self.by_id.remove(&stable_id) {
+      if let Some(ids) = self.by_chunk.get_mut(&entry.chunk_pos) {
+        ids.retain(|&id| id != stable_id);
+      }
+      Some(entry)
+    } else {
+      None
+    }
+  }
+
+  /// Removes all bodies in a given chunk.
+  pub fn remove_chunk(&mut self, pos: ChunkPos) -> Vec<PixelBodyIndexEntry> {
+    let ids = self.by_chunk.remove(&pos).unwrap_or_default();
+    ids
+      .into_iter()
+      .filter_map(|id| self.by_id.remove(&id))
+      .collect()
+  }
+
+  /// Returns true if the index contains a body with the given ID.
+  pub fn contains(&self, stable_id: u64) -> bool {
+    self.by_id.contains_key(&stable_id)
+  }
+
+  /// Iterates over all entries.
+  pub fn iter(&self) -> impl Iterator<Item = &PixelBodyIndexEntry> {
+    self.by_id.values()
+  }
+
+  /// Writes the index to a writer.
+  pub fn write_to<W: Write>(&self, writer: &mut W) -> io::Result<()> {
+    // Sort by chunk position for locality
+    let mut entries: Vec<_> = self.by_id.values().collect();
+    entries.sort_by_key(|e| (e.chunk_pos.y, e.chunk_pos.x, e.stable_id));
+
+    for entry in entries {
+      entry.write_to(writer)?;
+    }
+
+    Ok(())
+  }
+
+  /// Reads the index from a reader.
+  pub fn read_from<R: Read>(reader: &mut R, count: usize) -> io::Result<Self> {
+    let mut index = Self::new();
+
+    for _ in 0..count {
+      let entry = PixelBodyIndexEntry::read_from(reader)?;
+      index.insert(entry);
+    }
+
+    Ok(index)
+  }
+
+  /// Returns the total serialized size in bytes.
+  pub fn serialized_size(&self) -> usize {
+    self.by_id.len() * PixelBodyIndexEntry::SIZE
+  }
+
+  /// Clears all entries.
+  pub fn clear(&mut self) {
+    self.by_id.clear();
+    self.by_chunk.clear();
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;

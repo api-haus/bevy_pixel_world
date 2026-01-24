@@ -11,3 +11,6 @@ run:
 
 run_rapier2d:
     cargo run -p bevy_pixel_world --example painting --release --no-default-features --features diagnostics,rapier2d
+
+game:
+    cargo run -p game
