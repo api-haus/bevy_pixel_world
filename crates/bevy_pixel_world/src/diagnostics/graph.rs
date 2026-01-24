@@ -86,23 +86,34 @@ pub fn time_series_graph(
     }
   }
 
-  // Draw stats overlay
+  // Draw stats overlay (two lines)
   let current = series.current().unwrap_or(0.0);
   let avg = series.avg();
 
   // Use more decimal places for very small values
   let precision = if max_val.abs() < 0.1 { 3 } else { 1 };
-  let stats_text = format!(
-    "{}: {:.prec$}{} (avg: {:.prec$}, min: {:.prec$}, max: {:.prec$})",
-    config.label, current, config.unit, avg, min_val, max_val,
+
+  // Line 1: Values (smaller font, bright color)
+  let values_text = format!(
+    "{:.prec$}{}  avg:{:.prec$}  min:{:.prec$}  max:{:.prec$}",
+    current, config.unit, avg, min_val, max_val,
     prec = precision
   );
 
   painter.text(
     Pos2::new(rect.min.x + 4.0, rect.min.y + 2.0),
     egui::Align2::LEFT_TOP,
-    stats_text,
+    values_text,
+    egui::FontId::monospace(9.0),
+    Color32::from_rgb(255, 255, 180), // Bright yellow for values
+  );
+
+  // Line 2: Label name (regular font, light gray)
+  painter.text(
+    Pos2::new(rect.min.x + 4.0, rect.min.y + 13.0),
+    egui::Align2::LEFT_TOP,
+    config.label,
     egui::FontId::monospace(10.0),
-    Color32::from_rgb(200, 200, 200),
+    Color32::from_rgb(180, 180, 180), // Light gray for label
   );
 }

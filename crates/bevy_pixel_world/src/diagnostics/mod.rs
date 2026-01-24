@@ -44,8 +44,8 @@ impl Default for SimulationMetrics {
 pub struct CollisionMetrics {
   /// Time spent dispatching collision tasks (per frame).
   pub dispatch_time: TimeSeries,
-  /// Time spent polling/completing collision tasks (per frame).
-  pub poll_time: TimeSeries,
+  /// Total time spent generating collision meshes (summed from completed tasks).
+  pub generation_time: TimeSeries,
   /// Number of tasks completed this frame.
   pub tasks_completed: TimeSeries,
 }
@@ -54,7 +54,7 @@ impl Default for CollisionMetrics {
   fn default() -> Self {
     Self {
       dispatch_time: TimeSeries::new(SAMPLE_CAPACITY),
-      poll_time: TimeSeries::new(SAMPLE_CAPACITY),
+      generation_time: TimeSeries::new(SAMPLE_CAPACITY),
       tasks_completed: TimeSeries::new(SAMPLE_CAPACITY),
     }
   }
@@ -101,6 +101,10 @@ fn render_diagnostics_ui(
   egui::Window::new("Diagnostics")
     .anchor(egui::Align2::RIGHT_TOP, [-10.0, 10.0])
     .default_width(220.0)
+    .title_bar(false)
+    .resizable(false)
+    .movable(false)
+    .frame(egui::Frame::NONE.fill(egui::Color32::from_rgba_unmultiplied(20, 20, 25, 200)))
     .show(ctx, |ui| {
       time_series_graph(
         ui,
@@ -157,7 +161,7 @@ fn render_diagnostics_ui(
 
       time_series_graph(
         ui,
-        &mut collision_metrics.poll_time,
+        &mut collision_metrics.generation_time,
         TimeSeriesGraphConfig {
           label: "Collision",
           unit: "ms",
