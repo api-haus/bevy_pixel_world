@@ -6,7 +6,7 @@ use bevy::prelude::*;
 use bevy::tasks::{AsyncComputeTaskPool, Task};
 
 use super::{PixelWorld, SlotIndex};
-use crate::coords::{ChunkPos, WorldPos, CHUNK_SIZE};
+use crate::coords::{ChunkPos, WorldPos, WorldRect, CHUNK_SIZE};
 use crate::debug_shim;
 use crate::material::Materials;
 use crate::primitives::Chunk;
@@ -59,6 +59,7 @@ impl Plugin for PixelWorldStreamingPlugin {
           tick_pixel_worlds,
           dispatch_seeding,
           poll_seeding_tasks,
+          update_simulation_bounds,
           run_simulation,
           upload_dirty_chunks,
         )
@@ -330,6 +331,46 @@ fn poll_seeding_tasks(
 
     false // remove completed task
   });
+}
+
+/// System: Updates simulation bounds from camera viewport.
+///
+/// Extracts the visible area from the streaming camera's orthographic projection
+/// and sets it as the simulation bounds for all pixel worlds.
+fn update_simulation_bounds(
+  camera_query: Query<(&GlobalTransform, &Projection), With<StreamingCamera>>,
+  mut worlds: Query<&mut PixelWorld>,
+) {
+  let Ok((transform, projection)) = camera_query.single() else {
+    return;
+  };
+
+  // Extract orthographic projection, skip if perspective
+  let Projection::Orthographic(ortho) = projection else {
+    return;
+  };
+
+  let cam_pos = transform.translation();
+
+  // Extract viewport dimensions from the orthographic projection area
+  let half_width = (ortho.area.max.x - ortho.area.min.x) / 2.0;
+  let half_height = (ortho.area.max.y - ortho.area.min.y) / 2.0;
+
+  // Skip if area is not yet initialized (Bevy computes it after first frame)
+  if half_width <= 0.0 || half_height <= 0.0 {
+    return;
+  }
+
+  let bounds = WorldRect::new(
+    (cam_pos.x - half_width) as i64,
+    (cam_pos.y - half_height) as i64,
+    (half_width * 2.0) as u32,
+    (half_height * 2.0) as u32,
+  );
+
+  for mut world in worlds.iter_mut() {
+    world.set_simulation_bounds(Some(bounds));
+  }
 }
 
 /// System: Runs cellular automata simulation on all pixel worlds.

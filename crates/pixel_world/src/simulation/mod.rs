@@ -11,7 +11,8 @@ use std::sync::Mutex;
 use hash::hash21uu64;
 
 use crate::coords::{
-  ChunkPos, Phase, TilePos, CHUNK_SIZE, TILES_PER_CHUNK, TILE_SIZE, WINDOW_HEIGHT, WINDOW_WIDTH,
+  ChunkPos, Phase, TilePos, WorldRect, CHUNK_SIZE, TILES_PER_CHUNK, TILE_SIZE, WINDOW_HEIGHT,
+  WINDOW_WIDTH,
 };
 use crate::debug_shim::DebugGizmos;
 use crate::material::Materials;
@@ -59,7 +60,8 @@ pub fn simulate_tick(world: &mut PixelWorld, materials: &Materials, debug_gizmos
     jitter_x,
     jitter_y,
   };
-  let tiles_by_phase = collect_tiles_by_phase(center);
+  let simulation_bounds = world.simulation_bounds();
+  let tiles_by_phase = collect_tiles_by_phase(center, simulation_bounds);
 
   // Increment tick for next frame
   world.increment_tick();
@@ -90,27 +92,57 @@ pub fn simulate_tick(world: &mut PixelWorld, materials: &Materials, debug_gizmos
 }
 
 /// Collects tiles grouped by phase for the current visible region.
-fn collect_tiles_by_phase(center: ChunkPos) -> [Vec<TilePos>; 4] {
+///
+/// When `bounds` is `Some`, only tiles overlapping the bounds are collected.
+/// The bounds should already include any desired margin.
+fn collect_tiles_by_phase(center: ChunkPos, bounds: Option<WorldRect>) -> [Vec<TilePos>; 4] {
   let mut phases: [Vec<TilePos>; 4] = [vec![], vec![], vec![], vec![]];
 
   let hw = WINDOW_WIDTH as i32 / 2;
   let hh = WINDOW_HEIGHT as i32 / 2;
-  let tiles_per_chunk = TILES_PER_CHUNK as i64;
   let tile_size = TILE_SIZE as i64;
 
-  for cy in (center.y - hh)..(center.y + hh) {
-    for cx in (center.x - hw)..(center.x + hw) {
-      let chunk_origin_x = cx as i64 * CHUNK_SIZE as i64;
-      let chunk_origin_y = cy as i64 * CHUNK_SIZE as i64;
+  // Compute streaming window tile bounds
+  let window_min_cx = center.x - hw;
+  let window_max_cx = center.x + hw;
+  let window_min_cy = center.y - hh;
+  let window_max_cy = center.y + hh;
+  let window_min_tx = window_min_cx as i64 * TILES_PER_CHUNK as i64;
+  let window_max_tx = window_max_cx as i64 * TILES_PER_CHUNK as i64;
+  let window_min_ty = window_min_cy as i64 * TILES_PER_CHUNK as i64;
+  let window_max_ty = window_max_cy as i64 * TILES_PER_CHUNK as i64;
 
-      for ty in 0..tiles_per_chunk {
-        for tx in 0..tiles_per_chunk {
-          let tile_world_x = chunk_origin_x + tx * tile_size;
-          let tile_world_y = chunk_origin_y + ty * tile_size;
-          let tile = TilePos::new(tile_world_x / tile_size, tile_world_y / tile_size);
+  if let Some(rect) = bounds {
+    // Collect only tiles that overlap bounds AND are in streaming window
+    for tile in rect.to_tile_range() {
+      // Check if tile is within streaming window
+      if tile.x >= window_min_tx
+        && tile.x < window_max_tx
+        && tile.y >= window_min_ty
+        && tile.y < window_max_ty
+      {
+        let phase = Phase::from_tile(tile);
+        phases[phase.index()].push(tile);
+      }
+    }
+  } else {
+    // No bounds - collect all tiles in streaming window
+    let tiles_per_chunk = TILES_PER_CHUNK as i64;
 
-          let phase = Phase::from_tile(tile);
-          phases[phase.index()].push(tile);
+    for cy in window_min_cy..window_max_cy {
+      for cx in window_min_cx..window_max_cx {
+        let chunk_origin_x = cx as i64 * CHUNK_SIZE as i64;
+        let chunk_origin_y = cy as i64 * CHUNK_SIZE as i64;
+
+        for ty in 0..tiles_per_chunk {
+          for tx in 0..tiles_per_chunk {
+            let tile_world_x = chunk_origin_x + tx * tile_size;
+            let tile_world_y = chunk_origin_y + ty * tile_size;
+            let tile = TilePos::new(tile_world_x / tile_size, tile_world_y / tile_size);
+
+            let phase = Phase::from_tile(tile);
+            phases[phase.index()].push(tile);
+          }
         }
       }
     }

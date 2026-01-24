@@ -118,6 +118,11 @@ pub struct PixelWorld {
   tick: u64,
   /// World configuration settings.
   config: PixelWorldConfig,
+  /// Optional viewport bounds for simulation culling.
+  /// When set, only tiles overlapping these bounds are simulated.
+  simulation_bounds: Option<WorldRect>,
+  /// Margin in pixels added to simulation bounds (default: 64, ~2 tiles).
+  simulation_margin: i64,
 }
 
 impl PixelWorld {
@@ -162,6 +167,8 @@ impl PixelWorld {
       seed,
       tick: 0,
       config,
+      simulation_bounds: None,
+      simulation_margin: 64,
     }
   }
 
@@ -193,6 +200,28 @@ impl PixelWorld {
   /// Returns a mutable reference to the world configuration.
   pub fn config_mut(&mut self) -> &mut PixelWorldConfig {
     &mut self.config
+  }
+
+  /// Sets the simulation bounds for viewport culling.
+  ///
+  /// When set, only tiles overlapping these bounds (plus margin) are simulated.
+  /// Pass `None` to simulate all tiles in the streaming window.
+  pub fn set_simulation_bounds(&mut self, bounds: Option<WorldRect>) {
+    self.simulation_bounds = bounds;
+  }
+
+  /// Returns the simulation bounds expanded by the margin.
+  ///
+  /// Returns `None` if no bounds are set (full streaming window simulation).
+  pub fn simulation_bounds(&self) -> Option<WorldRect> {
+    self.simulation_bounds.map(|rect| {
+      WorldRect::new(
+        rect.x - self.simulation_margin,
+        rect.y - self.simulation_margin,
+        rect.width + (self.simulation_margin * 2) as u32,
+        rect.height + (self.simulation_margin * 2) as u32,
+      )
+    })
   }
 
   /// Returns the shared mesh handle.
