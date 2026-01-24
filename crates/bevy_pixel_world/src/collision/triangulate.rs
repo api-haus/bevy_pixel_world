@@ -65,20 +65,10 @@ pub fn triangulate_polygon(polygon: &[Vec2]) -> Vec<Triangle> {
         let verts = face.vertices();
 
         // Get vertex positions
-        let positions: [Vec2; 3] = [
-            {
-                let pos = verts[0].position();
-                Vec2::new(pos.x as f32, pos.y as f32)
-            },
-            {
-                let pos = verts[1].position();
-                Vec2::new(pos.x as f32, pos.y as f32)
-            },
-            {
-                let pos = verts[2].position();
-                Vec2::new(pos.x as f32, pos.y as f32)
-            },
-        ];
+        let positions: [Vec2; 3] = std::array::from_fn(|i| {
+            let pos = verts[i].position();
+            Vec2::new(pos.x as f32, pos.y as f32)
+        });
 
         // Calculate triangle centroid
         let centroid = (positions[0] + positions[1] + positions[2]) / 3.0;
