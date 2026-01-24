@@ -23,6 +23,6 @@ pub struct ChunkMaterial {
 
 impl Material2d for ChunkMaterial {
   fn fragment_shader() -> ShaderRef {
-    "embedded://pixel_world/render/shaders/chunk.wgsl".into()
+    "embedded://bevy_pixel_world/render/shaders/chunk.wgsl".into()
   }
 }
