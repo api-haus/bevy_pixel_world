@@ -83,33 +83,7 @@ fn compute_powder_swap(
     0
   };
 
-  let down = WorldPos::new(pos.x + drift, pos.y - 1);
-
-  // Try falling (possibly with horizontal drift)
-  if can_swap_into(chunks, materials, src_density, down) {
-    return Some(down);
-  }
-
-  // If drift failed, try straight down
-  if drift != 0 {
-    let straight_down = WorldPos::new(pos.x, pos.y - 1);
-    if can_swap_into(chunks, materials, src_density, straight_down) {
-      return Some(straight_down);
-    }
-  }
-
-  // Try sliding diagonally
-  let first = WorldPos::new(pos.x + flip, pos.y - 1);
-  let second = WorldPos::new(pos.x - flip, pos.y - 1);
-
-  if can_swap_into(chunks, materials, src_density, first) {
-    return Some(first);
-  }
-  if can_swap_into(chunks, materials, src_density, second) {
-    return Some(second);
-  }
-
-  None
+  try_fall_and_slide(pos, chunks, materials, src_density, drift, flip)
 }
 
 /// Computes swap target for liquid (water) behavior.
@@ -158,6 +132,40 @@ fn compute_liquid_swap(
     0
   };
 
+  // Try falling and diagonal sliding (shared with powder)
+  if let Some(target) = try_fall_and_slide(pos, chunks, materials, src_density, drift, flip) {
+    return Some(target);
+  }
+
+  // Try horizontal flow (liquid-specific)
+  let dispersion = src_material.dispersion;
+  if dispersion > 0 {
+    let first_h = WorldPos::new(pos.x + flip, pos.y);
+    let second_h = WorldPos::new(pos.x - flip, pos.y);
+
+    if can_swap_into(chunks, materials, src_density, first_h) {
+      return Some(first_h);
+    }
+    if can_swap_into(chunks, materials, src_density, second_h) {
+      return Some(second_h);
+    }
+  }
+
+  None
+}
+
+/// Attempts falling and diagonal movement for a pixel.
+///
+/// This encapsulates the common movement logic shared between powder and liquid.
+/// The caller computes drift and flip based on material-specific behavior.
+fn try_fall_and_slide(
+  pos: WorldPos,
+  chunks: &Canvas<'_>,
+  materials: &Materials,
+  src_density: u8,
+  drift: i64,
+  flip: i64,
+) -> Option<WorldPos> {
   let down = WorldPos::new(pos.x + drift, pos.y - 1);
 
   // Try falling (possibly with horizontal drift)
@@ -182,20 +190,6 @@ fn compute_liquid_swap(
   }
   if can_swap_into(chunks, materials, src_density, second) {
     return Some(second);
-  }
-
-  // Try horizontal flow
-  let dispersion = src_material.dispersion;
-  if dispersion > 0 {
-    let first_h = WorldPos::new(pos.x + flip, pos.y);
-    let second_h = WorldPos::new(pos.x - flip, pos.y);
-
-    if can_swap_into(chunks, materials, src_density, first_h) {
-      return Some(first_h);
-    }
-    if can_swap_into(chunks, materials, src_density, second_h) {
-      return Some(second_h);
-    }
   }
 
   None

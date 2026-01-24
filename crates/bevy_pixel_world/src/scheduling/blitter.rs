@@ -305,11 +305,7 @@ fn simulate_tile<F>(
 
   // Mark swapped pixels dirty for next pass
   // Uses original (non-jittered) tile coordinates via chunk.mark_pixel_dirty
-  for (pixel_chunk_pos, local) in dirty_pixels {
-    if let Some(chunk) = chunks.get_mut(pixel_chunk_pos) {
-      chunk.mark_pixel_dirty(local.x as u32, local.y as u32);
-    }
-  }
+  mark_pixels_dirty(chunks, &dirty_pixels);
 
   // Merge local dirty set into global
   if !local_dirty.is_empty()
@@ -463,6 +459,15 @@ fn adjacent_tiles_at_boundary(
     })
 }
 
+/// Mark pixels as dirty for simulation in the next pass.
+fn mark_pixels_dirty(chunks: &Canvas<'_>, dirty_pixels: &[(ChunkPos, LocalPos)]) {
+  for &(chunk_pos, local) in dirty_pixels {
+    if let Some(chunk) = chunks.get_mut(chunk_pos) {
+      chunk.mark_pixel_dirty(local.x as u32, local.y as u32);
+    }
+  }
+}
+
 /// Marks a pixel position as collision dirty if the material changed.
 ///
 /// We mark dirty if either pixel is non-void, since collision depends on
@@ -602,11 +607,7 @@ fn process_tile<F>(
   }
 
   // Mark painted pixels dirty for simulation
-  for (pixel_chunk_pos, local) in dirty_pixels {
-    if let Some(chunk) = chunks.get_mut(pixel_chunk_pos) {
-      chunk.mark_pixel_dirty(local.x as u32, local.y as u32);
-    }
-  }
+  mark_pixels_dirty(chunks, &dirty_pixels);
 
   // Merge local dirty set into global
   if !local_dirty.is_empty() {
