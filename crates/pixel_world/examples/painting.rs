@@ -89,8 +89,8 @@ fn setup(mut commands: Commands) {
       scale: 1.0,
       viewport_origin: Vec2::new(0.5, 0.5),
       scaling_mode: ScalingMode::AutoMin {
-        min_width: 320.0,
-        min_height: 240.0,
+        min_width: 640.0,
+        min_height: 480.0,
       },
       area: Rect::default(),
     }),
