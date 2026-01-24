@@ -12,45 +12,44 @@ use bevy::sprite_render::Material2dPlugin;
 pub mod collision;
 pub mod coords;
 pub mod debug_shim;
-pub mod text;
 #[cfg(feature = "diagnostics")]
 pub mod diagnostics;
 pub mod material;
 pub mod persistence;
-#[cfg(feature = "tracy")]
-mod tracy_init;
-pub mod scheduling;
 pub mod pixel;
 pub mod primitives;
 pub mod render;
+pub mod scheduling;
 pub mod seeding;
 pub mod simulation;
+pub mod text;
+#[cfg(feature = "tracy")]
+mod tracy_init;
 #[cfg(feature = "visual-debug")]
 pub mod visual_debug;
 pub mod world;
 
+pub use collision::{CollisionCache, CollisionConfig, CollisionQueryPoint, CollisionTasks};
 pub use coords::{
-  ChunkPos, ColorIndex, LocalPos, MaterialId, TilePos, WorldFragment, WorldPos, WorldRect,
-  CHUNK_SIZE, TILE_SIZE,
+  CHUNK_SIZE, ChunkPos, ColorIndex, LocalPos, MaterialId, TILE_SIZE, TilePos, WorldFragment,
+  WorldPos, WorldRect,
 };
-pub use text::{draw_text, rasterize_text, stamp_text, CpuFont, TextMask};
-pub use material::{ids as material_ids, Material, Materials, PhysicsState};
+pub use material::{Material, Materials, PhysicsState, ids as material_ids};
+pub use persistence::{WorldSave, WorldSaveResource};
 pub use pixel::{Pixel, PixelFlags, PixelSurface};
 pub use primitives::{Chunk, Surface};
 pub use render::{
-  create_chunk_quad, create_palette_texture, create_pixel_texture, create_texture, materialize,
-  rgb, spawn_static_chunk, upload_palette, upload_pixels, upload_surface, ChunkMaterial, Rgba,
+  ChunkMaterial, Rgba, create_chunk_quad, create_palette_texture, create_pixel_texture,
+  create_texture, materialize, rgb, spawn_static_chunk, upload_palette, upload_pixels,
+  upload_surface,
 };
 pub use seeding::{ChunkSeeder, MaterialSeeder, NoiseSeeder, PersistenceSeeder};
 pub use simulation::simulate_tick;
-pub use world::plugin::StreamingCamera;
-pub use world::{PixelWorld, PixelWorldBundle, PixelWorldConfig, SpawnPixelWorld};
-pub use persistence::{WorldSave, WorldSaveResource};
-pub use collision::{CollisionCache, CollisionConfig, CollisionQueryPoint, CollisionTasks};
-
+pub use text::{CpuFont, TextMask, draw_text, rasterize_text, stamp_text};
 #[cfg(feature = "tracy")]
 pub use tracy_init::init_tracy;
-
+pub use world::plugin::StreamingCamera;
+pub use world::{PixelWorld, PixelWorldBundle, PixelWorldConfig, SpawnPixelWorld};
 
 /// Configuration for chunk persistence.
 #[derive(Clone, Debug)]
@@ -60,7 +59,8 @@ pub struct PersistenceConfig {
   /// Application name for default save directory.
   /// Used to create `~/.local/share/<app_name>/saves/` on Linux, etc.
   pub app_name: String,
-  /// Explicit save file path. If None, uses default directory with "world.save".
+  /// Explicit save file path. If None, uses default directory with
+  /// "world.save".
   pub save_path: Option<PathBuf>,
   /// World seed for procedural generation fallback.
   pub world_seed: u64,
@@ -108,9 +108,10 @@ impl PersistenceConfig {
 
   /// Returns the effective save path.
   pub fn effective_path(&self) -> PathBuf {
-    self.save_path.clone().unwrap_or_else(|| {
-      persistence::default_save_dir(&self.app_name).join("world.save")
-    })
+    self
+      .save_path
+      .clone()
+      .unwrap_or_else(|| persistence::default_save_dir(&self.app_name).join("world.save"))
   }
 }
 
@@ -184,7 +185,10 @@ impl Plugin for PixelWorldPlugin {
           app.insert_resource(persistence::WorldSaveResource::new(save));
         }
         Err(e) => {
-          error!("Failed to open world save at {:?}: {}. Persistence disabled.", save_path, e);
+          error!(
+            "Failed to open world save at {:?}: {}. Persistence disabled.",
+            save_path, e
+          );
         }
       }
     }

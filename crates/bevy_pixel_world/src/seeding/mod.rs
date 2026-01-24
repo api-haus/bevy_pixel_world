@@ -8,9 +8,9 @@
 mod noise;
 pub(crate) mod sdf;
 
-pub use noise::{MaterialSeeder, NoiseSeeder};
-
 use std::sync::Arc;
+
+pub use noise::{MaterialSeeder, NoiseSeeder};
 
 use crate::persistence::WorldSave;
 use crate::{Chunk, ChunkPos};

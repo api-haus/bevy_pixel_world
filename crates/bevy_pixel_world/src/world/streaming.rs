@@ -2,9 +2,8 @@
 
 use bevy::prelude::*;
 
-use crate::coords::{ChunkPos, WINDOW_HEIGHT, WINDOW_WIDTH};
-
 use super::slot::SlotIndex;
+use crate::coords::{ChunkPos, WINDOW_HEIGHT, WINDOW_WIDTH};
 
 /// Changes from updating the streaming window center.
 pub(crate) struct StreamingDelta {

@@ -75,7 +75,8 @@ pub fn render_debug_gizmos(
   }
 }
 
-/// Syncs CollisionConfig::debug_gizmos with VisualDebugSettings::show_collision_meshes.
+/// Syncs CollisionConfig::debug_gizmos with
+/// VisualDebugSettings::show_collision_meshes.
 pub fn sync_collision_config(
   settings: Res<VisualDebugSettings>,
   mut config: ResMut<crate::collision::CollisionConfig>,

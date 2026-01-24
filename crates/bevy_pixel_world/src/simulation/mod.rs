@@ -11,12 +11,12 @@ use std::sync::Mutex;
 use hash::hash21uu64;
 
 use crate::coords::{
-  ChunkPos, Phase, TilePos, WorldRect, CHUNK_SIZE, TILES_PER_CHUNK, TILE_SIZE, WINDOW_HEIGHT,
-  WINDOW_WIDTH,
+  CHUNK_SIZE, ChunkPos, Phase, TILE_SIZE, TILES_PER_CHUNK, TilePos, WINDOW_HEIGHT, WINDOW_WIDTH,
+  WorldRect,
 };
 use crate::debug_shim::DebugGizmos;
 use crate::material::Materials;
-use crate::scheduling::blitter::{parallel_simulate, Canvas};
+use crate::scheduling::blitter::{Canvas, parallel_simulate};
 use crate::world::PixelWorld;
 
 /// Context passed to simulation rules for deterministic randomness.
@@ -96,7 +96,10 @@ pub fn simulate_tick(world: &mut PixelWorld, materials: &Materials, debug_gizmos
 ///
 /// When `bounds` is `Some`, only tiles overlapping the bounds are collected.
 /// The bounds should already include any desired margin.
-#[cfg_attr(feature = "tracy", tracing::instrument(skip_all, name = "collect_tiles"))]
+#[cfg_attr(
+  feature = "tracy",
+  tracing::instrument(skip_all, name = "collect_tiles")
+)]
 fn collect_tiles_by_phase(center: ChunkPos, bounds: Option<WorldRect>) -> [Vec<TilePos>; 4] {
   let mut phases: [Vec<TilePos>; 4] = [vec![], vec![], vec![], vec![]];
 

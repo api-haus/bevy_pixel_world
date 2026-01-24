@@ -4,10 +4,9 @@ use std::sync::Arc;
 
 use bevy::prelude::*;
 
+use super::{PixelWorld, PixelWorldConfig};
 use crate::persistence::WorldSaveResource;
 use crate::seeding::{ChunkSeeder, PersistenceSeeder};
-
-use super::{PixelWorld, PixelWorldConfig};
 
 /// Bundle for spawning a PixelWorld entity.
 #[derive(Bundle)]

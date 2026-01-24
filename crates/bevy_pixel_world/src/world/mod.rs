@@ -15,20 +15,19 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use bevy::prelude::*;
+pub use bundle::{PixelWorldBundle, SpawnPixelWorld};
+pub(crate) use slot::{ChunkSlot, SlotIndex};
+use streaming::visible_positions;
+pub(crate) use streaming::{ChunkSaveData, StreamingDelta};
 
-use crate::coords::{ChunkPos, TilePos, WorldFragment, WorldPos, WorldRect, POOL_SIZE};
+use crate::coords::{ChunkPos, POOL_SIZE, TilePos, WorldFragment, WorldPos, WorldRect};
 use crate::debug_shim::{self, DebugGizmos};
 use crate::pixel::Pixel;
 use crate::primitives::Chunk;
 #[cfg(not(feature = "headless"))]
 use crate::render::ChunkMaterial;
-use crate::scheduling::blitter::{parallel_blit, Canvas};
+use crate::scheduling::blitter::{Canvas, parallel_blit};
 use crate::seeding::ChunkSeeder;
-
-pub use bundle::{PixelWorldBundle, SpawnPixelWorld};
-pub(crate) use slot::{ChunkSlot, SlotIndex};
-pub(crate) use streaming::{ChunkSaveData, StreamingDelta};
-use streaming::visible_positions;
 
 /// Configuration for pixel world simulation behavior.
 #[derive(Clone, Debug)]
@@ -240,7 +239,8 @@ impl PixelWorld {
   /// # Safety
   /// This method uses raw pointers to work around the borrow checker.
   /// It is safe because:
-  /// - Each slot appears at most once in `self.active` (unique SlotIndex values)
+  /// - Each slot appears at most once in `self.active` (unique SlotIndex
+  ///   values)
   /// - Slots are stored in a Vec with distinct indices
   /// - The resulting mutable references are non-overlapping
   pub(crate) fn collect_seeded_chunks(&mut self) -> HashMap<ChunkPos, &mut Chunk> {

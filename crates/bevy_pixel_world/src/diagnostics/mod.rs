@@ -2,8 +2,8 @@ mod graph;
 mod time_series;
 
 use bevy::prelude::*;
-use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
-pub use graph::{time_series_graph, TimeSeriesGraphConfig};
+use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
+pub use graph::{TimeSeriesGraphConfig, time_series_graph};
 pub use time_series::TimeSeries;
 
 const SAMPLE_CAPACITY: usize = 300;
@@ -44,7 +44,8 @@ impl Default for SimulationMetrics {
 pub struct CollisionMetrics {
   /// Time spent dispatching collision tasks (per frame).
   pub dispatch_time: TimeSeries,
-  /// Total time spent generating collision meshes (summed from completed tasks).
+  /// Total time spent generating collision meshes (summed from completed
+  /// tasks).
   pub generation_time: TimeSeries,
   /// Number of tasks completed this frame.
   pub tasks_completed: TimeSeries,

@@ -6,8 +6,10 @@
 //! # Architecture
 //!
 //! The collision system works as follows:
-//! 1. Entities with `CollisionQueryPoint` trigger mesh generation around their position
-//! 2. Nearby tiles are checked for cached meshes; missing ones spawn async tasks
+//! 1. Entities with `CollisionQueryPoint` trigger mesh generation around their
+//!    position
+//! 2. Nearby tiles are checked for cached meshes; missing ones spawn async
+//!    tasks
 //! 3. Tasks extract pixel data, run marching squares, and simplify the result
 //! 4. Completed meshes are cached and rendered as gizmos for debugging
 //!
@@ -38,63 +40,62 @@ mod triangulate;
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 pub mod physics;
 
+use bevy::prelude::*;
 pub use cache::{CollisionCache, CollisionTask, CollisionTasks};
-pub use marching::{marching_squares, GRID_SIZE};
+pub use marching::{GRID_SIZE, marching_squares};
 pub use mesh::{PolygonMesh, TileCollisionMesh};
 pub use simplify::{douglas_peucker, simplify_polylines};
-pub use triangulate::{triangulate_polygon, triangulate_polygons, Triangle};
 pub use systems::{
-    dispatch_collision_tasks, invalidate_dirty_tiles, poll_collision_tasks, CollisionQueryPoint,
+  CollisionQueryPoint, dispatch_collision_tasks, invalidate_dirty_tiles, poll_collision_tasks,
 };
 #[cfg(feature = "visual-debug")]
-pub use systems::{draw_collision_gizmos, draw_sample_mesh_gizmos, update_sample_mesh, SampleMesh};
-
-use bevy::prelude::*;
+pub use systems::{SampleMesh, draw_collision_gizmos, draw_sample_mesh_gizmos, update_sample_mesh};
+pub use triangulate::{Triangle, triangulate_polygon, triangulate_polygons};
 
 /// Configuration for collision mesh generation.
 #[derive(Resource, Clone, Debug)]
 pub struct CollisionConfig {
-    /// Douglas-Peucker simplification tolerance in pixels.
-    /// Higher values produce simpler meshes with fewer vertices.
-    /// Default: 1.0
-    pub simplification_tolerance: f32,
+  /// Douglas-Peucker simplification tolerance in pixels.
+  /// Higher values produce simpler meshes with fewer vertices.
+  /// Default: 1.0
+  pub simplification_tolerance: f32,
 
-    /// Radius in tiles around query points to generate meshes.
-    /// A radius of 3 means a 7x7 tile area (49 tiles).
-    /// Default: 3
-    pub proximity_radius: u32,
+  /// Radius in tiles around query points to generate meshes.
+  /// A radius of 3 means a 7x7 tile area (49 tiles).
+  /// Default: 3
+  pub proximity_radius: u32,
 
-    /// Whether to render collision meshes as debug gizmos.
-    /// Default: true
-    pub debug_gizmos: bool,
+  /// Whether to render collision meshes as debug gizmos.
+  /// Default: true
+  pub debug_gizmos: bool,
 }
 
 impl Default for CollisionConfig {
-    fn default() -> Self {
-        Self {
-            simplification_tolerance: 1.0,
-            proximity_radius: 3,
-            debug_gizmos: true,
-        }
+  fn default() -> Self {
+    Self {
+      simplification_tolerance: 1.0,
+      proximity_radius: 3,
+      debug_gizmos: true,
     }
+  }
 }
 
 impl CollisionConfig {
-    /// Creates a new config with the given simplification tolerance.
-    pub fn with_tolerance(mut self, tolerance: f32) -> Self {
-        self.simplification_tolerance = tolerance;
-        self
-    }
+  /// Creates a new config with the given simplification tolerance.
+  pub fn with_tolerance(mut self, tolerance: f32) -> Self {
+    self.simplification_tolerance = tolerance;
+    self
+  }
 
-    /// Creates a new config with the given proximity radius.
-    pub fn with_radius(mut self, radius: u32) -> Self {
-        self.proximity_radius = radius;
-        self
-    }
+  /// Creates a new config with the given proximity radius.
+  pub fn with_radius(mut self, radius: u32) -> Self {
+    self.proximity_radius = radius;
+    self
+  }
 
-    /// Enables or disables debug gizmo rendering.
-    pub fn with_gizmos(mut self, enabled: bool) -> Self {
-        self.debug_gizmos = enabled;
-        self
-    }
+  /// Enables or disables debug gizmo rendering.
+  pub fn with_gizmos(mut self, enabled: bool) -> Self {
+    self.debug_gizmos = enabled;
+    self
+  }
 }

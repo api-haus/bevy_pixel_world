@@ -96,7 +96,11 @@ pub fn time_series_graph(
   // Line 1: Values (smaller font, bright color)
   let values_text = format!(
     "{:.prec$}{}  avg:{:.prec$}  min:{:.prec$}  max:{:.prec$}",
-    current, config.unit, avg, min_val, max_val,
+    current,
+    config.unit,
+    avg,
+    min_val,
+    max_val,
     prec = precision
   );
 

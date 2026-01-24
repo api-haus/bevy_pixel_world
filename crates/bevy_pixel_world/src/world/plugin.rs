@@ -7,29 +7,27 @@ use bevy::prelude::*;
 use bevy::tasks::{AsyncComputeTaskPool, Task};
 
 use super::{PixelWorld, SlotIndex};
+#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+use crate::collision::physics::{PhysicsColliderRegistry, sync_physics_colliders};
 use crate::collision::{
-    dispatch_collision_tasks, invalidate_dirty_tiles, poll_collision_tasks, CollisionCache,
-    CollisionConfig, CollisionTasks,
+  CollisionCache, CollisionConfig, CollisionTasks, dispatch_collision_tasks,
+  invalidate_dirty_tiles, poll_collision_tasks,
 };
 #[cfg(feature = "visual-debug")]
 use crate::collision::{
-    draw_collision_gizmos, draw_sample_mesh_gizmos, update_sample_mesh, SampleMesh,
+  SampleMesh, draw_collision_gizmos, draw_sample_mesh_gizmos, update_sample_mesh,
 };
-#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
-use crate::collision::physics::{sync_physics_colliders, PhysicsColliderRegistry};
-use crate::coords::{ChunkPos, WorldPos, WorldRect, CHUNK_SIZE};
+use crate::coords::{CHUNK_SIZE, ChunkPos, WorldPos, WorldRect};
 use crate::debug_shim;
 use crate::material::Materials;
 use crate::persistence::{
-  compression::compress_lz4,
-  format::StorageType,
-  PersistenceTasks, WorldSaveResource,
+  PersistenceTasks, WorldSaveResource, compression::compress_lz4, format::StorageType,
 };
 use crate::primitives::Chunk;
 #[cfg(not(feature = "headless"))]
 use crate::render::{
-  create_chunk_quad, create_palette_texture, create_pixel_texture, upload_palette, upload_pixels,
-  ChunkMaterial,
+  ChunkMaterial, create_chunk_quad, create_palette_texture, create_pixel_texture, upload_palette,
+  upload_pixels,
 };
 use crate::simulation;
 
@@ -108,7 +106,11 @@ impl Plugin for PixelWorldStreamingPlugin {
     #[cfg(all(not(feature = "headless"), feature = "visual-debug"))]
     app.add_systems(
       PostUpdate,
-      (update_sample_mesh, draw_collision_gizmos, draw_sample_mesh_gizmos),
+      (
+        update_sample_mesh,
+        draw_collision_gizmos,
+        draw_sample_mesh_gizmos,
+      ),
     );
 
     #[cfg(feature = "headless")]
@@ -551,8 +553,8 @@ fn poll_seeding_tasks() {
 
 /// System: Updates simulation bounds from camera viewport.
 ///
-/// Extracts the visible area from the streaming camera's orthographic projection
-/// and sets it as the simulation bounds for all pixel worlds.
+/// Extracts the visible area from the streaming camera's orthographic
+/// projection and sets it as the simulation bounds for all pixel worlds.
 fn update_simulation_bounds(
   camera_query: Query<(&GlobalTransform, &Projection), With<StreamingCamera>>,
   mut worlds: Query<&mut PixelWorld>,
@@ -731,11 +733,7 @@ fn flush_persistence_queue(
 }
 
 /// Writes chunk data to the save file at the given offset.
-fn write_chunk_data(
-  path: &std::path::Path,
-  offset: u64,
-  data: &[u8],
-) -> std::io::Result<()> {
+fn write_chunk_data(path: &std::path::Path, offset: u64, data: &[u8]) -> std::io::Result<()> {
   use std::io::{Seek, SeekFrom, Write};
 
   let mut file = std::fs::File::options().write(true).open(path)?;

@@ -1,12 +1,14 @@
 //! Parallel tile blitter with 2x2 checkerboard scheduling.
 //!
-//! This module solves the cross-chunk boundary problem for parallel pixel operations.
-//! When processing falling sand physics or painting operations, adjacent pixels may
-//! swap across chunk boundaries. Naive parallelization would cause data races.
+//! This module solves the cross-chunk boundary problem for parallel pixel
+//! operations. When processing falling sand physics or painting operations,
+//! adjacent pixels may swap across chunk boundaries. Naive parallelization
+//! would cause data races.
 //!
 //! # Checkerboard Scheduling
 //!
-//! Tiles are grouped into four phases (A, B, C, D) based on their position modulo 2:
+//! Tiles are grouped into four phases (A, B, C, D) based on their position
+//! modulo 2:
 //!
 //! ```text
 //! ┌───┬───┬───┬───┐
@@ -18,9 +20,10 @@
 //! └───┴───┴───┴───┘
 //! ```
 //!
-//! Tiles in the same phase are never adjacent (horizontally, vertically, or diagonally),
-//! guaranteeing that parallel threads cannot access overlapping pixel regions. Each phase
-//! is processed sequentially, with tiles within that phase processed in parallel.
+//! Tiles in the same phase are never adjacent (horizontally, vertically, or
+//! diagonally), guaranteeing that parallel threads cannot access overlapping
+//! pixel regions. Each phase is processed sequentially, with tiles within that
+//! phase processed in parallel.
 //!
 //! # Data Hierarchy
 //!
@@ -29,8 +32,8 @@
 //! - `Chunk::pixels: Surface<Pixel>` - Per-chunk pixel data
 //!
 //! The Canvas provides safe mutable access to multiple chunks by leveraging the
-//! checkerboard invariant: since tiles in the same phase never overlap, raw pointer
-//! access is sound.
+//! checkerboard invariant: since tiles in the same phase never overlap, raw
+//! pointer access is sound.
 //!
 //! # Key Functions
 //!
@@ -44,7 +47,9 @@ use std::sync::Mutex;
 
 use rayon::prelude::*;
 
-use crate::coords::{ChunkPos, LocalPos, Phase, TilePos, WorldFragment, WorldPos, WorldRect, TILE_SIZE};
+use crate::coords::{
+  ChunkPos, LocalPos, Phase, TILE_SIZE, TilePos, WorldFragment, WorldPos, WorldRect,
+};
 use crate::debug_shim::{self, DebugGizmos};
 use crate::pixel::Pixel;
 use crate::primitives::Chunk;
@@ -203,11 +208,11 @@ pub fn parallel_simulate<F>(
 /// When a pixel vacates a position, neighbors above and to the sides
 /// may now be able to fall into the empty space.
 const WAKE_NEIGHBORS: [(i64, i64); 5] = [
-  (0, 1),   // above
-  (-1, 1),  // above-left
-  (1, 1),   // above-right
-  (-1, 0),  // left
-  (1, 0),   // right
+  (0, 1),  // above
+  (-1, 1), // above-left
+  (1, 1),  // above-right
+  (-1, 0), // left
+  (1, 0),  // right
 ];
 
 /// Process a single tile for simulation, iterating bottom-to-top.
@@ -477,7 +482,13 @@ fn mark_pixels_dirty(chunks: &Canvas<'_>, dirty_pixels: &[(ChunkPos, LocalPos)])
 /// Also marks adjacent tiles dirty when the pixel is at a tile boundary,
 /// since collision meshes sample a 1px border from neighbors.
 #[inline]
-fn mark_collision_dirty_if_changed(chunk: &mut Chunk, local_x: u32, local_y: u32, old: &Pixel, new: &Pixel) {
+fn mark_collision_dirty_if_changed(
+  chunk: &mut Chunk,
+  local_x: u32,
+  local_y: u32,
+  old: &Pixel,
+  new: &Pixel,
+) {
   // If either old or new is non-void, mark dirty (material may have collision)
   // This is conservative but correct - the collision system will filter further
   if !old.is_void() || !new.is_void() {

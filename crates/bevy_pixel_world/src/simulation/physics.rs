@@ -1,13 +1,14 @@
 //! Per-pixel physics simulation.
 //!
-//! Implements movement behavior for different material states (powder, liquid, gas).
+//! Implements movement behavior for different material states (powder, liquid,
+//! gas).
 
-use super::hash::hash41uu64;
 use super::SimContext;
+use super::hash::hash41uu64;
 use crate::coords::WorldPos;
 use crate::material::{Materials, PhysicsState};
-use crate::scheduling::blitter::Canvas;
 use crate::pixel::Pixel;
+use crate::scheduling::blitter::Canvas;
 
 /// Returns the position to swap with, or None if pixel stays.
 pub fn compute_swap(
@@ -156,8 +157,9 @@ fn compute_liquid_swap(
 
 /// Attempts falling and diagonal movement for a pixel.
 ///
-/// This encapsulates the common movement logic shared between powder and liquid.
-/// The caller computes drift and flip based on material-specific behavior.
+/// This encapsulates the common movement logic shared between powder and
+/// liquid. The caller computes drift and flip based on material-specific
+/// behavior.
 fn try_fall_and_slide(
   pos: WorldPos,
   chunks: &Canvas<'_>,

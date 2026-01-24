@@ -1,7 +1,7 @@
 //! Material definitions and registry.
 
 use crate::coords::{ColorIndex, MaterialId};
-use crate::render::{rgb, Rgba};
+use crate::render::{Rgba, rgb};
 
 /// Physics state determines movement behavior.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

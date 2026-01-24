@@ -6,7 +6,7 @@
 //! organization. See `docs/architecture/chunk-pooling.md` for the pooling
 //! lifecycle.
 
-use crate::coords::{ChunkPos, TILES_PER_CHUNK, TILE_SIZE};
+use crate::coords::{ChunkPos, TILE_SIZE, TILES_PER_CHUNK};
 use crate::pixel::PixelSurface;
 
 /// Number of tiles per chunk (16x16 = 256).
@@ -127,7 +127,8 @@ pub struct Chunk {
   /// Per-tile collision dirty flags. When true, the tile's collision mesh
   /// needs regeneration.
   tile_collision_dirty: Box<[bool]>,
-  /// True if this chunk was loaded from persistence (not procedurally generated).
+  /// True if this chunk was loaded from persistence (not procedurally
+  /// generated).
   pub from_persistence: bool,
 }
 
@@ -244,14 +245,18 @@ impl Chunk {
 
   /// Returns an iterator over (tx, ty) pairs for tiles with dirty collision.
   pub fn collision_dirty_tiles(&self) -> impl Iterator<Item = (u32, u32)> + '_ {
-    self.tile_collision_dirty.iter().enumerate().filter_map(|(idx, &dirty)| {
-      if dirty {
-        let tx = (idx as u32) % TILES_PER_CHUNK;
-        let ty = (idx as u32) / TILES_PER_CHUNK;
-        Some((tx, ty))
-      } else {
-        None
-      }
-    })
+    self
+      .tile_collision_dirty
+      .iter()
+      .enumerate()
+      .filter_map(|(idx, &dirty)| {
+        if dirty {
+          let tx = (idx as u32) % TILES_PER_CHUNK;
+          let ty = (idx as u32) / TILES_PER_CHUNK;
+          Some((tx, ty))
+        } else {
+          None
+        }
+      })
   }
 }

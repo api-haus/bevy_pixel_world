@@ -10,8 +10,8 @@ use bevy::app::{TaskPoolOptions, TaskPoolPlugin};
 use bevy::ecs::world::Mut;
 use bevy::prelude::*;
 use bevy_pixel_world::{
-    material_ids, ColorIndex, MaterialSeeder, PersistenceConfig, Pixel, PixelWorld, PixelWorldPlugin,
-    SpawnPixelWorld, StreamingCamera, WorldPos, CHUNK_SIZE,
+  CHUNK_SIZE, ColorIndex, MaterialSeeder, PersistenceConfig, Pixel, PixelWorld, PixelWorldPlugin,
+  SpawnPixelWorld, StreamingCamera, WorldPos, material_ids,
 };
 
 /// Camera speed in pixels per simulated second (matches painting demo)
@@ -150,12 +150,12 @@ fn painted_chunks_persist_across_scroll() {
   // sim) Distinguish chunks by ColorIndex.
   // Markers must be >10 pixels apart so radius-5 circles don't overlap.
   let markers = [
-    (WorldPos::new(64, 64), ColorIndex(1)),          // Chunk (0, 0)
-    (WorldPos::new(80, 64), ColorIndex(2)),          // Chunk (0, 0) - 16 pixels right
-    (WorldPos::new(64, 80), ColorIndex(3)),          // Chunk (0, 0) - 16 pixels up
-    (WorldPos::new(80, 80), ColorIndex(4)),          // Chunk (0, 0) - diagonal
-    (WorldPos::new(96, 64), ColorIndex(5)),          // Chunk (0, 0) - 32 pixels right
-    (WorldPos::new(512 + 64, 64), ColorIndex(150)),  // Chunk (1, 0)
+    (WorldPos::new(64, 64), ColorIndex(1)),         // Chunk (0, 0)
+    (WorldPos::new(80, 64), ColorIndex(2)),         // Chunk (0, 0) - 16 pixels right
+    (WorldPos::new(64, 80), ColorIndex(3)),         // Chunk (0, 0) - 16 pixels up
+    (WorldPos::new(80, 80), ColorIndex(4)),         // Chunk (0, 0) - diagonal
+    (WorldPos::new(96, 64), ColorIndex(5)),         // Chunk (0, 0) - 32 pixels right
+    (WorldPos::new(512 + 64, 64), ColorIndex(150)), // Chunk (1, 0)
     (WorldPos::new(-512 + 64, 64), ColorIndex(200)), // Chunk (-1, 0)
   ];
 
