@@ -7,12 +7,12 @@ use bevy::prelude::*;
 use bevy::sprite_render::Material2dPlugin;
 
 pub mod coords;
-pub mod debug;
 pub mod debug_shim;
+pub mod text;
 #[cfg(feature = "diagnostics")]
 pub mod diagnostics;
 pub mod material;
-pub(crate) mod parallel;
+pub(crate) mod scheduling;
 pub mod pixel;
 pub mod primitives;
 pub mod render;
@@ -26,7 +26,7 @@ pub use coords::{
   ChunkPos, ColorIndex, LocalPos, MaterialId, TilePos, WorldFragment, WorldPos, WorldRect,
   CHUNK_SIZE, TILE_SIZE,
 };
-pub use debug::{draw_text, rasterize_text, stamp_text, CpuFont, TextMask};
+pub use text::{draw_text, rasterize_text, stamp_text, CpuFont, TextMask};
 pub use material::{ids as material_ids, Material, Materials, PhysicsState};
 pub use pixel::{Pixel, PixelSurface};
 pub use primitives::{Chunk, RgbaSurface, Surface};

@@ -6,23 +6,28 @@
 //! - Provides world-coordinate pixel modification API
 //! - Uses async background seeding with proper state tracking
 
+mod bundle;
 pub mod plugin;
+pub(crate) mod slot;
+mod streaming;
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use bevy::prelude::*;
 
-use crate::coords::{
-  ChunkPos, TilePos, WorldFragment, WorldPos, WorldRect, CHUNK_SIZE, POOL_SIZE, WINDOW_HEIGHT,
-  WINDOW_WIDTH,
-};
+use crate::coords::{ChunkPos, TilePos, WorldFragment, WorldPos, WorldRect, POOL_SIZE};
 use crate::debug_shim::{self, DebugGizmos};
-use crate::parallel::blitter::{parallel_blit, ChunkAccess};
 use crate::pixel::Pixel;
 use crate::primitives::Chunk;
 use crate::render::ChunkMaterial;
+use crate::scheduling::blitter::{parallel_blit, ChunkAccess};
 use crate::seeding::ChunkSeeder;
+
+pub use bundle::{PixelWorldBundle, SpawnPixelWorld};
+pub(crate) use slot::{ChunkSlot, SlotIndex};
+pub(crate) use streaming::StreamingDelta;
+use streaming::visible_positions;
 
 /// Configuration for pixel world simulation behavior.
 #[derive(Clone, Debug)]
@@ -36,63 +41,6 @@ pub struct PixelWorldConfig {
 impl Default for PixelWorldConfig {
   fn default() -> Self {
     Self { jitter_factor: 0.0 }
-  }
-}
-
-/// Index into the slots array.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct SlotIndex(pub usize);
-
-/// A slot in the chunk storage.
-///
-/// Each slot contains pre-allocated chunk memory and lifecycle state.
-pub struct ChunkSlot {
-  /// Pre-allocated chunk memory.
-  pub chunk: Chunk,
-  /// World position if active, None if in pool.
-  pub pos: Option<ChunkPos>,
-  /// Whether the chunk has valid pixel data for its position.
-  /// When false, the chunk needs seeding before it can participate in
-  /// simulation.
-  pub seeded: bool,
-  /// Whether the chunk's CPU data differs from GPU texture.
-  /// When true, the chunk needs upload.
-  pub dirty: bool,
-  /// Entity displaying this chunk (when active).
-  pub entity: Option<Entity>,
-  /// Texture handle for GPU upload.
-  pub texture: Option<Handle<Image>>,
-  /// Material handle (for bind group refresh workaround).
-  pub material: Option<Handle<ChunkMaterial>>,
-}
-
-impl ChunkSlot {
-  /// Creates a new slot with pre-allocated chunk memory.
-  fn new() -> Self {
-    Self {
-      chunk: Chunk::new(CHUNK_SIZE, CHUNK_SIZE),
-      pos: None,
-      seeded: false,
-      dirty: false,
-      entity: None,
-      texture: None,
-      material: None,
-    }
-  }
-
-  /// Returns true if this slot is available for use.
-  fn is_free(&self) -> bool {
-    self.pos.is_none()
-  }
-
-  /// Resets the slot to pool state.
-  fn release(&mut self) {
-    self.chunk.clear_pos();
-    self.pos = None;
-    self.seeded = false;
-    self.dirty = false;
-    self.entity = None;
-    // Keep texture and material handles - they'll be reused
   }
 }
 
@@ -586,109 +534,5 @@ impl PixelWorld {
     }
 
     dirty
-  }
-}
-
-/// Changes from updating the streaming window center.
-pub(crate) struct StreamingDelta {
-  /// Chunks that left the window (position, entity to despawn).
-  pub to_despawn: Vec<(ChunkPos, Entity)>,
-  /// Chunks that entered the window (position, slot index).
-  pub to_spawn: Vec<(ChunkPos, SlotIndex)>,
-}
-
-/// Returns iterator over visible chunk positions for a given center.
-fn visible_positions(center: ChunkPos) -> impl Iterator<Item = ChunkPos> {
-  let cx = center.x;
-  let cy = center.y;
-  let hw = WINDOW_WIDTH as i32 / 2;
-  let hh = WINDOW_HEIGHT as i32 / 2;
-
-  let x_range = (cx - hw)..(cx + hw);
-  let y_range = (cy - hh)..(cy + hh);
-
-  x_range.flat_map(move |x| y_range.clone().map(move |y| ChunkPos::new(x, y)))
-}
-
-/// Bundle for spawning a PixelWorld entity.
-#[derive(Bundle)]
-pub struct PixelWorldBundle {
-  /// The pixel world component.
-  pub world: PixelWorld,
-  /// Transform (typically at origin).
-  pub transform: Transform,
-  /// Global transform (computed by Bevy).
-  pub global_transform: GlobalTransform,
-}
-
-impl PixelWorldBundle {
-  /// Creates a new PixelWorld bundle.
-  pub fn new(seeder: impl ChunkSeeder + Send + Sync + 'static, mesh: Handle<Mesh>) -> Self {
-    Self {
-      world: PixelWorld::new(Arc::new(seeder), mesh),
-      transform: Transform::default(),
-      global_transform: GlobalTransform::default(),
-    }
-  }
-}
-
-/// Command to spawn a PixelWorld using the shared chunk mesh.
-///
-/// This is the simplest way to create a PixelWorld - just provide a seeder
-/// and queue this command. The plugin's SharedChunkMesh is used automatically.
-///
-/// Uses the default configuration from `PixelWorldPlugin` unless overridden
-/// with `with_config()`.
-///
-/// # Example
-/// ```ignore
-/// fn setup(mut commands: Commands) {
-///     commands.queue(SpawnPixelWorld::new(MaterialSeeder::new(42)));
-/// }
-/// ```
-///
-/// # Panics
-/// Panics if `PixelWorldPlugin` hasn't been added (SharedChunkMesh not found).
-pub struct SpawnPixelWorld {
-  seeder: Arc<dyn ChunkSeeder + Send + Sync>,
-  config: Option<PixelWorldConfig>,
-}
-
-impl SpawnPixelWorld {
-  pub fn new(seeder: impl ChunkSeeder + Send + Sync + 'static) -> Self {
-    Self {
-      seeder: Arc::new(seeder),
-      config: None,
-    }
-  }
-
-  /// Sets the world configuration, overriding the plugin default.
-  pub fn with_config(mut self, config: PixelWorldConfig) -> Self {
-    self.config = Some(config);
-    self
-  }
-}
-
-impl bevy::ecs::system::Command for SpawnPixelWorld {
-  fn apply(self, world: &mut bevy::ecs::world::World) {
-    let mesh = world
-      .get_resource::<plugin::SharedChunkMesh>()
-      .expect("SharedChunkMesh not found - add PixelWorldPlugin first")
-      .0
-      .clone();
-
-    // Use explicit config or fall back to plugin default
-    let config = self.config.unwrap_or_else(|| {
-      world
-        .get_resource::<crate::DefaultPixelWorldConfig>()
-        .map(|r| r.0.clone())
-        .unwrap_or_default()
-    });
-
-    world.spawn(PixelWorldBundle {
-      world: PixelWorld::with_config(self.seeder, mesh, config),
-      transform: Transform::default(),
-      global_transform: GlobalTransform::default(),
-    });
   }
 }

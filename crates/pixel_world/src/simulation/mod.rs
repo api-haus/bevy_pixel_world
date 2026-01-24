@@ -3,7 +3,7 @@
 //! Implements falling sand physics using checkerboard scheduling.
 
 pub mod hash;
-pub(crate) mod rules;
+pub(crate) mod physics;
 
 use std::collections::HashSet;
 use std::sync::Mutex;
@@ -16,7 +16,7 @@ use crate::coords::{
 };
 use crate::debug_shim::DebugGizmos;
 use crate::material::Materials;
-use crate::parallel::blitter::{parallel_simulate, ChunkAccess};
+use crate::scheduling::blitter::{parallel_simulate, ChunkAccess};
 use crate::world::PixelWorld;
 
 /// Context passed to simulation rules for deterministic randomness.
@@ -78,7 +78,7 @@ pub fn simulate_tick(world: &mut PixelWorld, materials: &Materials, debug_gizmos
   parallel_simulate(
     &chunk_access,
     tiles_by_phase,
-    |pos, chunks| rules::compute_swap(pos, chunks, materials, ctx),
+    |pos, chunks| physics::compute_swap(pos, chunks, materials, ctx),
     &dirty,
     debug_gizmos,
     ctx.tick,

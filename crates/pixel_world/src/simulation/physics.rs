@@ -1,12 +1,12 @@
-//! Per-pixel simulation rules.
+//! Per-pixel physics simulation.
 //!
-//! Implements movement behavior for different material states.
+//! Implements movement behavior for different material states (powder, liquid, gas).
 
 use super::hash::hash41uu64;
 use super::SimContext;
 use crate::coords::WorldPos;
 use crate::material::{Materials, PhysicsState};
-use crate::parallel::blitter::ChunkAccess;
+use crate::scheduling::blitter::ChunkAccess;
 use crate::pixel::Pixel;
 
 /// Returns the position to swap with, or None if pixel stays.

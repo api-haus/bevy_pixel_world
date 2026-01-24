@@ -3,6 +3,9 @@
 Parameters for the pixel sandbox plugin. **Architectural constants are compile-time values defined in code, not runtime
 configuration.**
 
+> **Note:** The specific values in this document are illustrative examples. Actual compile-time values are defined in
+> `crates/pixel_world/src/coords.rs` and may differ. Consult the source code for authoritative values.
+
 ## Compile-Time Constants
 
 These values are hardcoded and never passed through function arguments.
