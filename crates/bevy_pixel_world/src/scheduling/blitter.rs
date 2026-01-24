@@ -141,6 +141,39 @@ struct TileContext<'a> {
   dirty_tiles: Option<&'a Mutex<HashSet<TilePos>>>,
 }
 
+/// Collects dirty state during tile processing.
+///
+/// Groups the three dirty tracking mechanisms:
+/// - Global chunk set (mutex-protected, for GPU upload)
+/// - Local chunk set (per-tile accumulator)
+/// - Pixel list (for dirty rect expansion)
+struct DirtyCollector<'a> {
+  global_chunks: &'a Mutex<HashSet<ChunkPos>>,
+  local_chunks: HashSet<ChunkPos>,
+  pixels: Vec<(ChunkPos, LocalPos)>,
+}
+
+impl<'a> DirtyCollector<'a> {
+  fn new(global_chunks: &'a Mutex<HashSet<ChunkPos>>) -> Self {
+    Self {
+      global_chunks,
+      local_chunks: HashSet::new(),
+      pixels: Vec::new(),
+    }
+  }
+
+  /// Flushes local dirty state to global and marks pixels for next pass.
+  fn flush(self, chunks: &Canvas<'_>) {
+    mark_pixels_dirty(chunks, &self.pixels);
+
+    if !self.local_chunks.is_empty()
+      && let Ok(mut global) = self.global_chunks.lock()
+    {
+      global.extend(self.local_chunks);
+    }
+  }
+}
+
 /// Executes a blit operation across tiles in parallel using 2x2 checkerboard
 /// scheduling.
 pub fn parallel_blit<F>(
@@ -193,7 +226,8 @@ pub fn parallel_blit<F>(
 /// Executes a simulation step across tiles in parallel using 2x2 checkerboard
 /// scheduling.
 ///
-/// For each pixel in each tile, calls `f(pos, chunks)` which returns:
+/// For each pixel in each tile, calls `compute_swap(pos, chunks)` which
+/// returns:
 /// - `Some(target)` to swap pos with target
 /// - `None` to leave pixel unchanged
 ///
@@ -203,7 +237,7 @@ pub fn parallel_blit<F>(
 pub fn parallel_simulate<F>(
   chunks: &Canvas<'_>,
   tiles_by_phase: [Vec<TilePos>; 4],
-  f: F,
+  compute_swap: F,
   dirty_chunks: &Mutex<HashSet<ChunkPos>>,
   debug_gizmos: DebugGizmos<'_>,
   tick: u64,
@@ -222,7 +256,15 @@ pub fn parallel_simulate<F>(
     let _phase_span = tracing::info_span!("phase", phase = _phase_idx).entered();
 
     phase_tiles.par_iter().for_each(|&tile| {
-      simulate_tile(chunks, tile, &f, dirty_chunks, debug_gizmos, tick, jitter);
+      simulate_tile(
+        chunks,
+        tile,
+        &compute_swap,
+        dirty_chunks,
+        debug_gizmos,
+        tick,
+        jitter,
+      );
     });
     // Implicit barrier between phases due to sequential for loop
 
@@ -245,6 +287,78 @@ const WAKE_NEIGHBORS: [(i64, i64); 5] = [
   (1, 0),  // right
 ];
 
+/// Iterates over pixel positions within dirty bounds with row-alternating
+/// direction.
+///
+/// The direction alternates per row based on a hash of tick and world_y,
+/// preventing visual artifacts from accumulating at fixed seams.
+fn for_each_pixel_in_bounds<F>(bounds: (u8, u8, u8, u8), base: (i64, i64), tick: u64, mut f: F)
+where
+  F: FnMut(WorldPos),
+{
+  let (min_x, min_y, max_x, max_y) = bounds;
+  let (base_x, base_y) = base;
+
+  for local_y in (min_y as i64)..=(max_y as i64) {
+    let world_y = base_y + local_y;
+    let go_left = hash21uu64(tick, world_y as u64) & 1 == 0;
+
+    if go_left {
+      for local_x in (min_x as i64..=max_x as i64).rev() {
+        f(WorldPos::new(base_x + local_x, world_y));
+      }
+    } else {
+      for local_x in min_x as i64..=max_x as i64 {
+        f(WorldPos::new(base_x + local_x, world_y));
+      }
+    }
+  }
+}
+
+/// Records the effects of a successful pixel swap.
+///
+/// This includes:
+/// - Extending the local dirty chunk set with affected chunks
+/// - Recording both swapped positions for dirty rect expansion
+/// - Waking neighbor pixels above and to the sides of the vacated position
+fn record_swap_effects(
+  pos: WorldPos,
+  target: WorldPos,
+  dirty_chunks: [ChunkPos; 2],
+  local_dirty: &mut HashSet<ChunkPos>,
+  dirty_pixels: &mut Vec<(ChunkPos, LocalPos)>,
+) {
+  local_dirty.extend(dirty_chunks);
+
+  let (chunk_a, local_a) = pos.to_chunk_and_local();
+  let (chunk_b, local_b) = target.to_chunk_and_local();
+  dirty_pixels.push((chunk_a, local_a));
+  dirty_pixels.push((chunk_b, local_b));
+
+  for (dx, dy) in WAKE_NEIGHBORS {
+    let neighbor = WorldPos::new(pos.x + dx, pos.y + dy);
+    let (n_chunk, n_local) = neighbor.to_chunk_and_local();
+    dirty_pixels.push((n_chunk, n_local));
+  }
+}
+
+/// Ticks the dirty rect for the owned original tile.
+///
+/// This maintains the dirty rect state machine correctly: reset before
+/// processing, then grow during simulation.
+fn tick_owned_tile(chunks: &Canvas<'_>, tile: TilePos) {
+  let tile_size = TILE_SIZE as i64;
+  let orig_base_x = tile.x * tile_size;
+  let orig_base_y = tile.y * tile_size;
+  let (chunk_pos, local_pos) = WorldPos::new(orig_base_x, orig_base_y).to_chunk_and_local();
+  let tx = (local_pos.x as u32) / TILE_SIZE;
+  let ty = (local_pos.y as u32) / TILE_SIZE;
+
+  if let Some(chunk) = chunks.get_mut(chunk_pos) {
+    chunk.tile_dirty_rect_mut(tx, ty).tick();
+  }
+}
+
 /// Process a single tile for simulation, iterating bottom-to-top.
 ///
 /// Only processes pixels within the tile's dirty rect bounds.
@@ -257,7 +371,7 @@ const WAKE_NEIGHBORS: [(i64, i64); 5] = [
 fn simulate_tile<F>(
   chunks: &Canvas<'_>,
   tile: TilePos,
-  f: &F,
+  compute_swap: &F,
   dirty_chunks: &Mutex<HashSet<ChunkPos>>,
   debug_gizmos: DebugGizmos<'_>,
   tick: u64,
@@ -266,88 +380,33 @@ fn simulate_tile<F>(
   F: Fn(WorldPos, &Canvas<'_>) -> Option<WorldPos> + Sync,
 {
   let tile_size = TILE_SIZE as i64;
-  let (jitter_x, jitter_y) = jitter;
+  let base = (tile.x * tile_size + jitter.0, tile.y * tile_size + jitter.1);
 
-  // Jittered base position - where this tile's pixels actually start
-  let base_x = tile.x * tile_size + jitter_x;
-  let base_y = tile.y * tile_size + jitter_y;
+  tick_owned_tile(chunks, tile);
 
-  // Tick the "owned" original tile (same index as jittered tile)
-  // This maintains the dirty rect state machine correctly
-  let orig_base_x = tile.x * tile_size;
-  let orig_base_y = tile.y * tile_size;
-  let (chunk_pos, local_pos) = WorldPos::new(orig_base_x, orig_base_y).to_chunk_and_local();
-  let tx = (local_pos.x as u32) / TILE_SIZE;
-  let ty = (local_pos.y as u32) / TILE_SIZE;
-
-  if let Some(chunk) = chunks.get_mut(chunk_pos) {
-    chunk.tile_dirty_rect_mut(tx, ty).tick();
-  }
-
-  // Union dirty bounds from all overlapping original tiles
-  let bounds = union_dirty_bounds(chunks, tile, jitter);
-
-  // Skip if no dirty pixels
-  let Some((min_x, min_y, max_x, max_y)) = bounds else {
+  let Some(bounds) = union_dirty_bounds(chunks, tile, jitter) else {
     return;
   };
 
-  // Emit debug gizmo for this dirty rect
-  debug_shim::emit_dirty_rect(debug_gizmos, tile, (min_x, min_y, max_x, max_y));
+  debug_shim::emit_dirty_rect(debug_gizmos, tile, bounds);
 
-  // Track which chunks we've dirtied in this tile
-  let mut local_dirty: HashSet<ChunkPos> = HashSet::new();
-  // Track pixels to mark dirty for next pass
-  let mut dirty_pixels: Vec<(ChunkPos, LocalPos)> = Vec::new();
+  let mut collector = DirtyCollector::new(dirty_chunks);
 
-  // Process pixels bottom-to-top so falling sand settles correctly
-  // Only iterate within dirty bounds
-  for local_y in (min_y as i64)..=(max_y as i64) {
-    // Alternate direction per row using hash for temporal variation
-    let world_y = base_y + local_y;
-    let go_left = hash21uu64(tick, world_y as u64) & 1 == 0;
-
-    let x_range: Box<dyn Iterator<Item = i64>> = if go_left {
-      Box::new((min_x as i64..=max_x as i64).rev())
-    } else {
-      Box::new(min_x as i64..=max_x as i64)
-    };
-
-    for local_x in x_range {
-      let pos = WorldPos::new(base_x + local_x, base_y + local_y);
-
-      if let Some(target) = f(pos, chunks)
-        && let Some(dirty) = swap_pixels(chunks, pos, target)
-      {
-        local_dirty.extend(dirty);
-
-        // Collect pixel positions for dirty rect expansion
-        let (chunk_a, local_a) = pos.to_chunk_and_local();
-        let (chunk_b, local_b) = target.to_chunk_and_local();
-        dirty_pixels.push((chunk_a, local_a));
-        dirty_pixels.push((chunk_b, local_b));
-
-        // Wake up neighbors of the vacated position so they can fall
-        // into the now-empty space
-        for (dx, dy) in WAKE_NEIGHBORS {
-          let neighbor = WorldPos::new(pos.x + dx, pos.y + dy);
-          let (n_chunk, n_local) = neighbor.to_chunk_and_local();
-          dirty_pixels.push((n_chunk, n_local));
-        }
-      }
+  for_each_pixel_in_bounds(bounds, base, tick, |pos| {
+    if let Some(target) = compute_swap(pos, chunks)
+      && let Some(dirty) = swap_pixels(chunks, pos, target)
+    {
+      record_swap_effects(
+        pos,
+        target,
+        dirty,
+        &mut collector.local_chunks,
+        &mut collector.pixels,
+      );
     }
-  }
+  });
 
-  // Mark swapped pixels dirty for next pass
-  // Uses original (non-jittered) tile coordinates via chunk.mark_pixel_dirty
-  mark_pixels_dirty(chunks, &dirty_pixels);
-
-  // Merge local dirty set into global
-  if !local_dirty.is_empty()
-    && let Ok(mut global_dirty) = dirty_chunks.lock()
-  {
-    global_dirty.extend(local_dirty);
-  }
+  collector.flush(chunks);
 }
 
 /// Returns tile offsets that overlap with a jittered tile.

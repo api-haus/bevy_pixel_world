@@ -52,14 +52,18 @@ Object pixels are indistinguishable from world pixels during CA simulation.
 
 After CA simulation, changes are mapped back to object state:
 
-1. For each world position within the transformed bounds where `shape_mask=1`
-2. Inverse transform to local coordinates
-3. Compare world pixel with original object pixel:
-   - If material changed (burned, melted, decayed): clear shape_mask bit
-   - If pixel moved away: clear shape_mask bit
-4. Destroyed pixels become world terrain (ash, debris, gas)
-5. Run connected component analysis on shape mask
+1. Use the BlittedTransform (position where pixels were written, not current physics position)
+2. For each world position within transformed bounds where `shape_mask=1`:
+   - Read pixel from PixelWorld at world position
+   - If pixel is void OR lacks `PIXEL_BODY` flag: mark as destroyed
+3. Clear shape_mask bits for destroyed pixels
+4. If any bits changed:
+   - Insert `ShapeMaskModified` marker component
+   - Insert `NeedsColliderRegen` marker component
+5. Run connected component analysis
 6. If multiple components: trigger object split
+
+The readback uses `BlittedTransform` rather than current `GlobalTransform` to ensure we read from where pixels were actually written, not where physics has moved the body since blit.
 
 ### Phase 4: Clear (Remove from World)
 
@@ -165,12 +169,16 @@ flowchart LR
 
 Split procedure:
 
-1. Detect connected components in shape mask
-2. For each component beyond the first:
-   - Spawn new entity with PixelBody containing that component's pixels
-   - Create physics body and collider for the fragment
-   - Apply appropriate initial velocity based on parent's motion
-3. Update original entity to contain only the first component
+1. Run connected component analysis on shape mask (union-find with path compression)
+2. If 0 components: body fully destroyed, despawn entity
+3. If 1 component: no split, regenerate collider if shape changed
+4. If N > 1 components:
+   - Despawn the original entity
+   - For each component, spawn a new entity with:
+     - PixelBody containing that component's pixels (tight bounds)
+     - Physics collider generated from component shape
+     - Inherited velocity from parent
+     - New PixelBodyId from generator
 
 ## Edge Cases and Design Decisions
 

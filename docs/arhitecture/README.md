@@ -49,6 +49,7 @@ flowchart TB
 | **Materials**         | Material definitions, behavior types, tags, and interactions     | [materials.md](materials.md)                 |
 | **Chunk Pool**        | Object pool pattern for zero-allocation chunk management         | [chunk-pooling.md](chunk-pooling.md)         |
 | **Chunk Persistence** | Save file format, random access, compression, dirty tracking     | [chunk-persistence.md](chunk-persistence.md) |
+| **Recovery Persistence** | Dual-save crash recovery with autosave and explicit checkpoints | [recovery-persistence.md](recovery-persistence.md) |
 | **Simulation Engine** | Parallel cellular automata with checkerboard scheduling          | [simulation.md](simulation.md)               |
 | **Particle System**   | Free-form particles for dynamic effects (debris, gases, pouring) | [particles.md](particles.md)                 |
 | **Pixel Bodies**      | Dynamic physics objects with pixel content in CA simulation      | [pixel-bodies.md](pixel-bodies.md)           |

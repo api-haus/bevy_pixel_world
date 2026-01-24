@@ -138,10 +138,19 @@ Brush removes pixels from objects; objects split when connectivity breaks.
 
 After CA simulation, detect changes to pixel body pixels:
 
-1. For each pixel where `shape_mask[i] = 1`:
-   - Read Canvas at world position
-   - If pixel is void: clear `shape_mask[i]`
-2. Track if any bits changed
+1. Get `BlittedTransform` (position where pixels were written during blit)
+2. For each pixel where `shape_mask[i] = true`:
+   - Compute world position via inverse transform
+   - Read pixel from `PixelWorld::get_pixel()`
+   - If pixel is void OR lacks `PIXEL_BODY` flag: clear `shape_mask[i]`
+3. If any bits changed:
+   - Insert `ShapeMaskModified` marker component
+   - Insert `NeedsColliderRegen` marker component
+
+Marker component:
+- `ShapeMaskModified`: triggers split detection system
+
+The readback uses `BlittedTransform` rather than current `GlobalTransform` to ensure we read from where pixels were actually written, not where physics has moved the body since blit.
 
 **Note:** For Phase 2, only brush erasure causes changes. CA destruction (burning, melting) deferred to future phase.
 
@@ -157,7 +166,14 @@ flowchart TD
     SP --> UC
 ```
 
-Algorithm: Flood-fill or union-find on shape mask grid.
+Algorithm: Union-find with path compression on shape mask grid.
+
+Data structures:
+- `ConnectedComponent`: bounds (x, y, w, h), pixel positions
+- `SplitResult`: `Vec<ConnectedComponent>` sorted by size (largest first)
+
+Returns components sorted by pixel count descending.
+Uses 4-connectivity (orthogonal neighbors only).
 
 **Location:** `crates/bevy_pixel_world/src/pixel_body/split.rs`
 
@@ -165,14 +181,28 @@ Algorithm: Flood-fill or union-find on shape mask grid.
 
 When N > 1 components detected:
 
-1. Largest component stays with original entity
-2. For each smaller component:
-   - Spawn new entity
-   - Copy relevant pixels to new `Surface<Pixel>`
-   - Build new shape mask
-   - Generate new collider
-   - Inherit velocity from parent (scaled by mass ratio if desired)
-3. Update original entity's surface, shape mask, collider
+1. Despawn the original entity
+2. For each component:
+   - Calculate tight bounding box
+   - Create new `PixelBody` with component dimensions
+   - Copy pixel data from original surface
+   - Calculate new origin (centered on fragment)
+   - Compute world position from component centroid
+   - Generate collider via `generate_collider()`
+   - Spawn entity with: `PixelBody`, `Collider`, `RigidBody::Dynamic`,
+     inherited velocity, new `PixelBodyId`, `Persistable`, `BlittedTransform::default()`
+
+Fragment spawning inherits parent's linear and angular velocity.
+
+### Edge Cases
+
+| Scenario | Handling |
+|----------|----------|
+| Body fully destroyed (0 components) | Despawn entity |
+| No split (1 component, shape changed) | Regenerate collider only |
+| No changes | Remove `ShapeMaskModified`, no action |
+| Fragment too small for collider | Despawn if `generate_collider()` returns `None` |
+| Body at chunk boundary | `PixelWorld::get_pixel()` handles cross-chunk reads |
 
 ### 2.4 Collider Regeneration
 
