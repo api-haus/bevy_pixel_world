@@ -9,7 +9,7 @@ use crate::render::ChunkMaterial;
 /// Lifecycle state of a chunk slot.
 ///
 /// Tracks the slot's position in the pooling state machine:
-/// `InPool` → `Seeding` → `Active` → `Recycling` → `InPool`
+/// `InPool` → `Seeding` → `Active` → `InPool`
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ChunkLifecycle {
   /// Slot is in the pool, available for allocation.
@@ -19,8 +19,6 @@ pub enum ChunkLifecycle {
   Seeding,
   /// Slot is fully active with valid pixel data.
   Active,
-  /// Slot is being recycled back to the pool.
-  Recycling,
 }
 
 /// Index into the PixelWorld's fixed-size slot array.
@@ -115,10 +113,5 @@ impl ChunkSlot {
   /// Returns true if the chunk has modifications that need saving.
   pub fn needs_save(&self) -> bool {
     self.is_seeded() && self.modified && !self.persisted
-  }
-
-  /// Marks the chunk as persisted to disk.
-  pub fn mark_persisted(&mut self) {
-    self.persisted = true;
   }
 }

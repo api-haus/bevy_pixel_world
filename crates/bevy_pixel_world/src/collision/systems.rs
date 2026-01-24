@@ -56,8 +56,8 @@ fn extract_tile_grid(
   let tile_origin_y = tile.y * tile_size;
 
   // Sample a 34x34 area: the 32x32 tile plus 1px border on each side
-  for gy in 0..GRID_SIZE {
-    for gx in 0..GRID_SIZE {
+  for (gy, row) in grid.iter_mut().enumerate() {
+    for (gx, cell) in row.iter_mut().enumerate() {
       // Grid position to world position (with 1px border offset)
       let world_x = tile_origin_x + (gx as i64) - 1;
       let world_y = tile_origin_y + (gy as i64) - 1;
@@ -72,8 +72,7 @@ fn extract_tile_grid(
         let material = materials.get(pixel.material);
         // Solid and Powder materials form collision surfaces
         // Liquids and gases do not
-        let is_collision = matches!(material.state, PhysicsState::Solid | PhysicsState::Powder);
-        grid[gy][gx] = is_collision;
+        *cell = matches!(material.state, PhysicsState::Solid | PhysicsState::Powder);
       }
     }
   }
@@ -375,6 +374,23 @@ impl SampleMesh {
   }
 }
 
+/// Returns the shape type selected by key press, if any.
+#[cfg(feature = "visual-debug")]
+fn shape_key_pressed(keys: &ButtonInput<KeyCode>) -> Option<SampleShapeType> {
+  if keys.just_pressed(KeyCode::Digit1) {
+    bevy::log::info!("Sample mesh: Hexagon");
+    Some(SampleShapeType::Hexagon)
+  } else if keys.just_pressed(KeyCode::Digit2) {
+    bevy::log::info!("Sample mesh: Star");
+    Some(SampleShapeType::Star)
+  } else if keys.just_pressed(KeyCode::Digit3) {
+    bevy::log::info!("Sample mesh: L-shape (concave)");
+    Some(SampleShapeType::LShape)
+  } else {
+    None
+  }
+}
+
 /// System: Updates the sample mesh position to follow the cursor.
 #[cfg(feature = "visual-debug")]
 pub fn update_sample_mesh(
@@ -385,11 +401,14 @@ pub fn update_sample_mesh(
   // Toggle sample mesh with 'T' key
   if keys.just_pressed(KeyCode::KeyT) {
     sample_mesh.enabled = !sample_mesh.enabled;
-    if sample_mesh.enabled {
-      bevy::log::info!("Sample mesh enabled - press 1/2/3 to switch shapes");
-    } else {
-      bevy::log::info!("Sample mesh disabled");
-    }
+    bevy::log::info!(
+      "Sample mesh {}",
+      if sample_mesh.enabled {
+        "enabled - press 1/2/3 to switch shapes"
+      } else {
+        "disabled"
+      }
+    );
   }
 
   if !sample_mesh.enabled {
@@ -403,26 +422,15 @@ pub fn update_sample_mesh(
   };
   let cursor_pos = transform.translation.truncate();
 
-  // Switch shapes with number keys (regenerate only on key press)
-  let radius = 50.0;
-  let mut regenerate = false;
-
-  if keys.just_pressed(KeyCode::Digit1) {
-    sample_mesh.shape_type = SampleShapeType::Hexagon;
-    regenerate = true;
-    bevy::log::info!("Sample mesh: Hexagon");
-  } else if keys.just_pressed(KeyCode::Digit2) {
-    sample_mesh.shape_type = SampleShapeType::Star;
-    regenerate = true;
-    bevy::log::info!("Sample mesh: Star");
-  } else if keys.just_pressed(KeyCode::Digit3) {
-    sample_mesh.shape_type = SampleShapeType::LShape;
-    regenerate = true;
-    bevy::log::info!("Sample mesh: L-shape (concave)");
+  // Check for shape change
+  let new_shape = shape_key_pressed(&keys);
+  if let Some(shape) = new_shape {
+    sample_mesh.shape_type = shape;
   }
 
   // Generate mesh if none exists or shape changed
-  if regenerate || sample_mesh.mesh.is_none() {
+  if new_shape.is_some() || sample_mesh.mesh.is_none() {
+    let radius = 50.0;
     sample_mesh.mesh = Some(match sample_mesh.shape_type {
       SampleShapeType::Hexagon => SampleMesh::regular_polygon(cursor_pos, radius, 6),
       SampleShapeType::Star => SampleMesh::star(cursor_pos, radius, radius * 0.4, 5),
@@ -431,8 +439,7 @@ pub fn update_sample_mesh(
     sample_mesh.position = cursor_pos;
   } else {
     // Translate existing vertices to follow cursor (no regeneration)
-    let old_position = sample_mesh.position;
-    let delta = cursor_pos - old_position;
+    let delta = cursor_pos - sample_mesh.position;
     if delta != Vec2::ZERO {
       if let Some(mesh) = &mut sample_mesh.mesh {
         for v in &mut mesh.vertices {

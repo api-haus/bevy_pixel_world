@@ -52,11 +52,6 @@ impl TileDirtyRect {
     }
   }
 
-  /// Returns true if no pixels need simulation this frame.
-  pub fn is_empty(&self) -> bool {
-    self.cooldown == 0
-  }
-
   /// Expands the dirty rect to include the given local coordinate.
   /// Resets cooldown to 2 frames.
   pub fn expand(&mut self, x: u8, y: u8) {

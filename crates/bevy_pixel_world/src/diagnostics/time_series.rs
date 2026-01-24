@@ -23,13 +23,13 @@ impl TimeSeries {
   }
 
   pub fn push(&mut self, value: f32) {
-    if self.samples.len() >= self.capacity {
-      if let Some(removed) = self.samples.pop_front() {
-        self.sum_cached -= removed;
-        // Mark dirty if the removed value was the min or max
-        if removed <= self.min_cached || removed >= self.max_cached {
-          self.dirty = true;
-        }
+    if self.samples.len() >= self.capacity
+      && let Some(removed) = self.samples.pop_front()
+    {
+      self.sum_cached -= removed;
+      // Mark dirty if the removed value was the min or max
+      if removed <= self.min_cached || removed >= self.max_cached {
+        self.dirty = true;
       }
     }
 

@@ -160,6 +160,12 @@ impl Materials {
   pub fn len(&self) -> usize {
     self.entries.len()
   }
+
+  /// Returns true if no materials are registered.
+  #[must_use]
+  pub fn is_empty(&self) -> bool {
+    self.entries.is_empty()
+  }
 }
 
 impl Default for Materials {

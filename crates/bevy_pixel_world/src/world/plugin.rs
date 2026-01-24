@@ -520,25 +520,24 @@ fn poll_seeding_tasks(
 
     let seeded_chunk = bevy::tasks::block_on(&mut task.task);
 
-    if let Ok(mut world) = worlds.get_mut(task.world_entity) {
-      // Slot may have been recycled if camera moved while task was in flight.
-      // Both checks are needed: position mapping and slot index must match.
-      if let Some(current_idx) = world.get_slot_index(task.pos) {
-        if current_idx == task.slot_index {
-          let slot = world.slot_mut(task.slot_index);
-          slot.chunk.pixels = seeded_chunk.pixels;
-          slot.chunk.set_all_dirty_rects_full();
-          slot.lifecycle = super::slot::ChunkLifecycle::Active;
-          slot.dirty = true;
+    if let Ok(mut world) = worlds.get_mut(task.world_entity)
+    // Slot may have been recycled if camera moved while task was in flight.
+    // Both checks are needed: position mapping and slot index must match.
+    && let Some(current_idx) = world.get_slot_index(task.pos)
+    && current_idx == task.slot_index
+    {
+      let slot = world.slot_mut(task.slot_index);
+      slot.chunk.pixels = seeded_chunk.pixels;
+      slot.chunk.set_all_dirty_rects_full();
+      slot.lifecycle = super::slot::ChunkLifecycle::Active;
+      slot.dirty = true;
 
-          // If loaded from disk, mark as persisted (no need to save again)
-          if seeded_chunk.from_persistence {
-            slot.persisted = true;
-          }
-
-          debug_shim::emit_chunk(debug_gizmos, task.pos);
-        }
+      // If loaded from disk, mark as persisted (no need to save again)
+      if seeded_chunk.from_persistence {
+        slot.persisted = true;
       }
+
+      debug_shim::emit_chunk(debug_gizmos, task.pos);
     }
 
     false // remove completed task
@@ -725,10 +724,10 @@ fn flush_persistence_queue(
   }
 
   // Flush page table periodically (every N chunks or on demand)
-  if save.dirty {
-    if let Err(e) = save.flush() {
-      eprintln!("Warning: failed to flush save: {}", e);
-    }
+  if save.dirty
+    && let Err(e) = save.flush()
+  {
+    eprintln!("Warning: failed to flush save: {}", e);
   }
 }
 

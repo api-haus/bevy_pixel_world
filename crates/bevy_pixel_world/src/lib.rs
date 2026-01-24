@@ -126,20 +126,12 @@ impl PersistenceConfig {
 ///
 /// To use automatic streaming, spawn a `PixelWorldBundle` and mark a camera
 /// with `StreamingCamera`.
+#[derive(Default)]
 pub struct PixelWorldPlugin {
   /// Default configuration for spawned pixel worlds.
   pub config: PixelWorldConfig,
   /// Persistence configuration.
   pub persistence: PersistenceConfig,
-}
-
-impl Default for PixelWorldPlugin {
-  fn default() -> Self {
-    Self {
-      config: PixelWorldConfig::default(),
-      persistence: PersistenceConfig::default(),
-    }
-  }
 }
 
 impl PixelWorldPlugin {

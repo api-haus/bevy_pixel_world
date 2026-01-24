@@ -76,14 +76,15 @@ pub fn time_series_graph(
   }
 
   // Draw target line if present
-  if let Some(target) = config.target_line {
-    if target >= y_min && target <= y_max {
-      let y = rect.max.y - ((target - y_min) / y_range) * rect.height();
-      painter.line_segment(
-        [Pos2::new(rect.min.x, y), Pos2::new(rect.max.x, y)],
-        Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 200, 100, 100)),
-      );
-    }
+  if let Some(target) = config.target_line
+    && target >= y_min
+    && target <= y_max
+  {
+    let y = rect.max.y - ((target - y_min) / y_range) * rect.height();
+    painter.line_segment(
+      [Pos2::new(rect.min.x, y), Pos2::new(rect.max.x, y)],
+      Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 200, 100, 100)),
+    );
   }
 
   // Draw stats overlay (two lines)

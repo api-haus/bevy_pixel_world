@@ -84,11 +84,17 @@ pub fn marching_squares(
   // This ensures marching squares generates edge segments at tile boundaries,
   // closing contours that would otherwise be left open.
   let mut working_grid = *grid;
-  for i in 0..GRID_SIZE {
-    working_grid[0][i] = false; // bottom row
-    working_grid[GRID_SIZE - 1][i] = false; // top row
-    working_grid[i][0] = false; // left column
-    working_grid[i][GRID_SIZE - 1] = false; // right column
+  // Clear bottom and top rows
+  for cell in &mut working_grid[0] {
+    *cell = false;
+  }
+  for cell in &mut working_grid[GRID_SIZE - 1] {
+    *cell = false;
+  }
+  // Clear left and right columns
+  for row in &mut working_grid {
+    row[0] = false;
+    row[GRID_SIZE - 1] = false;
   }
 
   // Collect all edge segments from the grid

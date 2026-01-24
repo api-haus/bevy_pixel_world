@@ -125,69 +125,50 @@ When in doubt, write concrete code. Extract abstractions later when the shape be
 
 ## Conditional Compilation
 
-### No Duplicate Entrypoints
+Apply `#[cfg]` at the exact point of divergence. No higher, no lower.
 
-Never write the same function, type, or entrypoint twice with different `#[cfg]` attributes. This creates:
-
-- Duplicate code that drifts out of sync
-- Maintenance burden when signatures change
-- Review confusion about which version is "real"
-
-**Wrong:**
+**Wrong** — duplicated functions:
 
 ```rust
 #[cfg(feature = "physics")]
-pub fn setup(mut commands: Commands) {
-    commands.spawn(Camera2d);
-    commands.spawn(PhysicsWorld::default());
-}
+pub fn setup(commands: Commands) { spawn_camera(); spawn_physics(); }
 
 #[cfg(not(feature = "physics"))]
-pub fn setup(mut commands: Commands) {
-    commands.spawn(Camera2d);
-}
+pub fn setup(commands: Commands) { spawn_camera(); }
 ```
 
-**Right:**
+**Wrong** — two code paths hiding inside one function:
 
 ```rust
-pub fn setup(mut commands: Commands) {
-    commands.spawn(Camera2d);
+fn setup(commands: Commands) {
     #[cfg(feature = "physics")]
-    commands.spawn(PhysicsWorld::default());
+    { spawn_camera(); spawn_physics(); }
+
+    #[cfg(not(feature = "physics"))]
+    { spawn_camera(); }
 }
 ```
 
-### Apply `#[cfg]` to Internals
-
-Use conditional compilation on the smallest possible scope:
-
-- Individual struct fields
-- Single statements within a function
-- Specific expressions or blocks
-- Import statements
-
-Keep the outer definition unconditional. Let the internals vary.
-
-**For types:**
+**Right** — cfg at the divergence:
 
 ```rust
-pub struct GameWorld {
-    entities: Vec<Entity>,
+fn setup(commands: Commands) {
+    spawn_camera();
     #[cfg(feature = "physics")]
-    physics: PhysicsEngine,
+    spawn_physics();
 }
 ```
 
-**For functions:**
+This applies to struct fields, function parameters, statements, and expressions.
+
+If a function only exists for one feature, gate both definition and call site:
 
 ```rust
-pub fn init_systems(app: &mut App) {
-    app.add_systems(Update, movement);
+#[cfg(feature = "rendering")]
+fn upload_textures(images: ResMut<Assets<Image>>) { /* ... */ }
 
-    #[cfg(feature = "debug")]
-    app.add_systems(Update, debug_overlay);
-}
+#[cfg(feature = "rendering")]
+app.add_systems(Update, upload_textures);
 ```
 
 ---
@@ -231,4 +212,4 @@ of text. Use:
 4. Defer abstraction until patterns emerge
 5. Visual verification is valid verification
 6. Plans describe what, not how
-7. Apply `#[cfg]` to internals, never duplicate entrypoints
+7. Apply `#[cfg]` at the exact point of divergence

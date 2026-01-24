@@ -41,10 +41,10 @@ pub fn render_debug_gizmos(
     }
 
     // Skip if this gizmo kind is disabled in settings
-    if let Some(ref settings) = settings {
-      if !settings.is_enabled(gizmo.kind) {
-        continue;
-      }
+    if let Some(ref settings) = settings
+      && !settings.is_enabled(gizmo.kind)
+    {
+      continue;
     }
 
     // Calculate alpha fade (full opacity for first half, fade out in second half)

@@ -294,11 +294,11 @@ impl LoadedChunk {
         }
       }
       StorageType::Delta => {
-        let deltas = decode_delta(&self.data).map_err(|e| LoadError::DeltaDecode(e))?;
+        let deltas = decode_delta(&self.data).map_err(LoadError::DeltaDecode)?;
         apply_delta(chunk, &deltas);
       }
       StorageType::Full => {
-        decode_full(&self.data, chunk).map_err(|e| LoadError::FullDecode(e))?;
+        decode_full(&self.data, chunk).map_err(LoadError::FullDecode)?;
       }
     }
     Ok(())

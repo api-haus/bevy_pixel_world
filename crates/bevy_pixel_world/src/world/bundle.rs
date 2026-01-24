@@ -21,7 +21,7 @@ pub struct PixelWorldBundle {
 
 impl PixelWorldBundle {
   /// Creates a new PixelWorld bundle.
-  pub fn new(seeder: impl ChunkSeeder + Send + Sync + 'static, mesh: Handle<Mesh>) -> Self {
+  pub fn new(seeder: impl ChunkSeeder + 'static, mesh: Handle<Mesh>) -> Self {
     Self {
       world: PixelWorld::new(Arc::new(seeder), mesh),
       transform: Transform::default(),
@@ -56,7 +56,7 @@ pub struct SpawnPixelWorld {
 }
 
 impl SpawnPixelWorld {
-  pub fn new(seeder: impl ChunkSeeder + Send + Sync + 'static) -> Self {
+  pub fn new(seeder: impl ChunkSeeder + 'static) -> Self {
     Self {
       seeder: Arc::new(seeder),
       config: None,
