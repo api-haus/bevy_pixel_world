@@ -142,5 +142,6 @@ As the camera moves right:
 
 - [Chunk Pooling](chunk-pooling.md) - Provides chunks for the streaming window
 - [Chunk Seeding](chunk-seeding.md) - Initializes newly assigned chunks
+- [Chunk Persistence](chunk-persistence.md) - Saves modified chunks when recycled
 - [Configuration Reference](configuration.md) - Window and hysteresis parameters
 - [Architecture Overview](README.md)

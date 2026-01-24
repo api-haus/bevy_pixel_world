@@ -48,10 +48,11 @@ flowchart TB
 | **Pixel Format**      | Data structure for individual pixels                             | [pixel-format.md](pixel-format.md)           |
 | **Materials**         | Material definitions, behavior types, tags, and interactions     | [materials.md](materials.md)                 |
 | **Chunk Pool**        | Object pool pattern for zero-allocation chunk management         | [chunk-pooling.md](chunk-pooling.md)         |
+| **Chunk Persistence** | Save file format, random access, compression, dirty tracking     | [chunk-persistence.md](chunk-persistence.md) |
 | **Simulation Engine** | Parallel cellular automata with checkerboard scheduling          | [simulation.md](simulation.md)               |
 | **Particle System**   | Free-form particles for dynamic effects (debris, gases, pouring) | [particles.md](particles.md)                 |
 | **Streaming Window**  | Camera-tracking active region management                         | [streaming-window.md](streaming-window.md)   |
-| **Chunk Seeder**      | Trait for procedural generation and disk persistence             | [chunk-seeding.md](chunk-seeding.md)         |
+| **Chunk Seeder**      | Trait for procedural generation, noise pipelines                 | [chunk-seeding.md](chunk-seeding.md)         |
 | **Rendering**         | Chunk texture upload and material identity textures              | [rendering.md](rendering.md)                 |
 | **Collision**         | Marching squares mesh generation from solid pixels               | [collision.md](collision.md)                 |
 | **Configuration**     | Tunable parameters and constraints                               | [configuration.md](configuration.md)         |
@@ -66,14 +67,17 @@ flowchart LR
         B -->|" ready "| C[Active]
         C -->|" simulate "| C
         C -->|" camera moved "| D[Recycling]
-        D -->|" return "| A
+        D -->|" dirty? "| E[Persistence]
+        E -->|" saved "| A
+        D -->|" clean "| A
     end
 ```
 
 1. **Pool** - Chunks wait in the object pool for assignment
 2. **Seeding** - Chunk seeder plants initial pixel data (from noise or disk)
 3. **Active** - Chunk participates in simulation each tick
-4. **Recycling** - Chunk leaves the active region, optionally persisted to disk
+4. **Recycling** - Chunk leaves the active region
+5. **Persistence** - If dirty, chunk is saved to disk before returning to pool
 
 ## Bevy Integration
 

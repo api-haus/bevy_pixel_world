@@ -119,6 +119,8 @@ pub struct Chunk {
   pos: Option<ChunkPos>,
   /// Per-tile dirty rectangles for simulation scheduling.
   tile_dirty_rects: Box<[TileDirtyRect]>,
+  /// True if this chunk was loaded from persistence (not procedurally generated).
+  pub from_persistence: bool,
 }
 
 impl Chunk {
@@ -128,6 +130,7 @@ impl Chunk {
       pixels: PixelSurface::new(width, height),
       pos: None,
       tile_dirty_rects: vec![TileDirtyRect::empty(); TILE_COUNT].into_boxed_slice(),
+      from_persistence: false,
     }
   }
 

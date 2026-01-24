@@ -1,6 +1,6 @@
 # Chunk Seeding
 
-Trait abstraction for planting initial pixel data into empty chunks.
+Trait abstraction for populating empty chunks with initial pixel data.
 
 ## Overview
 
@@ -76,64 +76,30 @@ generation with WFC, stamps, and hierarchical content.
 
 ## Implementation: Persistence Seeder
 
-Disk-based storage for modified chunks.
+Disk-based storage for modified chunks. Wraps another seeder and checks disk before delegating.
 
 ```mermaid
 flowchart TB
     subgraph PersistenceSeeder["Persistence Seeder"]
         direction TB
-        Pos["World Position"] --> Check{Saved data exists?}
+        Pos["World Position"] --> Check{Saved on disk?}
         Check -->|" yes "| Load["Load from disk"]
-        Check -->|" no "| Fallback["Delegate to noise seeder"]
-        Load --> Decompress["Decompress (LZ4)"]
-        Decompress --> Buffer["Populate buffer"]
+        Check -->|" no "| Fallback["Delegate to inner seeder"]
+        Load --> Buffer["Populate buffer"]
         Fallback --> Buffer
     end
 ```
 
-### Features
+The persistence seeder is a decorator—it wraps a noise seeder (or any other seeder) and intercepts requests to check
+for saved data first.
 
-| Feature        | Description                                         |
-|----------------|-----------------------------------------------------|
-| Async I/O      | Non-blocking disk operations                        |
-| Compression    | LZ4 for fast compress/decompress                    |
-| Dirty tracking | Only save chunks that were modified                 |
-| Fallback chain | Missing data falls through to procedural generation |
+See [Chunk Persistence](chunk-persistence.md) for:
 
-### Storage Format
-
-| Component              | Purpose                            |
-|------------------------|------------------------------------|
-| Chunk index            | Maps world position to file offset |
-| Compressed data        | LZ4-compressed pixel buffer        |
-| Modification timestamp | For cache invalidation             |
-| Checksum               | Data integrity verification        |
-
-### Write Path (Recycling)
-
-```mermaid
-flowchart LR
-    A[Chunk recycled] --> B{Modified?}
-    B -->|" no "| C[Skip save]
-    B -->|" yes "| D[Compress buffer]
-    D --> E[Async write to disk]
-    E --> F[Update index]
-    F --> G[Clear dirty flag]
-```
-
-### Read Path (Seeding)
-
-```mermaid
-flowchart LR
-    A[Seed request] --> B{In index?}
-    B -->|" yes "| C[Async read]
-    B -->|" no "| D[Noise seeder]
-    C --> E{Read success?}
-    E -->|" yes "| F[Decompress]
-    E -->|" no "| D
-    F --> G[Populate buffer]
-    D --> G
-```
+- Save file binary format
+- Page table structure for random access
+- Compression strategy (LZ4, delta encoding)
+- Dirty tracking and write paths
+- Large file optimizations
 
 ## Seeder Composition
 
@@ -142,7 +108,7 @@ Multiple seeders can be chained with fallback behavior:
 ```mermaid
 flowchart TB
     Request["Seed Request"] --> P["Persistence Seeder"]
-    P -->|" found "| Done["Buffer Populated"]
+    P -->|" found on disk "| Done["Buffer Populated"]
     P -->|" not found "| N["Noise Seeder"]
     N --> Done
 ```
@@ -153,117 +119,79 @@ This enables:
 - Unvisited areas generate procedurally
 - Seamless transition between saved and generated content
 
-For more complex generation strategies involving stamps, WFC, and hierarchical content,
-see [PCG World Ideas](pcg-ideas.md).
+## Async Seeding
 
-## Delta Persistence Optimization
-
-Rather than storing entire chunk buffers, store only the difference from the procedurally generated state.
-
-### Concept
+Seeders that perform I/O (disk, network) should be async to avoid blocking the main thread:
 
 ```mermaid
 flowchart LR
-    subgraph Save["Save Path"]
-        direction TB
-        Current["Current Buffer"]
-        Regen["Regenerate Chunk"]
-        Diff["Compute Delta"]
-        Current --> Diff
-        Regen --> Diff
-        Diff --> Compress["Compress Delta"]
+    subgraph Main["Main Thread"]
+        Request["Request seed"]
+        Receive["Receive seeded chunk"]
     end
 
-    subgraph Load["Load Path"]
-        direction TB
-        Gen["Generate Chunk"]
-        LoadDelta["Load Compressed Delta"]
-        Apply["Apply Delta"]
-        Gen --> Apply
-        LoadDelta --> Apply
+    subgraph Background["Background Thread"]
+        Queue["Seed queue"]
+        Generate["Generate/Load"]
     end
+
+    Request -->|"enqueue"| Queue
+    Queue --> Generate
+    Generate -->|"complete"| Receive
 ```
 
-### Benefits
+The streaming window requests chunks ahead of the camera, hiding generation/load latency.
 
-| Aspect             | Full Storage | Delta Storage           |
-|--------------------|--------------|-------------------------|
-| Unmodified chunk   | Full buffer  | Nothing (skip)          |
-| Minor edits        | Full buffer  | Sparse delta            |
-| Heavy modification | Full buffer  | Delta (or fallback)     |
-| Compression ratio  | Moderate     | Excellent (sparse data) |
+### Seeder Threading Model
 
-### Storage Cases
+| Seeder Type | Threading           | Reason                                 |
+|-------------|---------------------|----------------------------------------|
+| Noise       | Background pool     | CPU-bound, benefits from parallelism   |
+| Persistence | Dedicated I/O       | Disk-bound, avoid head contention      |
+| Hybrid      | I/O with CPU assist | Check disk, then parallel generate     |
 
-| Case                 | Storage Strategy                                              |
-|----------------------|---------------------------------------------------------------|
-| **Unmodified**       | No storage needed - regenerate from noise                     |
-| **Modified**         | Compressed delta of changed pixels                            |
-| **Entirely erased**  | Single flag byte indicating empty - no delta needed           |
-| **Heavily modified** | Delta, or fallback to full storage if delta exceeds threshold |
+## Surface Distance Coloring
 
-The "entirely erased" case deserves explicit handling rather than relying on LZ4 to collapse an all-zero delta. A single
-sentinel value is cleaner and faster to detect.
+A technique for assigning materials based on distance to air:
 
-### Delta Format (Conceptual)
+```mermaid
+flowchart LR
+    subgraph DistanceColoring["Surface Distance"]
+        direction TB
+        A["Generate solid/air mask"]
+        B["Compute distance to nearest air"]
+        C["Map distance to material"]
+        A --> B --> C
+    end
 
-[needs clarification: exact binary format and endianness - to be addressed during implementation]
-
-**Planned approach:**
-
-- Idiomatic Rust structure marshalling into a streamable map format
-- Spatial cell lookup for fast loading times
-- Minimal paging information on disk
-- Runtime-built efficiency lookup structure
-
-```
-Delta entry: [position: u32][old_pixel: u32][new_pixel: u32]
-  - position: linear index into chunk buffer
-  - old_pixel: expected value (for validation/merge conflicts)
-  - new_pixel: replacement value
-
-Compressed payload:
-  [entry_count: u32][lz4_compressed_entries...]
-
-Special markers:
-  - entry_count = 0: chunk matches procedural generation
-  - entry_count = 0xFFFFFFFF: chunk entirely empty (void)
+    C --> Soil["0-3 pixels: Soil"]
+    C --> Stone["4+ pixels: Stone"]
 ```
 
-### Trade-offs
+This creates natural-looking terrain with surface soil transitioning to deeper stone.
 
-| Consideration     | Impact                                              |
-|-------------------|-----------------------------------------------------|
-| Load cost         | Must regenerate procedurally before applying delta  |
-| Save cost         | Must regenerate to compute diff                     |
-| CPU vs Storage    | Trades compute for disk space                       |
-| Noise determinism | **Critical** - noise must be perfectly reproducible |
+### Algorithm
 
-The regeneration cost is acceptable because noise generation is fast and chunks load asynchronously. The storage savings
-compound significantly in large worlds with sparse modifications.
+1. Generate noise, threshold to solid/air
+2. For each solid pixel, calculate distance to nearest air (flood fill or jump flood)
+3. Map distance ranges to materials
 
-### When to Use Full Storage
+### Color Variation
 
-Fall back to full buffer storage when:
+Within each material, use the pixel's `ColorIndex` field for variation:
 
-- Delta size exceeds ~50% of full buffer size
-- Chunk uses non-deterministic seeding (e.g., runtime-randomized features)
-- Migration from older save format
+- Sample secondary noise at pixel position
+- Map to palette index (0-255)
+- Material's palette provides actual RGB values
 
-## Dirty Tracking
-
-Efficient persistence requires tracking which chunks have been modified:
-
-| State     | Meaning                       | Save Behavior               |
-|-----------|-------------------------------|-----------------------------|
-| Clean     | Matches procedural generation | Skip save                   |
-| Dirty     | Player modified               | Save on recycle             |
-| Persisted | Saved to disk                 | Save only if modified again |
+This prevents flat, uniform terrain while keeping material identity consistent.
 
 ## Related Documentation
 
+- [Chunk Persistence](chunk-persistence.md) - Save/load system for modified chunks
 - [Chunk Pooling](chunk-pooling.md) - Lifecycle that triggers seeding
 - [Streaming Window](streaming-window.md) - Determines which chunks need seeding
 - [PCG World Ideas](pcg-ideas.md) - Advanced generation with stamps and WFC
+- [Materials](materials.md) - Material definitions for seeded pixels
 - [Configuration Reference](configuration.md) - Seeder parameters
 - [Architecture Overview](README.md)

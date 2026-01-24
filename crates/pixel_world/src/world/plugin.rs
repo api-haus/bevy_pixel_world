@@ -3,13 +3,20 @@
 //! Provides automatic chunk streaming, seeding, and GPU upload.
 
 use bevy::prelude::*;
+#[cfg(not(feature = "headless"))]
 use bevy::tasks::{AsyncComputeTaskPool, Task};
 
 use super::{PixelWorld, SlotIndex};
 use crate::coords::{ChunkPos, WorldPos, WorldRect, CHUNK_SIZE};
 use crate::debug_shim;
 use crate::material::Materials;
+use crate::persistence::{
+  compression::compress_lz4,
+  format::StorageType,
+  PersistenceTasks, WorldSaveResource,
+};
 use crate::primitives::Chunk;
+#[cfg(not(feature = "headless"))]
 use crate::render::{
   create_chunk_quad, create_palette_texture, create_pixel_texture, upload_palette, upload_pixels,
   ChunkMaterial,
@@ -23,10 +30,12 @@ pub struct StreamingCamera;
 /// Resource holding async seeding tasks.
 #[derive(Resource, Default)]
 pub struct SeedingTasks {
+  #[cfg(not(feature = "headless"))]
   tasks: Vec<SeedingTask>,
 }
 
 /// An in-flight seeding task.
+#[cfg(not(feature = "headless"))]
 struct SeedingTask {
   /// Which PixelWorld entity.
   world_entity: Entity,
@@ -39,6 +48,7 @@ struct SeedingTask {
 }
 
 /// Maximum number of concurrent seeding tasks.
+#[cfg(not(feature = "headless"))]
 const MAX_SEEDING_TASKS: usize = 2;
 
 /// Internal plugin for PixelWorld streaming systems.
@@ -51,20 +61,38 @@ impl Plugin for PixelWorldStreamingPlugin {
   fn build(&self, app: &mut App) {
     app
       .init_resource::<SeedingTasks>()
-      .add_systems(Startup, setup_shared_resources)
-      .add_systems(
-        Update,
-        (
-          initialize_palette,
-          tick_pixel_worlds,
-          dispatch_seeding,
-          poll_seeding_tasks,
-          update_simulation_bounds,
-          run_simulation,
-          upload_dirty_chunks,
-        )
-          .chain(),
-      );
+      .init_resource::<PersistenceTasks>()
+      .add_systems(Startup, setup_shared_resources);
+
+    #[cfg(not(feature = "headless"))]
+    app.add_systems(
+      Update,
+      (
+        initialize_palette,
+        tick_pixel_worlds,
+        dispatch_seeding,
+        poll_seeding_tasks,
+        update_simulation_bounds,
+        run_simulation,
+        upload_dirty_chunks,
+        flush_persistence_queue,
+      )
+        .chain(),
+    );
+
+    #[cfg(feature = "headless")]
+    app.add_systems(
+      Update,
+      (
+        tick_pixel_worlds,
+        dispatch_seeding,
+        poll_seeding_tasks,
+        update_simulation_bounds,
+        run_simulation,
+        flush_persistence_queue,
+      )
+        .chain(),
+    );
   }
 }
 
@@ -81,6 +109,7 @@ pub struct SharedPaletteTexture {
 }
 
 /// Sets up shared resources used by all PixelWorlds.
+#[cfg(not(feature = "headless"))]
 fn setup_shared_resources(
   mut commands: Commands,
   mut meshes: ResMut<Assets<Mesh>>,
@@ -97,7 +126,18 @@ fn setup_shared_resources(
   });
 }
 
+/// Sets up shared resources in headless mode (no rendering).
+///
+/// In headless mode, we don't create SharedChunkMesh because:
+/// - MinimalPlugins doesn't provide Assets<Mesh>
+/// - The mesh is only used for rendering, which is disabled
+#[cfg(feature = "headless")]
+fn setup_shared_resources() {
+  // No shared resources needed in headless mode
+}
+
 /// System: Initializes the palette texture when Materials becomes available.
+#[cfg(not(feature = "headless"))]
 #[cfg_attr(feature = "tracy", tracing::instrument(skip_all))]
 fn initialize_palette(
   mut palette: ResMut<SharedPaletteTexture>,
@@ -122,6 +162,7 @@ fn initialize_palette(
 ///
 /// For each PixelWorld, checks if the camera has moved to a new chunk
 /// and updates the streaming window accordingly.
+#[cfg(not(feature = "headless"))]
 #[cfg_attr(feature = "tracy", tracing::instrument(skip_all))]
 fn tick_pixel_worlds(
   mut commands: Commands,
@@ -130,6 +171,7 @@ fn tick_pixel_worlds(
   mut images: ResMut<Assets<Image>>,
   mut materials: ResMut<Assets<ChunkMaterial>>,
   palette: Option<Res<SharedPaletteTexture>>,
+  mut persistence_tasks: ResMut<PersistenceTasks>,
 ) {
   let Ok(camera_transform) = camera_query.single() else {
     return;
@@ -156,6 +198,13 @@ fn tick_pixel_worlds(
       world.update_center(chunk_pos)
     };
 
+    // Queue chunks that need saving
+    for save_data in delta.to_save {
+      // Compress full chunk data for storage
+      let compressed = compress_lz4(&save_data.pixels);
+      persistence_tasks.queue_save(save_data.pos, compressed, StorageType::Full);
+    }
+
     // Despawn entities for chunks leaving the window
     for (_, entity) in delta.to_despawn {
       commands.entity(entity).despawn();
@@ -176,7 +225,59 @@ fn tick_pixel_worlds(
   }
 }
 
+/// System: Updates streaming windows (headless mode - no rendering).
+#[cfg(feature = "headless")]
+#[cfg_attr(feature = "tracy", tracing::instrument(skip_all))]
+fn tick_pixel_worlds(
+  mut commands: Commands,
+  camera_query: Query<&GlobalTransform, With<StreamingCamera>>,
+  mut worlds: Query<(Entity, &mut PixelWorld)>,
+  mut persistence_tasks: ResMut<PersistenceTasks>,
+) {
+  let Ok(camera_transform) = camera_query.single() else {
+    return;
+  };
+
+  // Convert camera position to chunk position
+  // Offset by half chunk so transitions occur at chunk centers
+  let half_chunk = (CHUNK_SIZE / 2) as i64;
+  let cam_pos = camera_transform.translation();
+  let cam_x = cam_pos.x as i64 + half_chunk;
+  let cam_y = cam_pos.y as i64 + half_chunk;
+  let (chunk_pos, _) = WorldPos::new(cam_x, cam_y).to_chunk_and_local();
+
+  for (_world_entity, mut world) in worlds.iter_mut() {
+    // Check if this is initial spawn (no active chunks yet)
+    let needs_initial_spawn = world.active_count() == 0;
+
+    let delta = if needs_initial_spawn {
+      // Force initial spawn by setting center and getting all visible positions
+      world.initialize_at(chunk_pos)
+    } else {
+      world.update_center(chunk_pos)
+    };
+
+    // Queue chunks that need saving
+    for save_data in delta.to_save {
+      // Compress full chunk data for storage
+      let compressed = compress_lz4(&save_data.pixels);
+      persistence_tasks.queue_save(save_data.pos, compressed, StorageType::Full);
+    }
+
+    // Despawn entities for chunks leaving the window
+    for (_, entity) in delta.to_despawn {
+      commands.entity(entity).despawn();
+    }
+
+    // Spawn entities for chunks entering the window (headless - minimal)
+    for (pos, slot_idx) in delta.to_spawn {
+      spawn_chunk_entity_headless(&mut commands, &mut world, pos, slot_idx);
+    }
+  }
+}
+
 /// Spawns a chunk entity with texture and material setup.
+#[cfg(not(feature = "headless"))]
 fn spawn_chunk_entity(
   commands: &mut Commands,
   world: &mut PixelWorld,
@@ -233,7 +334,28 @@ fn spawn_chunk_entity(
   world.register_slot_entity(slot_idx, entity, texture, material);
 }
 
+/// Spawns a minimal chunk entity without rendering components (headless mode).
+#[cfg(feature = "headless")]
+fn spawn_chunk_entity_headless(
+  commands: &mut Commands,
+  world: &mut PixelWorld,
+  pos: ChunkPos,
+  slot_idx: SlotIndex,
+) {
+  // Spawn entity at chunk world position (no rendering components)
+  let world_pos = pos.to_world();
+  let transform = Transform::from_xyz(
+    world_pos.x as f32 + CHUNK_SIZE as f32 / 2.0,
+    world_pos.y as f32 + CHUNK_SIZE as f32 / 2.0,
+    0.0,
+  );
+
+  let entity = commands.spawn(transform).id();
+  world.register_slot_entity_headless(slot_idx, entity);
+}
+
 /// System: Dispatches async seeding tasks for unseeded chunks.
+#[cfg(not(feature = "headless"))]
 #[cfg_attr(feature = "tracy", tracing::instrument(skip_all))]
 fn dispatch_seeding(
   mut seeding_tasks: ResMut<SeedingTasks>,
@@ -301,7 +423,48 @@ fn dispatch_seeding(
   }
 }
 
+/// System: Seeds chunks synchronously in headless mode.
+///
+/// In headless mode, we seed synchronously instead of using async tasks
+/// because the async task pool may not work reliably in test environments.
+#[cfg(feature = "headless")]
+#[cfg_attr(feature = "tracy", tracing::instrument(skip_all))]
+fn dispatch_seeding(mut worlds: Query<&mut PixelWorld>, gizmos: debug_shim::GizmosParam) {
+  let debug_gizmos = gizmos.get();
+
+  for mut world in worlds.iter_mut() {
+    // Collect unseeded chunks
+    let unseeded: Vec<_> = world
+      .active_chunks()
+      .filter(|(_, idx)| !world.slot(*idx).seeded)
+      .collect();
+
+    for (pos, slot_idx) in unseeded {
+      // Seed synchronously
+      let seeder = world.seeder().clone();
+      let mut chunk = Chunk::new(CHUNK_SIZE, CHUNK_SIZE);
+      chunk.set_pos(pos);
+      seeder.seed(pos, &mut chunk);
+
+      // Copy seeded data into slot
+      let slot = world.slot_mut(slot_idx);
+      slot.chunk.pixels = chunk.pixels;
+      slot.chunk.set_all_dirty_rects_full();
+      slot.seeded = true;
+      slot.dirty = true;
+
+      // If loaded from disk, mark as persisted
+      if chunk.from_persistence {
+        slot.persisted = true;
+      }
+
+      debug_shim::emit_chunk(debug_gizmos, pos);
+    }
+  }
+}
+
 /// System: Polls completed seeding tasks and swaps in seeded chunks.
+#[cfg(not(feature = "headless"))]
 #[cfg_attr(feature = "tracy", tracing::instrument(skip_all))]
 fn poll_seeding_tasks(
   mut seeding_tasks: ResMut<SeedingTasks>,
@@ -328,6 +491,11 @@ fn poll_seeding_tasks(
           slot.seeded = true;
           slot.dirty = true;
 
+          // If loaded from disk, mark as persisted (no need to save again)
+          if seeded_chunk.from_persistence {
+            slot.persisted = true;
+          }
+
           debug_shim::emit_chunk(debug_gizmos, task.pos);
         }
       }
@@ -335,6 +503,12 @@ fn poll_seeding_tasks(
 
     false // remove completed task
   });
+}
+
+/// System: No-op in headless mode (seeding is synchronous).
+#[cfg(feature = "headless")]
+fn poll_seeding_tasks() {
+  // In headless mode, seeding happens synchronously in dispatch_seeding
 }
 
 /// System: Updates simulation bounds from camera viewport.
@@ -408,6 +582,7 @@ fn run_simulation(
 /// System: Uploads dirty chunks to GPU.
 ///
 /// Uploads raw pixel data directly. Color lookup happens in the shader.
+#[cfg(not(feature = "headless"))]
 #[cfg_attr(feature = "tracy", tracing::instrument(skip_all))]
 fn upload_dirty_chunks(
   mut worlds: Query<&mut PixelWorld>,
@@ -456,4 +631,82 @@ fn upload_dirty_chunks(
     let elapsed_ms = start.elapsed().as_secs_f32() * 1000.0;
     sim_metrics.upload_time.push(elapsed_ms);
   }
+}
+
+/// System: Flushes pending persistence tasks to disk.
+///
+/// Writes queued chunk saves to the save file. Only runs if a WorldSaveResource
+/// is present.
+#[cfg_attr(feature = "tracy", tracing::instrument(skip_all))]
+fn flush_persistence_queue(
+  mut persistence_tasks: ResMut<PersistenceTasks>,
+  save_resource: Option<ResMut<WorldSaveResource>>,
+) {
+  if persistence_tasks.save_queue.is_empty() {
+    return;
+  }
+
+  let Some(save_resource) = save_resource else {
+    // No save file configured, discard queued saves
+    persistence_tasks.save_queue.clear();
+    return;
+  };
+
+  // Process all queued saves
+  let mut save = match save_resource.save.write() {
+    Ok(s) => s,
+    Err(e) => {
+      eprintln!("Warning: failed to acquire save lock: {}", e);
+      persistence_tasks.save_queue.clear();
+      return;
+    }
+  };
+
+  for task in persistence_tasks.save_queue.drain(..) {
+    // Create page table entry and write data
+    let entry = crate::persistence::format::PageTableEntry::new(
+      task.pos,
+      save.data_write_pos + 4, // Skip size prefix
+      task.data.len() as u32,
+      task.storage_type,
+    );
+
+    // Open file and write
+    if let Err(e) = write_chunk_data(&save.path, save.data_write_pos, &task.data) {
+      eprintln!("Warning: failed to save chunk {:?}: {}", task.pos, e);
+      continue;
+    }
+
+    // Update save state
+    save.index.insert(entry);
+    save.data_write_pos += 4 + task.data.len() as u64;
+    save.header.chunk_count = save.index.len() as u32;
+    save.dirty = true;
+  }
+
+  // Flush page table periodically (every N chunks or on demand)
+  if save.dirty {
+    if let Err(e) = save.flush() {
+      eprintln!("Warning: failed to flush save: {}", e);
+    }
+  }
+}
+
+/// Writes chunk data to the save file at the given offset.
+fn write_chunk_data(
+  path: &std::path::Path,
+  offset: u64,
+  data: &[u8],
+) -> std::io::Result<()> {
+  use std::io::{Seek, SeekFrom, Write};
+
+  let mut file = std::fs::File::options().write(true).open(path)?;
+  file.seek(SeekFrom::Start(offset))?;
+
+  // Write size prefix
+  let size_bytes = (data.len() as u32).to_le_bytes();
+  file.write_all(&size_bytes)?;
+  file.write_all(data)?;
+
+  Ok(())
 }

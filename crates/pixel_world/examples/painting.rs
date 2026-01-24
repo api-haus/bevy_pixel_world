@@ -43,7 +43,8 @@ fn main() {
       }),
       ..default()
     }))
-    .add_plugins(PixelWorldPlugin::default())
+    // Enable persistence - paintings are saved automatically
+    .add_plugins(PixelWorldPlugin::with_persistence("pixel_world_painting"))
     .add_plugins(EguiPlugin::default())
     .insert_resource(BrushState::default())
     .add_systems(Startup, setup)

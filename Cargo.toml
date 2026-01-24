@@ -23,3 +23,8 @@ opt-level = 3
 [profile.release]
 codegen-units = 1
 lto = "thin"
+
+# Profiling profile for cargo-samply (optimized with debug symbols)
+[profile.samply]
+inherits = "release"
+debug = true

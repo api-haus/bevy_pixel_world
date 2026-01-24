@@ -100,5 +100,6 @@ The buffer is never deallocated. Instead:
 
 - [Streaming Window](streaming-window.md) - Decides when chunks enter/leave the pool
 - [Chunk Seeding](chunk-seeding.md) - Fills pooled chunks with data
+- [Chunk Persistence](chunk-persistence.md) - Saves modified chunks during recycling
 - [Configuration Reference](configuration.md) - Pool size and chunk parameters
 - [Architecture Overview](README.md)

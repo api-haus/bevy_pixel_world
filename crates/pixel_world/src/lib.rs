@@ -3,7 +3,10 @@
 //! This crate provides a plugin for simulating infinite cellular automata
 //! worlds.
 
+use std::path::PathBuf;
+
 use bevy::prelude::*;
+#[cfg(not(feature = "headless"))]
 use bevy::sprite_render::Material2dPlugin;
 
 pub mod coords;
@@ -12,6 +15,7 @@ pub mod text;
 #[cfg(feature = "diagnostics")]
 pub mod diagnostics;
 pub mod material;
+pub mod persistence;
 #[cfg(feature = "tracy")]
 mod tracy_init;
 pub(crate) mod scheduling;
@@ -36,15 +40,78 @@ pub use render::{
   create_chunk_quad, create_palette_texture, create_pixel_texture, create_texture, materialize,
   spawn_static_chunk, upload_palette, upload_pixels, upload_surface, ChunkMaterial, Rgba,
 };
-pub use seeding::{ChunkSeeder, MaterialSeeder, NoiseSeeder};
+pub use seeding::{ChunkSeeder, MaterialSeeder, NoiseSeeder, PersistentSeeder};
 pub use simulation::simulate_tick;
 pub use world::plugin::{SharedChunkMesh, SharedPaletteTexture, StreamingCamera};
 pub use world::{PixelWorld, PixelWorldBundle, PixelWorldConfig, SpawnPixelWorld};
+pub use persistence::{WorldSave, WorldSaveResource};
 
 #[cfg(feature = "tracy")]
 pub use tracy_init::init_tracy;
 
 pub use self::primitives::rect::Rect;
+
+/// Configuration for chunk persistence.
+#[derive(Clone, Debug)]
+pub struct PersistenceConfig {
+  /// Whether persistence is enabled.
+  pub enabled: bool,
+  /// Application name for default save directory.
+  /// Used to create `~/.local/share/<app_name>/saves/` on Linux, etc.
+  pub app_name: String,
+  /// Explicit save file path. If None, uses default directory with "world.save".
+  pub save_path: Option<PathBuf>,
+  /// World seed for procedural generation fallback.
+  pub world_seed: u64,
+}
+
+impl Default for PersistenceConfig {
+  fn default() -> Self {
+    Self {
+      enabled: true,
+      app_name: persistence::DEFAULT_APP_NAME.to_string(),
+      save_path: None,
+      world_seed: 42,
+    }
+  }
+}
+
+impl PersistenceConfig {
+  /// Creates a new persistence config with the given app name.
+  pub fn new(app_name: impl Into<String>) -> Self {
+    Self {
+      app_name: app_name.into(),
+      ..Default::default()
+    }
+  }
+
+  /// Disables persistence.
+  pub fn disabled() -> Self {
+    Self {
+      enabled: false,
+      ..Default::default()
+    }
+  }
+
+  /// Sets an explicit save file path.
+  pub fn with_path(mut self, path: impl Into<PathBuf>) -> Self {
+    self.save_path = Some(path.into());
+    self
+  }
+
+  /// Sets the world seed.
+  pub fn with_seed(mut self, seed: u64) -> Self {
+    self.world_seed = seed;
+    self
+  }
+
+  /// Returns the effective save path.
+  pub fn effective_path(&self) -> PathBuf {
+    self.save_path.clone().unwrap_or_else(|| {
+      persistence::default_save_dir(&self.app_name).join("world.save")
+    })
+  }
+}
 
 /// Plugin for infinite cellular automata simulation.
 ///
@@ -53,35 +120,73 @@ pub use self::primitives::rect::Rect;
 /// - Automatic chunk streaming based on camera position
 /// - Async background seeding
 /// - GPU texture upload for dirty chunks
+/// - Automatic chunk persistence (when enabled)
 ///
 /// To use automatic streaming, spawn a `PixelWorldBundle` and mark a camera
 /// with `StreamingCamera`.
 pub struct PixelWorldPlugin {
   /// Default configuration for spawned pixel worlds.
   pub config: PixelWorldConfig,
+  /// Persistence configuration.
+  pub persistence: PersistenceConfig,
 }
 
 impl Default for PixelWorldPlugin {
   fn default() -> Self {
     Self {
       config: PixelWorldConfig::default(),
+      persistence: PersistenceConfig::default(),
     }
+  }
+}
+
+impl PixelWorldPlugin {
+  /// Creates a plugin with persistence enabled for the given app name.
+  pub fn with_persistence(app_name: impl Into<String>) -> Self {
+    Self {
+      config: PixelWorldConfig::default(),
+      persistence: PersistenceConfig::new(app_name),
+    }
+  }
+
+  /// Sets the persistence configuration.
+  pub fn persistence(mut self, config: PersistenceConfig) -> Self {
+    self.persistence = config;
+    self
   }
 }
 
 impl Plugin for PixelWorldPlugin {
   fn build(&self, app: &mut App) {
-    // Embed the chunk shader
-    bevy::asset::embedded_asset!(app, "render/shaders/chunk.wgsl");
-
-    // Register the chunk material
-    app.add_plugins(Material2dPlugin::<ChunkMaterial>::default());
+    // Embed the chunk shader and register material (rendering only)
+    #[cfg(not(feature = "headless"))]
+    {
+      bevy::asset::embedded_asset!(app, "render/shaders/chunk.wgsl");
+      app.add_plugins(Material2dPlugin::<ChunkMaterial>::default());
+    }
 
     // Initialize Materials registry (users can override by inserting before plugin)
     app.init_resource::<Materials>();
 
     // Store default config as resource for SpawnPixelWorld
     app.insert_resource(DefaultPixelWorldConfig(self.config.clone()));
+
+    // Store persistence config
+    app.insert_resource(DefaultPersistenceConfig(self.persistence.clone()));
+
+    // Initialize world save if persistence is enabled
+    if self.persistence.enabled {
+      let save_path = self.persistence.effective_path();
+      match persistence::WorldSave::open_or_create(&save_path, self.persistence.world_seed) {
+        Ok(save) => {
+          info!("Opened world save at {:?}", save_path);
+          app.insert_resource(persistence::WorldSaveResource::new(save));
+        }
+        Err(e) => {
+          error!("Failed to open world save at {:?}: {}. Persistence disabled.", save_path, e);
+        }
+      }
+    }
 
     // Add world streaming systems
     app.add_plugins(world::plugin::PixelWorldStreamingPlugin);
@@ -95,3 +200,7 @@ impl Plugin for PixelWorldPlugin {
 /// Resource holding the default configuration for spawned pixel worlds.
 #[derive(Resource)]
 pub struct DefaultPixelWorldConfig(pub PixelWorldConfig);
+
+/// Resource holding the default persistence configuration.
+#[derive(Resource)]
+pub struct DefaultPersistenceConfig(pub PersistenceConfig);

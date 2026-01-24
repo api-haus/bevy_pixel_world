@@ -1,130 +1,107 @@
-# POC Implementation Plan: Pixel Sandbox
+# Implementation Plan: Pixel Sandbox
 
 A demo-first approach delivering visual results at each phase.
-
-## POC Goal
-
-**Deliverable:** Infinite tiled sandbox game where the player:
-
-- Navigates with WASD (no character, free camera)
-- Paints materials with cursor (brush size control)
-- Sees comprehensive debug overlays (chunk boundaries, dirty rects, tile phases)
-- Explores procedurally generated terrain (FastNoise2: air/solid + caves + material layers)
 
 See [methodology.md](methodology.md) for testing and API design principles.
 See [plan_history.md](plan_history.md) for archived phases.
 
 ---
 
+## POC Status: Complete ✓
+
+**Delivered:** Infinite tiled sandbox with:
+
+- WASD camera navigation with speed boost
+- Cursor painting with material selection and brush size control
+- Procedurally generated terrain (FastNoise2 noise seeding)
+- Cellular automata simulation (powder falls, liquid flows)
+- Debug overlays (chunk boundaries, dirty rects, tile phases)
+
+**Demo:** `cargo run -p pixel_world --example painting`
+
+---
+
 ## Phase Roadmap
 
-| Phase | Focus | Deliverable |
-|-------|-------|-------------|
+| Phase | Focus | Status |
+|-------|-------|--------|
 | 0 | Foundational Primitives | *Completed - see plan_history.md* |
 | 1 | Rolling Chunk Grid | *Completed - see plan_history.md* |
-| 2 | Material System | Distance-to-surface coloring (soil→stone) |
-| 3 | Interaction | Cursor painting materials |
-| 4 | Simulation | Cellular automata with 2x2 checkerboard scheduling |
+| 2 | Material System | *Completed - see plan_history.md* |
+| 3 | Interaction | *Completed - see plan_history.md* |
+| 4 | Simulation | *Completed - see plan_history.md* |
+| 5 | Game Integration | In progress |
 
 ---
 
-## Phase 2: Material System
+## Phase 5: Game Integration
 
-Build on supersimplex noise with distance-based material coloring.
+Integrate `pixel_world` simulation with the `game` crate player mechanics.
 
-**Concept:** Color pixels by distance to nearest air (surface)
-- Surface pixels → Soil (brown)
-- Deeper pixels → Stone (gray)
-- Air → transparent/sky blue
+**Goal:** Player interacts with pixel world - collision, digging, building.
 
-**New files:**
-- `src/material.rs` - Material enum with color ranges
-- `src/pixel.rs` - Pixel struct (material + color variant)
+### 5.1 Pixel-Player Collision
 
-**New types in `pixel_world/src/coords.rs`:**
+Player physics body collides with solid/powder pixels.
 
-```rust
-/// Material registry index (0-255).
-/// See `docs/arhitecture/materials.md` for the material system.
-pub struct MaterialId(pub u8);
+- Generate collision mesh from pixel data (marching squares)
+- Update collision mesh when chunks change
+- Player stands on terrain, blocked by walls
 
-/// Palette color index (0-255).
-/// See `docs/arhitecture/pixel-format.md` for color field usage.
-pub struct ColorIndex(pub u8);
-```
+### 5.2 Player Tools
 
-**Algorithm:**
-1. Generate noise, threshold to solid/air
-2. For each solid pixel, calculate distance to nearest air
-3. Map distance to material: 0-N = Soil, N+ = Stone
+- Dig tool: remove pixels in radius around cursor
+- Place tool: add selected material pixels
+- Tool switching UI
+
+### 5.3 World Interaction
+
+- Player spawn position based on terrain
+- Camera follows player (with optional free-cam toggle)
 
 ### Verification
 
 ```bash
-cargo run -p pixel_world --example rolling_grid
+cargo run -p game
 ```
 
-- [ ] Surface shows brown soil gradient
-- [ ] Interior shows gray stone
-- [ ] Smooth color transitions at material boundaries
+- [ ] Player stands on solid terrain
+- [ ] Player blocked by walls
+- [ ] Dig tool removes pixels
+- [ ] Place tool adds pixels
+- [ ] Simulation continues around player
 
 ---
 
-## Phase 3: Interaction
+## Future Phases (Post-Integration)
 
-- Cursor world position from screen coords
-- Left click: paint selected material
-- Right click: erase (set to Air)
-- Circular brush with size control
-- Simple egui panel for material selection
+### Phase 6: Procedural Generation
 
-### Verification
+- Biomes with different material distributions
+- Cave systems and underground features
+- Surface features (trees, rocks, structures)
 
-```bash
-cargo run -p pixel_world --example painting
-```
-
-- [ ] Cursor position tracks correctly at all zoom levels
-- [ ] Painting materials updates chunk visuals immediately
-- [ ] Brush size slider works
-- [ ] Material selector shows available materials
-
----
-
-## Phase 4: Simulation
-
-Cellular automata with 2x2 checkerboard parallel scheduling:
-
-```
-A B A B
-C D C D
-A B A B
-C D C D
-```
-
-- Process all A tiles, then B, then C, then D
-- Adjacent tiles never same phase (safe parallelism)
-- Behaviors: Powder falls, Liquid flows, Solid stays
-- Dirty flag optimization
-
-### Verification
-
-```bash
-cargo run -p pixel_world --example simulation
-```
-
-- [ ] Sand falls and piles at angle of repose
-- [ ] Water flows sideways and pools
-- [ ] No visible tile seams during simulation
-- [ ] Debug overlay shows tile phases
-
----
-
-## Deferred to Post-POC
+### Phase 7: Material Interactions
 
 - Heat system and heat propagation
-- Particle physics (emission, deposition)
-- Material interactions (corrosion, ignition, transformation)
-- Decay system
-- Persistence/saving
-- Parallel simulation (rayon)
+- Material reactions (corrosion, ignition, transformation)
+- Decay and erosion
+
+### Phase 8: Particles
+
+- Particle emission from materials
+- Particle deposition back to pixels
+- Visual effects (sparks, smoke, debris)
+
+### Phase 9: Persistence
+
+- Chunk serialization/deserialization
+- Modified chunk tracking
+- Save/load world state
+
+---
+
+## Deferred Indefinitely
+
+- Gas physics (rising, dispersal) - complexity vs benefit unclear
+- Parallel rayon simulation - current performance adequate
