@@ -12,10 +12,16 @@ use crate::pixel::PixelSurface;
 /// Number of tiles per chunk (16x16 = 256).
 const TILE_COUNT: usize = (TILES_PER_CHUNK * TILES_PER_CHUNK) as usize;
 
-/// Tile-local bounding box: (min_x, min_y, max_x, max_y).
+/// Tile-local bounding box.
 ///
 /// Coordinates are in the range 0..TILE_SIZE-1.
-pub type TileBounds = (u8, u8, u8, u8);
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TileBounds {
+  pub min_x: u8,
+  pub min_y: u8,
+  pub max_x: u8,
+  pub max_y: u8,
+}
 
 /// Dirty rectangle within a tile for simulation scheduling.
 ///
@@ -44,7 +50,12 @@ impl TileDirtyRect {
 
   /// Creates a dirty rect covering the entire tile.
   pub const fn full() -> Self {
-    let full_bounds = Some((0, 0, (TILE_SIZE - 1) as u8, (TILE_SIZE - 1) as u8));
+    let full_bounds = Some(TileBounds {
+      min_x: 0,
+      min_y: 0,
+      max_x: (TILE_SIZE - 1) as u8,
+      max_y: (TILE_SIZE - 1) as u8,
+    });
     Self {
       next: full_bounds,
       current: full_bounds,
@@ -57,13 +68,18 @@ impl TileDirtyRect {
   pub fn expand(&mut self, x: u8, y: u8) {
     match &mut self.next {
       None => {
-        self.next = Some((x, y, x, y));
+        self.next = Some(TileBounds {
+          min_x: x,
+          min_y: y,
+          max_x: x,
+          max_y: y,
+        });
       }
-      Some((min_x, min_y, max_x, max_y)) => {
-        *min_x = (*min_x).min(x);
-        *min_y = (*min_y).min(y);
-        *max_x = (*max_x).max(x);
-        *max_y = (*max_y).max(y);
+      Some(bounds) => {
+        bounds.min_x = bounds.min_x.min(x);
+        bounds.min_y = bounds.min_y.min(y);
+        bounds.max_x = bounds.max_x.max(x);
+        bounds.max_y = bounds.max_y.max(y);
       }
     }
     self.cooldown = 2;
@@ -76,14 +92,12 @@ impl TileDirtyRect {
     self.current = match (self.current, self.next) {
       (None, next) => next,
       (current, None) => current,
-      (Some((c_min_x, c_min_y, c_max_x, c_max_y)), Some((n_min_x, n_min_y, n_max_x, n_max_y))) => {
-        Some((
-          c_min_x.min(n_min_x),
-          c_min_y.min(n_min_y),
-          c_max_x.max(n_max_x),
-          c_max_y.max(n_max_y),
-        ))
-      }
+      (Some(c), Some(n)) => Some(TileBounds {
+        min_x: c.min_x.min(n.min_x),
+        min_y: c.min_y.min(n.min_y),
+        max_x: c.max_x.max(n.max_x),
+        max_y: c.max_y.max(n.max_y),
+      }),
     };
 
     // Decrement cooldown if no new activity

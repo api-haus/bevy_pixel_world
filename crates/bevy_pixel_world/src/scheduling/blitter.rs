@@ -53,7 +53,7 @@ use crate::coords::{
 };
 use crate::debug_shim::{self, DebugGizmos};
 use crate::pixel::Pixel;
-use crate::primitives::Chunk;
+use crate::primitives::{Chunk, TileBounds};
 use crate::simulation::hash::hash21uu64;
 
 /// Unified drawing surface spanning multiple chunks.
@@ -350,87 +350,109 @@ fn simulate_tile<F>(
   }
 }
 
-/// Compute the union of dirty bounds from all original tiles that overlap
-/// a jittered tile.
+/// Returns tile offsets that overlap with a jittered tile.
 ///
 /// A jittered tile at (tx, ty) with jitter (jx, jy) overlaps:
 /// - Original tile (tx, ty) - always
 /// - Original tile (tx+1, ty) - if jx > 0
 /// - Original tile (tx, ty+1) - if jy > 0
 /// - Original tile (tx+1, ty+1) - if jx > 0 and jy > 0
+fn overlapping_tile_offsets(jitter: (i64, i64)) -> impl Iterator<Item = (i64, i64)> {
+  let (jx, jy) = jitter;
+  std::iter::once((0i64, 0i64))
+    .chain((jx > 0).then_some((1, 0)))
+    .chain((jy > 0).then_some((0, 1)))
+    .chain((jx > 0 && jy > 0).then_some((1, 1)))
+}
+
+/// Transforms world bounds to local tile coordinates.
+///
+/// Returns None if the transformed bounds are empty (no overlap with tile).
+fn transform_bounds_to_local(
+  world_bounds: (i64, i64, i64, i64),
+  jittered_base: (i64, i64),
+) -> Option<(u8, u8, u8, u8)> {
+  let (world_min_x, world_min_y, world_max_x, world_max_y) = world_bounds;
+  let (base_x, base_y) = jittered_base;
+
+  // Convert to jittered tile local coords and clamp to [0, 31]
+  let local_min_x = (world_min_x - base_x).clamp(0, 31) as u8;
+  let local_min_y = (world_min_y - base_y).clamp(0, 31) as u8;
+  let local_max_x = (world_max_x - base_x).clamp(0, 31) as u8;
+  let local_max_y = (world_max_y - base_y).clamp(0, 31) as u8;
+
+  // Empty rect check (can happen when dirty region doesn't overlap jittered tile)
+  if local_min_x > local_max_x || local_min_y > local_max_y {
+    return None;
+  }
+
+  Some((local_min_x, local_min_y, local_max_x, local_max_y))
+}
+
+/// Unions two optional bounds, returning the combined bounding box.
+fn union_bounds(a: Option<(u8, u8, u8, u8)>, b: (u8, u8, u8, u8)) -> (u8, u8, u8, u8) {
+  match a {
+    None => b,
+    Some((a_min_x, a_min_y, a_max_x, a_max_y)) => (
+      a_min_x.min(b.0),
+      a_min_y.min(b.1),
+      a_max_x.max(b.2),
+      a_max_y.max(b.3),
+    ),
+  }
+}
+
+/// Compute the union of dirty bounds from all original tiles that overlap
+/// a jittered tile.
 fn union_dirty_bounds(
   chunks: &Canvas<'_>,
   tile: TilePos,
   jitter: (i64, i64),
 ) -> Option<(u8, u8, u8, u8)> {
   let tile_size = TILE_SIZE as i64;
-  let (jitter_x, jitter_y) = jitter;
 
   // Jittered tile base position
-  let jittered_base_x = tile.x * tile_size + jitter_x;
-  let jittered_base_y = tile.y * tile_size + jitter_y;
+  let jittered_base = (tile.x * tile_size + jitter.0, tile.y * tile_size + jitter.1);
 
-  let mut union_bounds: Option<(u8, u8, u8, u8)> = None;
+  let mut result: Option<(u8, u8, u8, u8)> = None;
 
-  // Check up to 4 overlapping original tiles
-  for dy in 0i64..=1 {
-    if dy == 1 && jitter_y == 0 {
+  for (dx, dy) in overlapping_tile_offsets(jitter) {
+    let orig_base_x = (tile.x + dx) * tile_size;
+    let orig_base_y = (tile.y + dy) * tile_size;
+
+    // Get chunk and tile-local coordinates for this original tile
+    let (chunk_pos, local_pos) = WorldPos::new(orig_base_x, orig_base_y).to_chunk_and_local();
+    let tx = (local_pos.x as u32) / TILE_SIZE;
+    let ty = (local_pos.y as u32) / TILE_SIZE;
+
+    let Some(chunk) = chunks.get(chunk_pos) else {
       continue;
-    }
-    for dx in 0i64..=1 {
-      if dx == 1 && jitter_x == 0 {
-        continue;
-      }
+    };
 
-      let orig_tile = TilePos::new(tile.x + dx, tile.y + dy);
-      let orig_base_x = orig_tile.x * tile_size;
-      let orig_base_y = orig_tile.y * tile_size;
+    let Some(TileBounds {
+      min_x,
+      min_y,
+      max_x,
+      max_y,
+    }) = chunk.tile_dirty_rect(tx, ty).bounds()
+    else {
+      continue;
+    };
 
-      // Get chunk and tile-local coordinates for this original tile
-      let (chunk_pos, local_pos) = WorldPos::new(orig_base_x, orig_base_y).to_chunk_and_local();
-      let tx = (local_pos.x as u32) / TILE_SIZE;
-      let ty = (local_pos.y as u32) / TILE_SIZE;
+    // Convert original tile dirty bounds to world coords
+    let world_bounds = (
+      orig_base_x + min_x as i64,
+      orig_base_y + min_y as i64,
+      orig_base_x + max_x as i64,
+      orig_base_y + max_y as i64,
+    );
 
-      let Some(chunk) = chunks.get(chunk_pos) else {
-        continue;
-      };
-
-      let Some((min_x, min_y, max_x, max_y)) = chunk.tile_dirty_rect(tx, ty).bounds() else {
-        continue;
-      };
-
-      // Convert original tile dirty bounds to world coords
-      let world_min_x = orig_base_x + min_x as i64;
-      let world_min_y = orig_base_y + min_y as i64;
-      let world_max_x = orig_base_x + max_x as i64;
-      let world_max_y = orig_base_y + max_y as i64;
-
-      // Convert to jittered tile local coords and clamp to [0, 31]
-      let local_min_x = (world_min_x - jittered_base_x).clamp(0, 31) as u8;
-      let local_min_y = (world_min_y - jittered_base_y).clamp(0, 31) as u8;
-      let local_max_x = (world_max_x - jittered_base_x).clamp(0, 31) as u8;
-      let local_max_y = (world_max_y - jittered_base_y).clamp(0, 31) as u8;
-
-      // Skip if this results in empty rect (can happen when dirty region
-      // doesn't actually overlap jittered tile)
-      if local_min_x > local_max_x || local_min_y > local_max_y {
-        continue;
-      }
-
-      // Union with accumulated bounds
-      union_bounds = Some(match union_bounds {
-        None => (local_min_x, local_min_y, local_max_x, local_max_y),
-        Some((u_min_x, u_min_y, u_max_x, u_max_y)) => (
-          u_min_x.min(local_min_x),
-          u_min_y.min(local_min_y),
-          u_max_x.max(local_max_x),
-          u_max_y.max(local_max_y),
-        ),
-      });
+    if let Some(local_bounds) = transform_bounds_to_local(world_bounds, jittered_base) {
+      result = Some(union_bounds(result, local_bounds));
     }
   }
 
-  union_bounds
+  result
 }
 
 /// Returns an iterator over adjacent tiles that need collision updates.
@@ -576,37 +598,87 @@ fn swap_pixels(chunks: &Canvas<'_>, a: WorldPos, b: WorldPos) -> Option<[ChunkPo
   }
 }
 
+/// Clips a tile to a rect, returning the valid pixel range within the tile.
+///
+/// Returns `(min_dx, max_dx, min_dy, max_dy)` as the inclusive range of pixels
+/// to iterate, or None if the tile doesn't overlap the rect.
+fn clip_tile_to_rect(tile: TilePos, rect: &WorldRect) -> Option<(u32, u32, u32, u32)> {
+  let tile_size = TILE_SIZE as i64;
+  let tile_x_start = tile.x * tile_size;
+  let tile_y_start = tile.y * tile_size;
+  let tile_x_end = tile_x_start + tile_size;
+  let tile_y_end = tile_y_start + tile_size;
+
+  let rect_x_end = rect.x + rect.width as i64;
+  let rect_y_end = rect.y + rect.height as i64;
+
+  // Check for no overlap
+  if tile_x_end <= rect.x || tile_x_start >= rect_x_end {
+    return None;
+  }
+  if tile_y_end <= rect.y || tile_y_start >= rect_y_end {
+    return None;
+  }
+
+  // Compute clipped range relative to tile origin
+  let min_dx = (rect.x - tile_x_start).max(0) as u32;
+  let max_dx = ((rect_x_end - tile_x_start).min(tile_size) - 1) as u32;
+  let min_dy = (rect.y - tile_y_start).max(0) as u32;
+  let max_dy = ((rect_y_end - tile_y_start).min(tile_size) - 1) as u32;
+
+  Some((min_dx, max_dx, min_dy, max_dy))
+}
+
+/// Writes a pixel to the canvas, handling collision marking and dirty tracking.
+///
+/// Returns true if the pixel was written.
+fn write_pixel(
+  chunks: &Canvas<'_>,
+  world_pos: WorldPos,
+  new_pixel: Pixel,
+  local_dirty: &mut HashSet<ChunkPos>,
+  dirty_pixels: &mut Vec<(ChunkPos, LocalPos)>,
+) -> bool {
+  let (chunk_pos, local_pos) = world_pos.to_chunk_and_local();
+
+  let Some(chunk) = chunks.get_mut(chunk_pos) else {
+    return false;
+  };
+
+  let lx = local_pos.x as u32;
+  let ly = local_pos.y as u32;
+  let old_pixel = chunk.pixels[(lx, ly)];
+
+  mark_collision_dirty_if_changed(chunk, lx, ly, &old_pixel, &new_pixel);
+  chunk.pixels[(lx, ly)] = new_pixel;
+  local_dirty.insert(chunk_pos);
+  dirty_pixels.push((chunk_pos, local_pos));
+
+  true
+}
+
 /// Process a single tile, writing pixels that pass the filter.
 fn process_tile<F>(chunks: &Canvas<'_>, tile: TilePos, ctx: &TileContext<'_>, f: &F)
 where
   F: Fn(WorldFragment) -> Option<Pixel> + Sync,
 {
+  let Some((min_dx, max_dx, min_dy, max_dy)) = clip_tile_to_rect(tile, ctx.rect) else {
+    return;
+  };
+
   let tile_size = TILE_SIZE as i64;
   let tile_x_start = tile.x * tile_size;
   let tile_y_start = tile.y * tile_size;
 
-  // Track which chunks we've dirtied in this tile
   let mut local_dirty: HashSet<ChunkPos> = HashSet::new();
-  // Track pixels to mark dirty for simulation
   let mut dirty_pixels: Vec<(ChunkPos, LocalPos)> = Vec::new();
 
-  for dy in 0..TILE_SIZE {
+  for dy in min_dy..=max_dy {
     let world_y = tile_y_start + dy as i64;
 
-    // Skip if outside rect bounds
-    if world_y < ctx.rect.y || world_y >= ctx.rect.y + ctx.rect.height as i64 {
-      continue;
-    }
-
-    for dx in 0..TILE_SIZE {
+    for dx in min_dx..=max_dx {
       let world_x = tile_x_start + dx as i64;
 
-      // Skip if outside rect bounds
-      if world_x < ctx.rect.x || world_x >= ctx.rect.x + ctx.rect.width as i64 {
-        continue;
-      }
-
-      // Compute normalized coordinates
       let u = (world_x - ctx.rect.x) as f32 * ctx.w_recip;
       let v = (world_y - ctx.rect.y) as f32 * ctx.h_recip;
 
@@ -617,38 +689,25 @@ where
         v,
       };
 
-      // Call the shader function
       if let Some(new_pixel) = f(frag) {
-        // Convert world pos to chunk + local
-        let (chunk_pos, local_pos) = WorldPos::new(world_x, world_y).to_chunk_and_local();
-
-        // Try to write the pixel
-        if let Some(chunk) = chunks.get_mut(chunk_pos) {
-          let lx = local_pos.x as u32;
-          let ly = local_pos.y as u32;
-          let old_pixel = chunk.pixels[(lx, ly)];
-
-          // Mark collision dirty if collision state changes
-          mark_collision_dirty_if_changed(chunk, lx, ly, &old_pixel, &new_pixel);
-
-          chunk.pixels[(lx, ly)] = new_pixel;
-          local_dirty.insert(chunk_pos);
-          dirty_pixels.push((chunk_pos, local_pos));
-        }
+        write_pixel(
+          chunks,
+          WorldPos::new(world_x, world_y),
+          new_pixel,
+          &mut local_dirty,
+          &mut dirty_pixels,
+        );
       }
     }
   }
 
-  // Mark painted pixels dirty for simulation
   mark_pixels_dirty(chunks, &dirty_pixels);
 
-  // Merge local dirty set into global
   if !local_dirty.is_empty() {
     if let Ok(mut global_dirty) = ctx.dirty_chunks.lock() {
       global_dirty.extend(local_dirty);
     }
 
-    // Track this tile as dirty
     if let Some(tiles_mutex) = ctx.dirty_tiles
       && let Ok(mut tiles) = tiles_mutex.lock()
     {

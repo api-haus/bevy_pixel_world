@@ -182,9 +182,9 @@ fn spawn_tile_colliders(
       .iter()
       .flat_map(|poly| {
         poly.indices.iter().filter_map(|tri| {
-          let a = poly.vertices[tri.0] - tile_origin;
-          let b = poly.vertices[tri.1] - tile_origin;
-          let c = poly.vertices[tri.2] - tile_origin;
+          let a = poly.vertices[tri.a] - tile_origin;
+          let b = poly.vertices[tri.b] - tile_origin;
+          let c = poly.vertices[tri.c] - tile_origin;
           Some((Vec2::ZERO, 0.0, Collider::triangle(a, b, c)))
         })
       })

@@ -80,6 +80,71 @@ fn extract_tile_grid(
   grid
 }
 
+/// Handles an empty collision tile by caching a default mesh.
+fn handle_empty_collision_tile(
+  cache: &mut CollisionCache,
+  world: &mut PixelWorld,
+  tile: TilePos,
+  tiles_per_chunk: i64,
+) {
+  cache.insert_direct(tile, TileCollisionMesh::default());
+  clear_tile_dirty(world, tile, tiles_per_chunk);
+}
+
+/// Spawns an async task to generate collision mesh for a tile.
+fn spawn_collision_mesh_task(
+  tasks: &mut CollisionTasks,
+  cache: &mut CollisionCache,
+  world: &mut PixelWorld,
+  grid: [[bool; GRID_SIZE]; GRID_SIZE],
+  tile: TilePos,
+  tolerance: f32,
+  tiles_per_chunk: i64,
+) {
+  let task_pool = AsyncComputeTaskPool::get();
+  let tile_origin = Vec2::new(
+    (tile.x * TILE_SIZE as i64) as f32,
+    (tile.y * TILE_SIZE as i64) as f32,
+  );
+
+  let task = task_pool.spawn(async move {
+    #[cfg(feature = "diagnostics")]
+    let start = std::time::Instant::now();
+
+    let contours = marching_squares(&grid, tile_origin);
+    let simplified = simplify_polylines(contours, tolerance);
+
+    let triangles: Vec<PolygonMesh> = simplified
+      .iter()
+      .filter(|p| p.len() >= 3)
+      .map(|polygon| {
+        let indices = triangulate_polygon(polygon);
+        PolygonMesh {
+          vertices: polygon.clone(),
+          indices,
+        }
+      })
+      .collect();
+
+    TileCollisionMesh {
+      polylines: simplified,
+      triangles,
+      generation: 0, // Set by cache on insert
+      #[cfg(feature = "diagnostics")]
+      generation_time_ms: start.elapsed().as_secs_f32() * 1000.0,
+    }
+  });
+
+  cache.mark_in_flight(tile);
+  tasks.spawn(tile, task);
+  clear_tile_dirty(world, tile, tiles_per_chunk);
+}
+
+/// Returns true if the grid contains any collision pixels.
+fn grid_has_collision(grid: &[[bool; GRID_SIZE]; GRID_SIZE]) -> bool {
+  grid.iter().any(|row| row.iter().any(|&v| v))
+}
+
 /// System: Dispatches async collision generation tasks for dirty tiles near
 /// query points.
 pub fn dispatch_collision_tasks(
@@ -94,74 +159,33 @@ pub fn dispatch_collision_tasks(
     return;
   };
 
-  let task_pool = AsyncComputeTaskPool::get();
   let tiles_per_chunk = TILES_PER_CHUNK as i64;
 
   for mut world in worlds.iter_mut() {
     for transform in query_points.iter() {
-      let world_pos = transform.translation.truncate();
-      let center = world_to_tile(world_pos);
+      let center = world_to_tile(transform.translation.truncate());
 
       for tile in tiles_in_radius(center, config.proximity_radius) {
-        // Skip if already cached or in-flight
         if cache.contains(tile) || cache.is_in_flight(tile) {
           continue;
         }
 
-        // Extract pixel data for this tile
         let grid = extract_tile_grid(&world, tile, &materials);
 
-        // Check if there's any collision data at all
-        let has_collision = grid.iter().any(|row| row.iter().any(|&v| v));
-        if !has_collision {
-          // No collision pixels - cache an empty mesh directly (synchronous)
-          cache.insert_direct(tile, TileCollisionMesh::default());
-
-          // Clear dirty flag for this tile
-          clear_tile_dirty(&mut world, tile, tiles_per_chunk);
+        if !grid_has_collision(&grid) {
+          handle_empty_collision_tile(&mut cache, &mut world, tile, tiles_per_chunk);
           continue;
         }
 
-        let tolerance = config.simplification_tolerance;
-        let tile_origin = Vec2::new(
-          (tile.x * TILE_SIZE as i64) as f32,
-          (tile.y * TILE_SIZE as i64) as f32,
+        spawn_collision_mesh_task(
+          &mut tasks,
+          &mut cache,
+          &mut world,
+          grid,
+          tile,
+          config.simplification_tolerance,
+          tiles_per_chunk,
         );
-
-        // Spawn async task
-        let task = task_pool.spawn(async move {
-          #[cfg(feature = "diagnostics")]
-          let start = std::time::Instant::now();
-
-          let contours = marching_squares(&grid, tile_origin);
-          let simplified = simplify_polylines(contours, tolerance);
-
-          let triangles: Vec<PolygonMesh> = simplified
-            .iter()
-            .filter(|p| p.len() >= 3)
-            .map(|polygon| {
-              let indices = triangulate_polygon(polygon);
-              PolygonMesh {
-                vertices: polygon.clone(),
-                indices,
-              }
-            })
-            .collect();
-
-          TileCollisionMesh {
-            polylines: simplified,
-            triangles,
-            generation: 0, // Set by cache on insert
-            #[cfg(feature = "diagnostics")]
-            generation_time_ms: start.elapsed().as_secs_f32() * 1000.0,
-          }
-        });
-
-        cache.mark_in_flight(tile);
-        tasks.spawn(tile, task);
-
-        // Clear dirty flag for this tile
-        clear_tile_dirty(&mut world, tile, tiles_per_chunk);
       }
     }
   }
@@ -239,9 +263,9 @@ pub fn draw_collision_gizmos(
         // Draw triangle edges only
         for polygon_mesh in &mesh.triangles {
           for triangle in &polygon_mesh.indices {
-            let a = polygon_mesh.vertices[triangle.0];
-            let b = polygon_mesh.vertices[triangle.1];
-            let c = polygon_mesh.vertices[triangle.2];
+            let a = polygon_mesh.vertices[triangle.a];
+            let b = polygon_mesh.vertices[triangle.b];
+            let c = polygon_mesh.vertices[triangle.c];
 
             gizmos.line_2d(a, b, edge_color);
             gizmos.line_2d(b, c, edge_color);
@@ -467,9 +491,9 @@ pub fn draw_sample_mesh_gizmos(sample_mesh: Res<SampleMesh>, mut gizmos: Gizmos)
 
   // Draw triangle edges only
   for triangle in &mesh.indices {
-    let a = mesh.vertices[triangle.0];
-    let b = mesh.vertices[triangle.1];
-    let c = mesh.vertices[triangle.2];
+    let a = mesh.vertices[triangle.a];
+    let b = mesh.vertices[triangle.b];
+    let c = mesh.vertices[triangle.c];
 
     gizmos.line_2d(a, b, edge_color);
     gizmos.line_2d(b, c, edge_color);

@@ -8,7 +8,11 @@ use spade::{ConstrainedDelaunayTriangulation, Point2, Triangulation};
 
 /// A triangle represented by three vertex indices.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Triangle(pub usize, pub usize, pub usize);
+pub struct Triangle {
+  pub a: usize,
+  pub b: usize,
+  pub c: usize,
+}
 
 /// Triangulates a simple polygon using Constrained Delaunay Triangulation.
 ///
@@ -25,7 +29,7 @@ pub fn triangulate_polygon(polygon: &[Vec2]) -> Vec<Triangle> {
     return vec![];
   }
   if polygon.len() == 3 {
-    return vec![Triangle(0, 1, 2)];
+    return vec![Triangle { a: 0, b: 1, c: 2 }];
   }
 
   // Check for self-intersecting edges (CDT panics on these)
@@ -84,7 +88,11 @@ pub fn triangulate_polygon(polygon: &[Vec2]) -> Vec<Triangle> {
       let idx2 = handle_to_index.get(&verts[2].fix());
 
       if let (Some(&i0), Some(&i1), Some(&i2)) = (idx0, idx1, idx2) {
-        triangles.push(Triangle(i0, i1, i2));
+        triangles.push(Triangle {
+          a: i0,
+          b: i1,
+          c: i2,
+        });
       }
     }
   }

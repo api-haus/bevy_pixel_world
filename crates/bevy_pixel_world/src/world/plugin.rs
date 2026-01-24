@@ -543,6 +543,45 @@ fn run_simulation(
   }
 }
 
+/// Collects dirty, seeded slots that need GPU upload.
+#[cfg(not(feature = "headless"))]
+fn collect_dirty_slots(
+  world: &PixelWorld,
+) -> Vec<(SlotIndex, Handle<Image>, Handle<ChunkMaterial>)> {
+  world
+    .active_chunks()
+    .filter_map(|(_, idx)| {
+      let slot = world.slot(idx);
+      if !slot.dirty || !slot.is_seeded() {
+        return None;
+      }
+      Some((idx, slot.texture.clone()?, slot.material.clone()?))
+    })
+    .collect()
+}
+
+/// Uploads a slot's pixel data to its GPU texture.
+#[cfg(not(feature = "headless"))]
+fn upload_slot_to_gpu(
+  world: &mut PixelWorld,
+  idx: SlotIndex,
+  texture_handle: &Handle<Image>,
+  material_handle: &Handle<ChunkMaterial>,
+  images: &mut Assets<Image>,
+  materials: &mut Assets<ChunkMaterial>,
+) {
+  let slot = world.slot_mut(idx);
+
+  if let Some(image) = images.get_mut(texture_handle) {
+    upload_pixels(&slot.chunk.pixels, image);
+  }
+
+  // Touch material to force bind group refresh (Bevy workaround)
+  let _ = materials.get_mut(material_handle);
+
+  slot.dirty = false;
+}
+
 /// System: Uploads dirty chunks to GPU.
 ///
 /// Uploads raw pixel data directly. Color lookup happens in the shader.
@@ -558,35 +597,17 @@ fn upload_dirty_chunks(
   let start = std::time::Instant::now();
 
   for mut world in worlds.iter_mut() {
-    // Collect dirty+seeded slots
-    let dirty_slots: Vec<_> = world
-      .active_chunks()
-      .filter_map(|(pos, idx)| {
-        let slot = world.slot(idx);
-        if slot.dirty && slot.is_seeded() {
-          Some((pos, idx, slot.texture.clone()?, slot.material.clone()?))
-        } else {
-          None
-        }
-      })
-      .collect();
+    let dirty_slots = collect_dirty_slots(&world);
 
-    for (pos, idx, texture_handle, material_handle) in dirty_slots {
-      let slot = world.slot_mut(idx);
-
-      // Upload raw pixel data to GPU (shader does palette lookup)
-      if let Some(image) = images.get_mut(&texture_handle) {
-        upload_pixels(&slot.chunk.pixels, image);
-      }
-
-      // Touch material to force bind group refresh (Bevy workaround)
-      let _ = materials.get_mut(&material_handle);
-
-      // Mark clean
-      slot.dirty = false;
-
-      // Re-fetch slot to update (avoid borrow issues)
-      let _ = pos; // suppress unused warning
+    for (idx, texture_handle, material_handle) in dirty_slots {
+      upload_slot_to_gpu(
+        &mut world,
+        idx,
+        &texture_handle,
+        &material_handle,
+        &mut images,
+        &mut materials,
+      );
     }
   }
 
