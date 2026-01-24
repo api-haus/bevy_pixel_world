@@ -3,46 +3,47 @@
 //! Provides a unified interface for emitting debug gizmos that compiles to
 //! no-ops when the `visual-debug` feature is disabled.
 
+#[cfg(not(feature = "visual-debug"))]
+use std::marker::PhantomData;
+
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 
 use crate::coords::{ChunkPos, TilePos, WorldRect};
 
-/// Debug gizmos parameter type.
+/// Debug gizmos handle for passing to emit functions.
 ///
-/// When `visual-debug` is enabled, this is `Option<&PendingDebugGizmos>`.
-/// When disabled, this is `()` and all emit functions are no-ops.
-#[cfg(feature = "visual-debug")]
-pub type DebugGizmos<'a> = Option<&'a crate::visual_debug::PendingDebugGizmos>;
-
-#[cfg(not(feature = "visual-debug"))]
-pub type DebugGizmos<'a> = ();
+/// When `visual-debug` is enabled, wraps `Option<&PendingDebugGizmos>`.
+/// When disabled, this is a ZST and all emit functions are no-ops.
+#[derive(Clone, Copy)]
+pub struct DebugGizmos<'a>(
+  #[cfg(feature = "visual-debug")] Option<&'a crate::visual_debug::PendingDebugGizmos>,
+  #[cfg(not(feature = "visual-debug"))] PhantomData<&'a ()>,
+);
 
 /// System parameter for extracting debug gizmos resource.
 ///
 /// Provides a unified interface for systems that need gizmos.
-/// When `visual-debug` is enabled, wraps the resource; otherwise a no-op.
-#[cfg(feature = "visual-debug")]
+/// When `visual-debug` is enabled, wraps the resource; otherwise a ZST.
 #[derive(SystemParam)]
-pub struct GizmosParam<'w>(Res<'w, crate::visual_debug::PendingDebugGizmos>);
+pub struct GizmosParam<'w> {
+  #[cfg(feature = "visual-debug")]
+  inner: Res<'w, crate::visual_debug::PendingDebugGizmos>,
+  #[cfg(not(feature = "visual-debug"))]
+  _marker: PhantomData<&'w ()>,
+}
 
-#[cfg(feature = "visual-debug")]
 impl GizmosParam<'_> {
   /// Extracts gizmos as `DebugGizmos` for passing to functions.
   pub fn get(&self) -> DebugGizmos<'_> {
-    Some(&*self.0)
-  }
-}
-
-#[cfg(not(feature = "visual-debug"))]
-#[derive(SystemParam)]
-pub struct GizmosParam;
-
-#[cfg(not(feature = "visual-debug"))]
-impl GizmosParam {
-  /// Returns unit type when visual-debug is disabled.
-  pub fn get(&self) -> DebugGizmos<'static> {
-    ()
+    #[cfg(feature = "visual-debug")]
+    {
+      DebugGizmos(Some(&*self.inner))
+    }
+    #[cfg(not(feature = "visual-debug"))]
+    {
+      DebugGizmos(PhantomData)
+    }
   }
 }
 
@@ -50,7 +51,7 @@ impl GizmosParam {
 #[inline]
 pub fn emit_chunk(gizmos: DebugGizmos<'_>, pos: ChunkPos) {
   #[cfg(feature = "visual-debug")]
-  if let Some(g) = gizmos {
+  if let Some(g) = gizmos.0 {
     g.push(crate::visual_debug::PendingGizmo::chunk(pos));
   }
   let _ = (gizmos, pos);
@@ -60,7 +61,7 @@ pub fn emit_chunk(gizmos: DebugGizmos<'_>, pos: ChunkPos) {
 #[inline]
 pub fn emit_tile(gizmos: DebugGizmos<'_>, pos: TilePos) {
   #[cfg(feature = "visual-debug")]
-  if let Some(g) = gizmos {
+  if let Some(g) = gizmos.0 {
     g.push(crate::visual_debug::PendingGizmo::tile(pos));
   }
   let _ = (gizmos, pos);
@@ -70,7 +71,7 @@ pub fn emit_tile(gizmos: DebugGizmos<'_>, pos: TilePos) {
 #[inline]
 pub fn emit_blit_rect(gizmos: DebugGizmos<'_>, rect: WorldRect) {
   #[cfg(feature = "visual-debug")]
-  if let Some(g) = gizmos {
+  if let Some(g) = gizmos.0 {
     g.push(crate::visual_debug::PendingGizmo::blit_rect(rect));
   }
   let _ = (gizmos, rect);
@@ -80,7 +81,7 @@ pub fn emit_blit_rect(gizmos: DebugGizmos<'_>, rect: WorldRect) {
 #[inline]
 pub fn emit_dirty_rect(gizmos: DebugGizmos<'_>, tile: TilePos, bounds: (u8, u8, u8, u8)) {
   #[cfg(feature = "visual-debug")]
-  if let Some(g) = gizmos {
+  if let Some(g) = gizmos.0 {
     g.push(crate::visual_debug::PendingGizmo::dirty_rect(tile, bounds));
   }
   let _ = (gizmos, tile, bounds);
