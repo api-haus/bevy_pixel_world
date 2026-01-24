@@ -286,13 +286,7 @@ impl PixelWorld {
     let mut to_spawn = Vec::new();
     for pos in positions {
       if let Some(idx) = self.acquire_slot() {
-        let slot = &mut self.slots[idx.0];
-        slot.lifecycle = slot::ChunkLifecycle::Seeding;
-        slot.pos = Some(pos);
-        slot.chunk.set_pos(pos);
-        slot.dirty = false;
-        slot.modified = false;
-        slot.persisted = false;
+        self.slots[idx.0].initialize(pos);
         self.active.insert(pos, idx);
         to_spawn.push((pos, idx));
       } else {
@@ -356,13 +350,7 @@ impl PixelWorld {
     let mut to_spawn = Vec::new();
     for pos in new_set.difference(&old_set) {
       if let Some(idx) = self.acquire_slot() {
-        let slot = &mut self.slots[idx.0];
-        slot.lifecycle = slot::ChunkLifecycle::Seeding;
-        slot.pos = Some(*pos);
-        slot.chunk.set_pos(*pos);
-        slot.dirty = false;
-        slot.modified = false;
-        slot.persisted = false;
+        self.slots[idx.0].initialize(*pos);
         self.active.insert(*pos, idx);
         to_spawn.push((*pos, idx));
       } else {

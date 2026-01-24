@@ -84,6 +84,18 @@ impl ChunkSlot {
     self.lifecycle == ChunkLifecycle::Active
   }
 
+  /// Initializes the slot for a new chunk position.
+  ///
+  /// Transitions from InPool to Seeding state and prepares for seeding.
+  pub(crate) fn initialize(&mut self, pos: crate::coords::ChunkPos) {
+    self.lifecycle = ChunkLifecycle::Seeding;
+    self.pos = Some(pos);
+    self.chunk.set_pos(pos);
+    self.dirty = false;
+    self.modified = false;
+    self.persisted = false;
+  }
+
   /// Resets the slot to pool state.
   ///
   /// Returns true if the chunk needs saving (was dirty but not persisted).

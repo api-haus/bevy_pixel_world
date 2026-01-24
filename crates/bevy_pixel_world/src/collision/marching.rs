@@ -129,51 +129,123 @@ pub fn marching_squares(grid: &[[bool; GRID_SIZE]; GRID_SIZE], tile_origin: Vec2
     connect_segments(segments)
 }
 
-/// Connects edge segments into closed polylines.
+/// Snaps a point to integer grid for robust endpoint matching.
 ///
-/// Uses integer grid-based matching for robust endpoint comparison.
 /// Marching squares produces coordinates at exact 0.5 intervals, so we
-/// snap to a grid (multiply by 2, round to int) for exact HashMap lookups.
-fn connect_segments(segments: Vec<(Vec2, Vec2)>) -> Vec<Vec<Vec2>> {
-    if segments.is_empty() {
-        return vec![];
-    }
+/// multiply by 2 and round to get exact integer keys for HashMap lookups.
+fn grid_key(v: Vec2) -> (i32, i32) {
+    ((v.x * 2.0).round() as i32, (v.y * 2.0).round() as i32)
+}
 
-    // Snap to integer grid (marching squares uses 0.5 intervals)
-    fn grid_key(v: Vec2) -> (i32, i32) {
-        ((v.x * 2.0).round() as i32, (v.y * 2.0).round() as i32)
-    }
-
-    // Build adjacency map: grid_key -> [(segment_idx, is_start_endpoint)]
+/// Builds an adjacency map from edge segments.
+///
+/// Maps grid keys to list of (segment_index, is_start_endpoint) pairs,
+/// allowing efficient lookup of connected segments during traversal.
+fn build_adjacency_map(segments: &[(Vec2, Vec2)]) -> HashMap<(i32, i32), Vec<(usize, bool)>> {
     let mut adjacency: HashMap<(i32, i32), Vec<(usize, bool)>> = HashMap::new();
     for (i, (start, end)) in segments.iter().enumerate() {
         adjacency.entry(grid_key(*start)).or_default().push((i, true));
         adjacency.entry(grid_key(*end)).or_default().push((i, false));
     }
+    adjacency
+}
 
-    // Debug: count how many endpoints share each key
-    let mut solo_endpoints = 0;
-    let mut solo_keys: Vec<(i32, i32)> = Vec::new();
-    for (key, entries) in adjacency.iter() {
-        if entries.len() == 1 {
-            solo_endpoints += 1;
-            if solo_keys.len() < 5 {
-                solo_keys.push(*key);
-            }
-        }
-    }
-    if solo_endpoints > 0 {
-        // Show first few solo keys
-        let solo_coords: Vec<_> = solo_keys.iter()
+/// Logs endpoints that have only one connected segment (debug builds only).
+#[cfg(debug_assertions)]
+fn log_solo_endpoints(adjacency: &HashMap<(i32, i32), Vec<(usize, bool)>>, segment_count: usize) {
+    let solo_keys: Vec<_> = adjacency
+        .iter()
+        .filter(|(_, entries)| entries.len() == 1)
+        .take(5)
+        .map(|(key, _)| *key)
+        .collect();
+
+    if !solo_keys.is_empty() {
+        let solo_coords: Vec<_> = solo_keys
+            .iter()
             .map(|(x, y)| format!("({}, {})", *x as f32 / 2.0, *y as f32 / 2.0))
             .collect();
         bevy::log::debug!(
             "connect_segments: {} segments, {} solo endpoints at {:?}",
-            segments.len(),
-            solo_endpoints,
+            segment_count,
+            adjacency.values().filter(|e| e.len() == 1).count(),
             solo_coords
         );
     }
+}
+
+/// Traverses connected segments starting from a given index, building a polyline.
+///
+/// Returns the vertices of the polyline in traversal order, with duplicate
+/// closing vertex removed if the polyline forms a closed loop.
+fn traverse_polyline(
+    segments: &[(Vec2, Vec2)],
+    adjacency: &HashMap<(i32, i32), Vec<(usize, bool)>>,
+    used: &mut [bool],
+    start_idx: usize,
+) -> Vec<Vec2> {
+    let mut polyline = Vec::new();
+    let mut current_idx = start_idx;
+    let mut entering_from_start = true;
+
+    loop {
+        used[current_idx] = true;
+        let (seg_start, seg_end) = segments[current_idx];
+
+        // Add vertices in traversal order
+        if entering_from_start {
+            if polyline.is_empty() {
+                polyline.push(seg_start);
+            }
+            polyline.push(seg_end);
+        } else {
+            if polyline.is_empty() {
+                polyline.push(seg_end);
+            }
+            polyline.push(seg_start);
+        }
+
+        // Find next segment sharing current endpoint
+        let current_end = *polyline.last().unwrap();
+        let key = grid_key(current_end);
+
+        let next = adjacency
+            .get(&key)
+            .and_then(|neighbors| neighbors.iter().find(|(idx, _)| !used[*idx]).copied());
+
+        match next {
+            Some((idx, is_start)) => {
+                current_idx = idx;
+                entering_from_start = is_start;
+            }
+            None => break,
+        }
+    }
+
+    // Remove duplicate closing vertex if the polyline forms a closed loop
+    if polyline.len() >= 4 {
+        let first = polyline.first().unwrap();
+        let last = polyline.last().unwrap();
+        if (first.x - last.x).abs() < 0.001 && (first.y - last.y).abs() < 0.001 {
+            polyline.pop();
+        }
+    }
+
+    polyline
+}
+
+/// Connects edge segments into closed polylines.
+///
+/// Uses integer grid-based matching for robust endpoint comparison.
+fn connect_segments(segments: Vec<(Vec2, Vec2)>) -> Vec<Vec<Vec2>> {
+    if segments.is_empty() {
+        return vec![];
+    }
+
+    let adjacency = build_adjacency_map(&segments);
+
+    #[cfg(debug_assertions)]
+    log_solo_endpoints(&adjacency, segments.len());
 
     let mut used = vec![false; segments.len()];
     let mut polylines = Vec::new();
@@ -183,53 +255,7 @@ fn connect_segments(segments: Vec<(Vec2, Vec2)>) -> Vec<Vec<Vec2>> {
             continue;
         }
 
-        let mut polyline = Vec::new();
-        let mut current_idx = start_idx;
-        let mut entering_from_start = true;
-
-        loop {
-            used[current_idx] = true;
-            let (seg_start, seg_end) = segments[current_idx];
-
-            // Add vertices in traversal order
-            if entering_from_start {
-                if polyline.is_empty() {
-                    polyline.push(seg_start);
-                }
-                polyline.push(seg_end);
-            } else {
-                if polyline.is_empty() {
-                    polyline.push(seg_end);
-                }
-                polyline.push(seg_start);
-            }
-
-            // Find next segment sharing current endpoint
-            let current_end = *polyline.last().unwrap();
-            let key = grid_key(current_end);
-
-            let next = adjacency.get(&key).and_then(|neighbors| {
-                neighbors.iter().find(|(idx, _)| !used[*idx]).copied()
-            });
-
-            match next {
-                Some((idx, is_start)) => {
-                    current_idx = idx;
-                    entering_from_start = is_start;
-                }
-                None => break,
-            }
-        }
-
-        // Remove duplicate closing vertex if the polyline forms a closed loop
-        if polyline.len() >= 4 {
-            let first = polyline.first().unwrap();
-            let last = polyline.last().unwrap();
-            if (first.x - last.x).abs() < 0.001 && (first.y - last.y).abs() < 0.001 {
-                polyline.pop();
-            }
-        }
-
+        let polyline = traverse_polyline(&segments, &adjacency, &mut used, start_idx);
         if polyline.len() >= 3 {
             polylines.push(polyline);
         }

@@ -198,6 +198,18 @@ pub fn parallel_simulate<F>(
   }
 }
 
+/// Neighbor positions that should be woken when a pixel moves.
+///
+/// When a pixel vacates a position, neighbors above and to the sides
+/// may now be able to fall into the empty space.
+const WAKE_NEIGHBORS: [(i64, i64); 5] = [
+  (0, 1),   // above
+  (-1, 1),  // above-left
+  (1, 1),   // above-right
+  (-1, 0),  // left
+  (1, 0),   // right
+];
+
 /// Process a single tile for simulation, iterating bottom-to-top.
 ///
 /// Only processes pixels within the tile's dirty rect bounds.
@@ -282,13 +294,8 @@ fn simulate_tile<F>(
 
         // Wake up neighbors of the vacated position so they can fall
         // into the now-empty space
-        for neighbor in [
-          WorldPos::new(pos.x, pos.y + 1),     // above
-          WorldPos::new(pos.x - 1, pos.y + 1), // above-left
-          WorldPos::new(pos.x + 1, pos.y + 1), // above-right
-          WorldPos::new(pos.x - 1, pos.y),     // left
-          WorldPos::new(pos.x + 1, pos.y),     // right
-        ] {
+        for (dx, dy) in WAKE_NEIGHBORS {
+          let neighbor = WorldPos::new(pos.x + dx, pos.y + dy);
           let (n_chunk, n_local) = neighbor.to_chunk_and_local();
           dirty_pixels.push((n_chunk, n_local));
         }
@@ -395,6 +402,67 @@ fn union_dirty_bounds(
   union_bounds
 }
 
+/// Returns an iterator over adjacent tiles that need collision updates.
+///
+/// When a pixel at the boundary of a tile changes, adjacent tiles also need
+/// their collision meshes updated (since they sample a 1px border).
+///
+/// Yields (tile_x, tile_y) pairs for valid adjacent tiles within chunk bounds.
+fn adjacent_tiles_at_boundary(
+  px: u32,
+  py: u32,
+  tx: u32,
+  ty: u32,
+) -> impl Iterator<Item = (u32, u32)> {
+  let max_local = TILE_SIZE - 1;
+  let tiles_per_chunk = crate::coords::TILES_PER_CHUNK;
+
+  let at_left = px == 0;
+  let at_right = px == max_local;
+  let at_bottom = py == 0;
+  let at_top = py == max_local;
+
+  // Compute offsets for adjacent tiles based on boundary position
+  // Each offset is (dx, dy) where -1/0/+1 indicates direction
+  let offsets: [(i32, i32); 8] = [
+    (-1, 0),  // left
+    (1, 0),   // right
+    (0, -1),  // bottom
+    (0, 1),   // top
+    (-1, -1), // bottom-left
+    (1, -1),  // bottom-right
+    (-1, 1),  // top-left
+    (1, 1),   // top-right
+  ];
+
+  let conditions: [bool; 8] = [
+    at_left,
+    at_right,
+    at_bottom,
+    at_top,
+    at_left && at_bottom,
+    at_right && at_bottom,
+    at_left && at_top,
+    at_right && at_top,
+  ];
+
+  offsets
+    .into_iter()
+    .zip(conditions)
+    .filter_map(move |((dx, dy), should_check)| {
+      if !should_check {
+        return None;
+      }
+      let nx = tx as i32 + dx;
+      let ny = ty as i32 + dy;
+      if nx >= 0 && (nx as u32) < tiles_per_chunk && ny >= 0 && (ny as u32) < tiles_per_chunk {
+        Some((nx as u32, ny as u32))
+      } else {
+        None
+      }
+    })
+}
+
 /// Marks a pixel position as collision dirty if the material changed.
 ///
 /// We mark dirty if either pixel is non-void, since collision depends on
@@ -412,45 +480,11 @@ fn mark_collision_dirty_if_changed(chunk: &mut Chunk, local_x: u32, local_y: u32
     let ty = local_y / TILE_SIZE;
     chunk.mark_tile_collision_dirty(tx, ty);
 
-    // Also mark adjacent tiles if pixel is at tile boundary
-    // (collision meshes include 1px border from neighbors)
+    // Mark adjacent tiles if pixel is at tile boundary
     let px = local_x % TILE_SIZE;
     let py = local_y % TILE_SIZE;
-    let max_local = TILE_SIZE - 1;
-    let tiles_per_chunk = crate::coords::TILES_PER_CHUNK;
-
-    // Left boundary: also mark tile to the left
-    if px == 0 && tx > 0 {
-      chunk.mark_tile_collision_dirty(tx - 1, ty);
-    }
-
-    // Right boundary: also mark tile to the right
-    if px == max_local && tx + 1 < tiles_per_chunk {
-      chunk.mark_tile_collision_dirty(tx + 1, ty);
-    }
-
-    // Bottom boundary: also mark tile below
-    if py == 0 && ty > 0 {
-      chunk.mark_tile_collision_dirty(tx, ty - 1);
-    }
-
-    // Top boundary: also mark tile above
-    if py == max_local && ty + 1 < tiles_per_chunk {
-      chunk.mark_tile_collision_dirty(tx, ty + 1);
-    }
-
-    // Corner cases: mark diagonal tiles if at corner
-    if px == 0 && py == 0 && tx > 0 && ty > 0 {
-      chunk.mark_tile_collision_dirty(tx - 1, ty - 1);
-    }
-    if px == max_local && py == 0 && tx + 1 < tiles_per_chunk && ty > 0 {
-      chunk.mark_tile_collision_dirty(tx + 1, ty - 1);
-    }
-    if px == 0 && py == max_local && tx > 0 && ty + 1 < tiles_per_chunk {
-      chunk.mark_tile_collision_dirty(tx - 1, ty + 1);
-    }
-    if px == max_local && py == max_local && tx + 1 < tiles_per_chunk && ty + 1 < tiles_per_chunk {
-      chunk.mark_tile_collision_dirty(tx + 1, ty + 1);
+    for (adj_tx, adj_ty) in adjacent_tiles_at_boundary(px, py, tx, ty) {
+      chunk.mark_tile_collision_dirty(adj_tx, adj_ty);
     }
   }
 }
