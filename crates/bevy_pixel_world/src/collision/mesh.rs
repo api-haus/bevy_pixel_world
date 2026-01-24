@@ -16,6 +16,10 @@ pub struct TileCollisionMesh {
     /// Triangulated mesh for physics collision detection.
     /// Each entry contains the polygon vertices and triangle indices.
     pub triangles: Vec<PolygonMesh>,
+
+    /// Time spent generating this mesh (only with diagnostics feature).
+    #[cfg(feature = "diagnostics")]
+    pub generation_time_ms: f32,
 }
 
 /// A triangulated polygon mesh.

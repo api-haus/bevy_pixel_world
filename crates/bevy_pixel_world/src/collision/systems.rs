@@ -134,10 +134,12 @@ pub fn dispatch_collision_tasks(
 
                 // Spawn async task
                 let task = task_pool.spawn(async move {
+                    #[cfg(feature = "diagnostics")]
+                    let start = std::time::Instant::now();
+
                     let contours = marching_squares(&grid, tile_origin);
                     let simplified = simplify_polylines(contours, tolerance);
 
-                    // Triangulate each polygon
                     let triangles: Vec<PolygonMesh> = simplified
                         .iter()
                         .filter(|p| p.len() >= 3)
@@ -153,6 +155,8 @@ pub fn dispatch_collision_tasks(
                     TileCollisionMesh {
                         polylines: simplified,
                         triangles,
+                        #[cfg(feature = "diagnostics")]
+                        generation_time_ms: start.elapsed().as_secs_f32() * 1000.0,
                     }
                 });
 
@@ -187,8 +191,8 @@ pub fn poll_collision_tasks(
     mut cache: ResMut<CollisionCache>,
     mut metrics: ResMut<crate::diagnostics::CollisionMetrics>,
 ) {
-    let start = std::time::Instant::now();
     let mut completed = 0u32;
+    let mut total_generation_time_ms = 0.0f32;
 
     tasks.tasks.retain_mut(|task| {
         if !task.task.is_finished() {
@@ -196,14 +200,14 @@ pub fn poll_collision_tasks(
         }
 
         let mesh = bevy::tasks::block_on(&mut task.task);
+        total_generation_time_ms += mesh.generation_time_ms;
         cache.insert(task.tile, mesh);
         completed += 1;
 
         false // Remove completed task
     });
 
-    let elapsed_ms = start.elapsed().as_secs_f32() * 1000.0;
-    metrics.poll_time.push(elapsed_ms);
+    metrics.generation_time.push(total_generation_time_ms);
     metrics.tasks_completed.push(completed as f32);
 }
 

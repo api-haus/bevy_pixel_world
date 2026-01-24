@@ -79,17 +79,10 @@ gantt
     dateFormat X
     axisFormat %s
 
-    section Phase A
-        Process all A tiles (parallel): a1, 0, 1
-
-    section Phase B
-        Process all B tiles (parallel): b1, 1, 2
-
-    section Phase C
-        Process all C tiles (parallel): c1, 2, 3
-
-    section Phase D
-        Process all D tiles (parallel): d1, 3, 4
+    Phase A (parallel): a1, 0, 1
+    Phase B (parallel): b1, 1, 2
+    Phase C (parallel): c1, 2, 3
+    Phase D (parallel): d1, 3, 4
 ```
 
 Each phase:
