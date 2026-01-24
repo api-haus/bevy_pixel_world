@@ -1,5 +1,7 @@
 mod config;
 mod core;
+#[cfg(feature = "editor")]
+mod editor;
 mod input;
 mod player;
 #[cfg(feature = "visual_debug")]
@@ -39,8 +41,15 @@ fn main() {
     .add_plugins(config::ConfigPlugin)
     .add_plugins(core::CorePlugin)
     .add_plugins(input::InputPlugin)
-    .add_plugins(world::WorldPlugin)
     .add_plugins(player::PlayerPlugin);
+
+  // Editor mode: use yoleck level files
+  #[cfg(feature = "editor")]
+  app.add_plugins(editor::EditorPlugin);
+
+  // Non-editor mode: use procedural world generation
+  #[cfg(not(feature = "editor"))]
+  app.add_plugins(world::WorldPlugin);
 
   #[cfg(feature = "visual_debug")]
   app.add_plugins(visual_debug::VisualDebugPlugin);

@@ -1,4 +1,4 @@
-mod camera;
+pub(crate) mod camera;
 mod physics;
 
 use bevy::prelude::*;

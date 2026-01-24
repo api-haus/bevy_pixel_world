@@ -9,18 +9,51 @@ use crate::config::ConfigLoaded;
 use crate::core::CameraTarget;
 use crate::input::{PlayerInput, player_input_actions};
 
+/// Spawn player at a fixed position (non-editor mode)
+#[cfg(not(feature = "editor"))]
 pub fn spawn_player(mut commands: Commands, config: Res<ConfigLoaded>) {
+  let player = &config.player;
+  let spawn_pos = Vec3::new(player.spawn_x, player.spawn_y, 0.0);
+  spawn_player_entity(&mut commands, &config, spawn_pos);
+}
+
+/// Spawn player at the spawn point location (editor mode)
+#[cfg(feature = "editor")]
+pub fn spawn_player_at_spawn_point(
+  mut commands: Commands,
+  config: Res<ConfigLoaded>,
+  spawn_points: Query<&Transform, With<crate::editor::PlayerSpawnPoint>>,
+) {
+  let spawn_pos = spawn_points
+    .iter()
+    .next()
+    .map(|t| t.translation)
+    .unwrap_or(Vec3::new(0.0, 100.0, 0.0));
+
+  info!("Spawning player at {:?}", spawn_pos);
+  spawn_player_entity(&mut commands, &config, spawn_pos);
+}
+
+/// Despawn the player entity (editor mode)
+#[cfg(feature = "editor")]
+pub fn despawn_player(mut commands: Commands, players: Query<Entity, With<Player>>) {
+  for entity in &players {
+    info!("Despawning player");
+    commands.entity(entity).despawn();
+  }
+}
+
+fn spawn_player_entity(commands: &mut Commands, config: &ConfigLoaded, spawn_pos: Vec3) {
   let player = &config.player;
 
   // Rapier capsule_y uses half_height (cylinder part) and radius
-  // Avian2d capsule(radius, length) where length is the cylinder part
   let half_height = player.collider_length / 2.0;
 
   // Physics entity (parent) - authoritative position
   commands
     .spawn((
       Player,
-      Transform::from_xyz(player.spawn_x, player.spawn_y, 0.0),
+      Transform::from_translation(spawn_pos),
       Visibility::default(),
       RigidBody::KinematicPositionBased,
       Collider::capsule_y(half_height, player.collider_radius),
@@ -39,8 +72,8 @@ pub fn spawn_player(mut commands: Commands, config: Res<ConfigLoaded>) {
       },
       LocomotionState::Airborne, // Start airborne so gravity applies until landing
       // Positions for interpolation - initialize with spawn position
-      PreviousPosition(Vec3::new(player.spawn_x, player.spawn_y, 0.0)),
-      CurrentPosition(Vec3::new(player.spawn_x, player.spawn_y, 0.0)),
+      PreviousPosition(spawn_pos),
+      CurrentPosition(spawn_pos),
       PlayerInput,
       player_input_actions(),
     ))

@@ -14,8 +14,24 @@ pub struct PlayerPlugin;
 
 impl Plugin for PlayerPlugin {
   fn build(&self, app: &mut App) {
+    // Editor mode: spawn/despawn player based on GameMode
+    #[cfg(feature = "editor")]
+    {
+      use crate::editor::GameMode;
+      app
+        .add_systems(
+          OnEnter(GameMode::Playing),
+          spawn::spawn_player_at_spawn_point,
+        )
+        .add_systems(OnExit(GameMode::Playing), spawn::despawn_player);
+    }
+
+    // Non-editor mode: spawn player on startup
+    #[cfg(not(feature = "editor"))]
+    app.add_systems(Startup, spawn::spawn_player);
+
+    // Player systems - always registered, but only run when player exists
     app
-      .add_systems(Startup, spawn::spawn_player)
       // FixedFirst: Shift positions for interpolation
       .add_systems(FixedFirst, interpolation::shift_positions)
       .add_systems(
