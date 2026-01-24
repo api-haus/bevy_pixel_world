@@ -365,26 +365,21 @@ impl PixelWorld {
     }
   }
 
-  /// Registers entity and render resources for a slot.
-  #[cfg(not(feature = "headless"))]
+  /// Registers entity and optional render resources for a slot.
   pub(crate) fn register_slot_entity(
     &mut self,
     index: SlotIndex,
     entity: Entity,
-    texture: Handle<Image>,
-    material: Handle<ChunkMaterial>,
+    #[cfg(not(feature = "headless"))] texture: Handle<Image>,
+    #[cfg(not(feature = "headless"))] material: Handle<ChunkMaterial>,
   ) {
     let slot = &mut self.slots[index.0];
     slot.entity = Some(entity);
-    slot.texture = Some(texture);
-    slot.material = Some(material);
-  }
-
-  /// Registers entity for a slot (headless mode - no render resources).
-  #[cfg(feature = "headless")]
-  pub(crate) fn register_slot_entity_headless(&mut self, index: SlotIndex, entity: Entity) {
-    let slot = &mut self.slots[index.0];
-    slot.entity = Some(entity);
+    #[cfg(not(feature = "headless"))]
+    {
+      slot.texture = Some(texture);
+      slot.material = Some(material);
+    }
   }
 
   // === Pixel access API ===
