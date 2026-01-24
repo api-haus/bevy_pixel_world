@@ -14,7 +14,3 @@ run_rapier2d:
 
 game:
     cargo run -p game
-
-editor:
-    cargo run -p game
-d

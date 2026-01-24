@@ -52,9 +52,9 @@ See [Materials](materials.md) for `damage_threshold` and `destruction_product` p
 Bit layout (u8):
 ┌───────┬───────┬───────┬───────┬───────┬───────┬───────┬───────┐
 │   7   │   6   │   5   │   4   │   3   │   2   │   1   │   0   │
-├───────┴───────┴───────┼───────┼───────┼───────┼───────┼───────┤
-│       reserved        │  wet  │burning│falling│ solid │ dirty │
-└───────────────────────┴───────┴───────┴───────┴───────┴───────┘
+├───────┴───────┼───────┼───────┼───────┼───────┼───────┼───────┤
+│   reserved    │ body  │  wet  │burning│falling│ solid │ dirty │
+└───────────────┴───────┴───────┴───────┴───────┴───────┴───────┘
 ```
 
 ### Simulation Flags
@@ -72,9 +72,15 @@ Bit layout (u8):
 | `burning` | 3   | Pixel is on fire. Propagates to flammable neighbors. Increments damage each tick. Clears when damage threshold reached or no fuel remains.                            |
 | `wet`     | 4   | Pixel is saturated with liquid. Modifies material behavior: wet sand clumps instead of flowing, wet materials may conduct electricity, fire cannot ignite wet pixels. |
 
+### Pixel Body Flag
+
+| Flag         | Bit | Description                                                                                                                                                                                                           |
+|--------------|-----|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `pixel_body` | 5   | Pixel belongs to a pixel body, not terrain. Set during blit, cleared during clear. Excluded from terrain collision mesh generation. Prevents terrain systems from treating body pixels as world terrain. See [Pixel Bodies](pixel-bodies.md). |
+
 ### Reserved Bits
 
-Bits 5-7 are reserved for future use:
+Bits 6-7 are reserved for future use:
 
 - Potential: `frozen`, `emissive`, `supported`, `conductive`
 
@@ -110,6 +116,7 @@ see [Rendering](rendering.md).
 - [Spatial Hierarchy](spatial-hierarchy.md) - World, chunk, tile, pixel organization
 - [Simulation](simulation.md) - How pixels are processed each tick
 - [Collision](collision.md) - How solid flag drives collision mesh generation
+- [Pixel Bodies](pixel-bodies.md) - Dynamic objects using the pixel_body flag
 - [Rendering](rendering.md) - Texture upload strategy
 - [Chunk Seeding](chunk-seeding.md) - How pixel data is initialized
 - [Configuration Reference](configuration.md) - Bytes per pixel parameter

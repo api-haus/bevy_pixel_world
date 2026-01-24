@@ -78,13 +78,25 @@ Fields comprising the 4-byte pixel structure.
 
 ### Pixel Flags
 
-| Flag        | Bit | Definition                                                                                             |
-|-------------|-----|--------------------------------------------------------------------------------------------------------|
-| **dirty**   | 0   | Pixel needs simulation this tick. Stable pixels have `dirty=0` and are skipped.                        |
-| **solid**   | 1   | Cached check: material state is `solid` or `powder` (not `liquid` or `gas`). Used by collision system. |
-| **falling** | 2   | Pixel has downward momentum. Excluded from collision mesh while set.                                   |
-| **burning** | 3   | Pixel is on fire. Propagates to flammable neighbors; increments damage.                                |
-| **wet**     | 4   | Pixel is saturated with liquid. Prevents ignition; modifies behavior.                                  |
+| Flag           | Bit | Definition                                                                                             |
+|----------------|-----|--------------------------------------------------------------------------------------------------------|
+| **dirty**      | 0   | Pixel needs simulation this tick. Stable pixels have `dirty=0` and are skipped.                        |
+| **solid**      | 1   | Cached check: material state is `solid` or `powder` (not `liquid` or `gas`). Used by collision system. |
+| **falling**    | 2   | Pixel has downward momentum. Excluded from collision mesh while set.                                   |
+| **burning**    | 3   | Pixel is on fire. Propagates to flammable neighbors; increments damage.                                |
+| **wet**        | 4   | Pixel is saturated with liquid. Prevents ignition; modifies behavior.                                  |
+| **pixel_body** | 5   | Pixel belongs to a pixel body. Set during blit, cleared after CA. Excluded from terrain collision.    |
+
+---
+
+## Data Structures
+
+Reusable primitives and abstractions used across subsystems.
+
+| Term        | Definition                                                                                                                                 | Documentation                                |
+|-------------|--------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------|
+| **Surface** | Generic 2D pixel buffer (`Surface<T>`) with width, height, and contiguous data. Used by both chunks and pixel bodies for pixel storage.   | [pixel-bodies.md](pixel-bodies.md)           |
+| **Canvas**  | Unified read/write interface spanning multiple chunks. Abstracts cross-chunk pixel access during CA simulation and pixel body operations. | [spatial-hierarchy.md](spatial-hierarchy.md) |
 
 ---
 
@@ -140,6 +152,18 @@ Terms for chunk lifecycle and memory management.
 | **Hysteresis**        | Buffer preventing rapid chunk recycling when camera oscillates near boundaries.                  | [streaming-window.md](streaming-window.md) |
 | **Delta persistence** | Optimization storing only differences from procedural generation instead of full buffers.        | [chunk-seeding.md](chunk-seeding.md)       |
 
+### Persistence Control
+
+On-demand save API and dynamic object persistence.
+
+| Term                     | Definition                                                                                                                        | Documentation                              |
+|--------------------------|-----------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------|
+| **PersistenceControl**   | Resource providing on-demand save requests and auto-save configuration. Entry point for triggering saves from game code.          | [chunk-persistence.md](chunk-persistence.md) |
+| **PersistenceHandle**    | Handle returned by `request_save()`. Tracks completion via `is_complete()` polling or async `into_future()`.                      | [chunk-persistence.md](chunk-persistence.md) |
+| **AutoSaveConfig**       | Configuration for periodic auto-saves: enabled flag and interval duration. Default: 60 seconds.                                   | [chunk-persistence.md](chunk-persistence.md) |
+| **SimulationState**      | Resource controlling pause/resume. When paused: CA and physics stop, rendering continues, persistence can still run.              | [chunk-persistence.md](chunk-persistence.md) |
+| **Blitted position save**| Pixel bodies save using `BlittedTransform` position, not current physics position. Prevents ghost pixels on restore.              | [pixel-bodies.md](pixel-bodies.md)         |
+
 ---
 
 ## Procedural Generation
@@ -169,14 +193,36 @@ Terms for the rendering pipeline.
 
 ---
 
+## Pixel Body
+
+Terms for dynamic physics objects with pixel content. See [pixel-bodies.md](pixel-bodies.md) for full architecture.
+
+| Term                   | Definition                                                                                                                                              | Documentation                        |
+|------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------|
+| **Pixel Body**         | Dynamic physics object whose visual representation consists of individual pixels that participate in CA simulation. Can burn, melt, split into fragments. | [pixel-bodies.md](pixel-bodies.md)   |
+| **Shape Mask**         | Bitmask tracking which local pixels belong to the object (1) versus void/world (0). Updated when pixels are destroyed or move away.                      | [pixel-bodies.md](pixel-bodies.md)   |
+| **Blit**               | Writing pixel body content to the Canvas at world-transformed positions before CA simulation.                                                            | [pixel-bodies.md](pixel-bodies.md)   |
+| **Clear**              | Removing pixel body pixels from the Canvas after CA simulation, using the blitted transform rather than current physics position.                        | [pixel-bodies.md](pixel-bodies.md)   |
+| **BlittedTransform**   | Stored transform from the last blit operation. Ensures clear removes pixels from correct positions even after physics has moved the body.                | [pixel-bodies.md](pixel-bodies.md)   |
+| **Inverse Transform**  | Blit technique that iterates world pixels in the AABB and maps each back to local space. Guarantees gap-free coverage when rotation is involved.         | [pixel-bodies.md](pixel-bodies.md)   |
+| **Readback**           | Mapping CA simulation changes (destroyed/moved pixels) back to the pixel body's shape mask. Phase 2 of pixel bodies (not yet implemented).               | [pixel-bodies.md](pixel-bodies.md)   |
+| **Object Splitting**   | When destruction disconnects parts of a pixel body, connected component analysis detects multiple regions and spawns new entities for each fragment.      | [pixel-bodies.md](pixel-bodies.md)   |
+| **PixelBodyId**        | Stable u64 identifier persisting across save/load cycles. Generated from session seed + counter to prevent collisions.                                   | [pixel-bodies.md](pixel-bodies.md)   |
+| **Persistable**        | Marker component indicating a pixel body should be saved to disk when its chunk unloads and restored when the chunk loads again.                         | [pixel-bodies.md](pixel-bodies.md)   |
+
+---
+
 ## Collision
 
-Terms for physics collision mesh generation.
+Terms for physics collision mesh generation. See [collision.md](collision.md) for full architecture.
 
-| Term                 | Definition                                                                      | Documentation                |
-|----------------------|---------------------------------------------------------------------------------|------------------------------|
-| **Collision mesh**   | Generated geometry from solid pixels for physics interactions.                  | [collision.md](collision.md) |
-| **Marching squares** | Algorithm to extract contour polygons from binary (solid/non-solid) pixel grid. | [collision.md](collision.md) |
+| Term                             | Definition                                                                                                                | Documentation                      |
+|----------------------------------|---------------------------------------------------------------------------------------------------------------------------|------------------------------------|
+| **Collision mesh**               | Generated geometry from solid pixels for physics interactions.                                                            | [collision.md](collision.md)       |
+| **Marching squares**             | Algorithm to extract contour polygons from binary (solid/non-solid) pixel grid. Used for both terrain and pixel bodies.  | [collision.md](collision.md)       |
+| **Douglas-Peucker**              | Line simplification algorithm that reduces vertex count while preserving shape. Applied to marching squares output.       | [collision.md](collision.md)       |
+| **Triangulation**                | Converting simplified polygon outlines into triangle meshes suitable for physics engines (Avian2D or Rapier2D).           | [collision.md](collision.md)       |
+| **Connected component analysis** | Algorithm detecting separate regions in a shape mask. Used to identify when a pixel body should split into fragments.     | [pixel-bodies.md](pixel-bodies.md) |
 
 ---
 
@@ -198,4 +244,6 @@ Terms for heat propagation and effects.
 ## Related Documentation
 
 - [Architecture Overview](README.md) - System architecture and design principles
+- [Pixel Bodies](pixel-bodies.md) - Dynamic physics objects with pixel content
+- [Collision](collision.md) - Physics collision mesh generation
 - [Configuration Reference](configuration.md) - Tunable parameters

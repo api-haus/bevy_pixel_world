@@ -31,21 +31,22 @@ A world save is a single file with three regions:
 
 ### Header (64 bytes, fixed)
 
-| Offset | Size | Field            | Description                             |
-|--------|------|------------------|-----------------------------------------|
-| 0      | 4    | Magic            | `0x50585357` ("PXSW" - PixelSandWorld)  |
-| 4      | 2    | Version          | Format version for migration            |
-| 6      | 2    | Flags            | Feature flags (compression type, etc.)  |
-| 8      | 8    | World Seed       | For procedural regeneration             |
-| 16     | 8    | Creation Time    | Unix timestamp                          |
-| 24     | 8    | Modified Time    | Last save timestamp                     |
-| 32     | 4    | Chunk Count      | Number of saved chunks                  |
-| 36     | 4    | Page Table Size  | Bytes allocated for page table          |
-| 40     | 8    | Data Region Ptr  | File offset where data region starts    |
-| 48     | 2    | Chunk Size       | Pixels per chunk edge (512)             |
-| 50     | 2    | Tile Size        | Pixels per tile edge (32)               |
-| 52     | 1    | Pixel Size       | Bytes per pixel (4)                     |
-| 53     | 11   | Reserved         | Future use                              |
+| Offset | Size | Field              | Description                               |
+|--------|------|--------------------|-------------------------------------------|
+| 0      | 4    | Magic              | `0x50585357` ("PXSW" - PixelSandWorld)    |
+| 4      | 2    | Version            | Format version for migration              |
+| 6      | 2    | Flags              | Feature flags (compression type, etc.)    |
+| 8      | 8    | World Seed         | For procedural regeneration               |
+| 16     | 8    | Creation Time      | Unix timestamp                            |
+| 24     | 8    | Modified Time      | Last save timestamp                       |
+| 32     | 4    | Chunk Count        | Number of saved chunks                    |
+| 36     | 4    | Page Table Size    | Bytes allocated for page table            |
+| 40     | 8    | Data Region Ptr    | File offset where data region starts      |
+| 48     | 2    | Chunk Size         | Pixels per chunk edge (512)               |
+| 50     | 2    | Tile Size          | Pixels per tile edge (32)                 |
+| 52     | 1    | Pixel Size         | Bytes per pixel (4)                       |
+| 53     | 8    | Entity Section Ptr | File offset for pixel bodies (0 = none)   |
+| 61     | 3    | Reserved           | Future use                                |
 
 **On load, validate these match the running game's constants.** Mismatched parameters indicate an incompatible save:
 
@@ -337,6 +338,153 @@ If crash during write, `.tmp` file is discarded on next load.
 
 At 1 pixel = 1 cm, a 1M chunk world covers 5.12 km × 5.12 km.
 
+## On-Demand Persistence
+
+Game code can trigger saves via `PersistenceControl`:
+
+```rust
+// Request save with completion tracking
+let handle = persistence.request_save();
+
+// Poll in subsequent frames
+if handle.is_complete() {
+    // Safe to exit, transition scenes, etc.
+}
+```
+
+Two save variants:
+- `request_save()` - Full save: chunks + pixel bodies
+- `request_chunk_save()` - Chunks only (faster when bodies unchanged)
+
+### Auto-Save
+
+`AutoSaveConfig` controls periodic background saves:
+
+| Field      | Default    | Description                       |
+|------------|------------|-----------------------------------|
+| `enabled`  | `true`     | Whether auto-save runs            |
+| `interval` | 60 seconds | Time between automatic saves      |
+
+Auto-save timer resets after any save completes.
+
+### Pause During Save
+
+`SimulationState` controls whether simulation runs:
+
+```rust
+sim_state.pause();   // Stop CA + physics
+// ... save completes ...
+sim_state.resume();  // Continue simulation
+```
+
+Pausing ensures consistent snapshots—no pixel movement during write.
+
+## Pixel Body Persistence
+
+Pixel bodies marked with `Persistable` are saved in a dedicated entity section at the end of the save file.
+
+### File Structure Update
+
+The header's `entity_section_ptr` field points to the entity section:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         Header                              │
+│  (includes entity_section_ptr → Entity Section)             │
+├─────────────────────────────────────────────────────────────┤
+│                       Page Table                            │
+├─────────────────────────────────────────────────────────────┤
+│                       Data Region                           │
+│  (compressed chunk data)                                    │
+├─────────────────────────────────────────────────────────────┤
+│                     Entity Section                          │
+│  (pixel body records)                                       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+If `entity_section_ptr = 0`, no pixel bodies are stored.
+
+### Entity Section Header (8 bytes)
+
+| Offset | Size | Field          | Description                    |
+|--------|------|----------------|--------------------------------|
+| 0      | 4    | Entity Count   | Number of pixel body records   |
+| 4      | 4    | Reserved       | Future use                     |
+
+### Pixel Body Record Header (64 bytes)
+
+Each pixel body has a fixed header followed by variable-length compressed data:
+
+| Offset | Size | Field               | Description                              |
+|--------|------|---------------------|------------------------------------------|
+| 0      | 8    | Stable ID           | `PixelBodyId` for identity across sessions |
+| 8      | 4    | Position X          | World X position (f32, from blitted transform) |
+| 12     | 4    | Position Y          | World Y position (f32)                   |
+| 16     | 4    | Rotation            | Rotation in radians (f32)                |
+| 20     | 4    | Linear Velocity X   | Physics velocity X (f32)                 |
+| 24     | 4    | Linear Velocity Y   | Physics velocity Y (f32)                 |
+| 28     | 4    | Angular Velocity    | Rotational velocity (f32)                |
+| 32     | 4    | Width               | Pixel grid width (u32)                   |
+| 36     | 4    | Height              | Pixel grid height (u32)                  |
+| 40     | 4    | Origin X            | Grid origin offset X (i32)               |
+| 44     | 4    | Origin Y            | Grid origin offset Y (i32)               |
+| 48     | 4    | Pixel Data Size     | Compressed pixel data bytes (u32)        |
+| 52     | 4    | Shape Mask Size     | Compressed shape mask bytes (u32)        |
+| 56     | 4    | Extension Data Size | Game-specific data bytes (u32)           |
+| 60     | 1    | Checksum            | CRC8 for corruption detection            |
+| 61     | 3    | Reserved            | Alignment padding                        |
+
+### Variable Data (following header)
+
+```
+┌────────────────────────┬───────────────────────┬────────────────────┐
+│  Compressed Pixels     │  Compressed Mask      │  Extension Data    │
+│  (pixel_data_size)     │  (shape_mask_size)    │  (extension_size)  │
+└────────────────────────┴───────────────────────┴────────────────────┘
+```
+
+| Section         | Compression | Contents                                           |
+|-----------------|-------------|----------------------------------------------------|
+| Pixel Data      | LZ4         | Raw pixel buffer (`width × height × 4` bytes)      |
+| Shape Mask      | LZ4         | Packed bools (8 per byte, `⌈width × height / 8⌉`)  |
+| Extension Data  | None        | Game-defined component data (uncompressed)         |
+
+### Shape Mask Packing
+
+Booleans are packed 8 per byte, LSB first:
+
+```
+Bools:  [0]=T [1]=F [2]=T [3]=T [4]=F [5]=F [6]=T [7]=F [8]=T ...
+Byte 0:   1    0    1    1    0    0    1    0  = 0b01101101 = 0x6D
+Byte 1:   1   ...
+```
+
+### Blitted Position
+
+Bodies save at their **blitted transform position**, not current physics position. This prevents ghost pixels when the camera returns—the saved position matches exactly where pixels were written to the canvas.
+
+### Chunk Association
+
+Each pixel body belongs to the chunk containing its center. When that chunk unloads:
+
+1. Bodies with `Persistable` are serialized to the entity section
+2. Entity is despawned from ECS
+3. On chunk reload, bodies restore with preserved ID, transform, and physics state
+
+Bodies without `Persistable` are simply despawned on chunk unload.
+
+### Stable IDs
+
+`PixelBodyId` combines a session seed with a counter to generate unique IDs:
+
+```
+ID = (session_seed << 32) | counter
+```
+
+This prevents ID collisions when:
+- Multiple play sessions create bodies that later coexist in the same save
+- Bodies split (fragments get new IDs from the same generator)
+
 ## Configuration
 
 | Parameter                  | Default | Description                                 |
@@ -348,8 +496,10 @@ At 1 pixel = 1 cm, a 1M chunk world covers 5.12 km × 5.12 km.
 
 ## Related Documentation
 
+- [Pixel Bodies](pixel-bodies.md) - Dynamic objects that persist with chunks
 - [Chunk Seeding](chunk-seeding.md) - Procedural generation (fallback for unpersisted chunks)
 - [Chunk Pooling](chunk-pooling.md) - Lifecycle that triggers save/load
 - [Streaming Window](streaming-window.md) - Determines which chunks to load
 - [Pixel Format](pixel-format.md) - Data structure being persisted
+- [Glossary](glossary.md) - Persistence control terminology
 - [Architecture Overview](README.md)
