@@ -13,6 +13,8 @@ bevy = { workspace = true }
 ab_glyph = "0.2"
 spade = "2"
 dirs = "5"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
 fastnoise2 = "0.4"
 lz4_flex = "0.11"
 palette = { version = "0.7", default-features = false, features = ["std"] }

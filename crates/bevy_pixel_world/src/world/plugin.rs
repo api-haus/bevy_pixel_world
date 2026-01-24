@@ -130,18 +130,22 @@ pub(crate) struct SharedPaletteTexture {
 }
 
 /// Sets up shared resources used by all PixelWorlds.
+///
+/// This is an exclusive system to ensure resources are immediately available,
+/// avoiding race conditions with other Startup systems that use Commands.
 #[cfg(not(feature = "headless"))]
-fn setup_shared_resources(
-  mut commands: Commands,
-  mut meshes: ResMut<Assets<Mesh>>,
-  mut images: ResMut<Assets<Image>>,
-) {
-  let mesh = meshes.add(create_chunk_quad(CHUNK_SIZE as f32, CHUNK_SIZE as f32));
-  commands.insert_resource(SharedChunkMesh(mesh));
+fn setup_shared_resources(world: &mut World) {
+  let mesh = {
+    let mut meshes = world.resource_mut::<Assets<Mesh>>();
+    meshes.add(create_chunk_quad(CHUNK_SIZE as f32, CHUNK_SIZE as f32))
+  };
+  world.insert_resource(SharedChunkMesh(mesh));
 
-  // Create palette texture (will be populated when Materials is available)
-  let palette = create_palette_texture(&mut images);
-  commands.insert_resource(SharedPaletteTexture {
+  let palette = {
+    let mut images = world.resource_mut::<Assets<Image>>();
+    create_palette_texture(&mut images)
+  };
+  world.insert_resource(SharedPaletteTexture {
     handle: palette,
     initialized: false,
   });

@@ -3,17 +3,19 @@
 use bevy::prelude::*;
 
 use super::gizmos::{ActiveGizmo, ActiveGizmos, PendingDebugGizmos};
+use super::settings::VisualDebugSettings;
 
 /// System that renders debug gizmos.
 ///
 /// 1. Drains pending gizmos into active gizmos with current timestamp
-/// 2. Draws active gizmos as rect outlines
+/// 2. Draws active gizmos as rect outlines (filtered by settings)
 /// 3. Removes expired gizmos
 pub fn render_debug_gizmos(
   mut gizmos: Gizmos,
   time: Res<Time>,
   pending: Res<PendingDebugGizmos>,
   mut active: ResMut<ActiveGizmos>,
+  settings: Option<Res<VisualDebugSettings>>,
 ) {
   let current_time = time.elapsed_secs();
 
@@ -36,6 +38,13 @@ pub fn render_debug_gizmos(
     if age > duration {
       expired_indices.push(i);
       continue;
+    }
+
+    // Skip if this gizmo kind is disabled in settings
+    if let Some(ref settings) = settings {
+      if !settings.is_enabled(gizmo.kind) {
+        continue;
+      }
     }
 
     // Calculate alpha fade (full opacity for first half, fade out in second half)
@@ -63,5 +72,15 @@ pub fn render_debug_gizmos(
   // Remove expired gizmos (in reverse order to preserve indices)
   for i in expired_indices.into_iter().rev() {
     active.gizmos.swap_remove(i);
+  }
+}
+
+/// Syncs CollisionConfig::debug_gizmos with VisualDebugSettings::show_collision_meshes.
+pub fn sync_collision_config(
+  settings: Res<VisualDebugSettings>,
+  mut config: ResMut<crate::collision::CollisionConfig>,
+) {
+  if config.debug_gizmos != settings.show_collision_meshes {
+    config.debug_gizmos = settings.show_collision_meshes;
   }
 }

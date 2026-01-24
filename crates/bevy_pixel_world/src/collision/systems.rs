@@ -185,13 +185,14 @@ fn clear_tile_dirty(world: &mut PixelWorld, tile: TilePos, tiles_per_chunk: i64)
 }
 
 /// System: Polls completed collision generation tasks and caches the results.
-#[cfg(feature = "diagnostics")]
 pub fn poll_collision_tasks(
     mut tasks: ResMut<CollisionTasks>,
     mut cache: ResMut<CollisionCache>,
-    mut metrics: ResMut<crate::diagnostics::CollisionMetrics>,
+    #[cfg(feature = "diagnostics")] mut metrics: ResMut<crate::diagnostics::CollisionMetrics>,
 ) {
+    #[cfg(feature = "diagnostics")]
     let mut completed = 0u32;
+    #[cfg(feature = "diagnostics")]
     let mut total_generation_time_ms = 0.0f32;
 
     tasks.tasks.retain_mut(|task| {
@@ -200,30 +201,21 @@ pub fn poll_collision_tasks(
         }
 
         let mesh = bevy::tasks::block_on(&mut task.task);
-        total_generation_time_ms += mesh.generation_time_ms;
-        cache.insert(task.tile, mesh);
-        completed += 1;
-
-        false // Remove completed task
-    });
-
-    metrics.generation_time.push(total_generation_time_ms);
-    metrics.tasks_completed.push(completed as f32);
-}
-
-/// System: Polls completed collision generation tasks and caches the results.
-#[cfg(not(feature = "diagnostics"))]
-pub fn poll_collision_tasks(mut tasks: ResMut<CollisionTasks>, mut cache: ResMut<CollisionCache>) {
-    tasks.tasks.retain_mut(|task| {
-        if !task.task.is_finished() {
-            return true; // Keep pending tasks
+        #[cfg(feature = "diagnostics")]
+        {
+            total_generation_time_ms += mesh.generation_time_ms;
+            completed += 1;
         }
-
-        let mesh = bevy::tasks::block_on(&mut task.task);
         cache.insert(task.tile, mesh);
 
         false // Remove completed task
     });
+
+    #[cfg(feature = "diagnostics")]
+    {
+        metrics.generation_time.push(total_generation_time_ms);
+        metrics.tasks_completed.push(completed as f32);
+    }
 }
 
 /// System: Draws collision meshes as debug gizmos.

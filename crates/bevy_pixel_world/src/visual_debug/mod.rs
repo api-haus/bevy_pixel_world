@@ -5,11 +5,19 @@
 
 pub(super) mod colors;
 mod gizmos;
+pub mod persistence;
+pub mod settings;
 mod systems;
+#[cfg(feature = "diagnostics")]
+mod ui;
 
 use bevy::prelude::*;
 pub use gizmos::{ActiveGizmos, GizmoKind, PendingDebugGizmos, PendingGizmo};
+pub use persistence::SettingsPersistence;
+pub use settings::VisualDebugSettings;
 use systems::render_debug_gizmos;
+#[cfg(feature = "diagnostics")]
+pub use ui::visual_debug_checkboxes;
 
 /// Plugin that enables visual debug gizmos.
 pub struct VisualDebugPlugin;
@@ -19,6 +27,12 @@ impl Plugin for VisualDebugPlugin {
     app
       .init_resource::<PendingDebugGizmos>()
       .init_resource::<ActiveGizmos>()
-      .add_systems(Update, render_debug_gizmos);
+      .add_systems(Startup, persistence::load_settings)
+      .add_systems(Update, render_debug_gizmos)
+      .add_systems(
+        Update,
+        (persistence::save_settings, systems::sync_collision_config)
+          .run_if(resource_exists::<VisualDebugSettings>),
+      );
   }
 }
