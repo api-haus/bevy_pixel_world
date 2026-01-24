@@ -32,14 +32,14 @@ pub trait ChunkSeeder: Send + Sync {
 /// 1. Check if the chunk exists in the save file
 /// 2. If found, load from disk (applying delta if needed)
 /// 3. If not found, delegate to the inner procedural seeder
-pub struct PersistentSeeder<S: ChunkSeeder> {
+pub struct PersistenceSeeder<S: ChunkSeeder> {
   /// Inner procedural seeder (fallback for unpersisted chunks).
   inner: S,
   /// World save file handle.
   save: Arc<std::sync::RwLock<WorldSave>>,
 }
 
-impl<S: ChunkSeeder> PersistentSeeder<S> {
+impl<S: ChunkSeeder> PersistenceSeeder<S> {
   /// Creates a new persistent seeder wrapping the given inner seeder.
   pub fn new(inner: S, save: Arc<std::sync::RwLock<WorldSave>>) -> Self {
     Self { inner, save }
@@ -51,7 +51,7 @@ impl<S: ChunkSeeder> PersistentSeeder<S> {
   }
 }
 
-impl<S: ChunkSeeder> ChunkSeeder for PersistentSeeder<S> {
+impl<S: ChunkSeeder> ChunkSeeder for PersistenceSeeder<S> {
   fn seed(&self, pos: ChunkPos, chunk: &mut Chunk) {
     // Try to load from save file
     let loaded = {

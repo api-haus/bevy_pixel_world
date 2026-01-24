@@ -5,7 +5,7 @@ use std::sync::Arc;
 use bevy::prelude::*;
 
 use crate::persistence::WorldSaveResource;
-use crate::seeding::{ChunkSeeder, PersistentSeeder};
+use crate::seeding::{ChunkSeeder, PersistenceSeeder};
 
 use super::{PixelWorld, PixelWorldConfig};
 
@@ -40,7 +40,7 @@ impl PixelWorldBundle {
 /// with `with_config()`.
 ///
 /// When a `WorldSaveResource` exists (persistence enabled), the seeder is
-/// automatically wrapped with `PersistentSeeder` to load saved chunks.
+/// automatically wrapped with `PersistenceSeeder` to load saved chunks.
 ///
 /// # Example
 /// ```ignore
@@ -92,7 +92,7 @@ impl bevy::ecs::system::Command for SpawnPixelWorld {
         .unwrap_or_default()
     });
 
-    // Wrap seeder with PersistentSeeder if save resource exists
+    // Wrap seeder with PersistenceSeeder if save resource exists
     let seeder: Arc<dyn ChunkSeeder + Send + Sync> =
       if let Some(save_resource) = world.get_resource::<WorldSaveResource>() {
         let chunk_count = save_resource
@@ -104,7 +104,7 @@ impl bevy::ecs::system::Command for SpawnPixelWorld {
           "PixelWorld spawned with persistence ({} saved chunks)",
           chunk_count
         );
-        Arc::new(PersistentSeeder::new(
+        Arc::new(PersistenceSeeder::new(
           ArcSeeder(self.seeder),
           save_resource.save.clone(),
         ))

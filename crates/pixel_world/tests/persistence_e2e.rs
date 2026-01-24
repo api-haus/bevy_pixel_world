@@ -4,7 +4,7 @@
 //! 1. Create WorldSave
 //! 2. Create chunk with painted pixels
 //! 3. Save to disk via persistence API
-//! 4. Load via PersistentSeeder
+//! 4. Load via PersistenceSeeder
 //! 5. Verify from_persistence flag and pixel data
 
 use std::sync::{Arc, RwLock};
@@ -12,7 +12,7 @@ use std::sync::{Arc, RwLock};
 use tempfile::TempDir;
 
 use pixel_world::{
-    material_ids, Chunk, ChunkPos, ChunkSeeder, ColorIndex, PersistentSeeder, Pixel, WorldSave,
+    material_ids, Chunk, ChunkPos, ChunkSeeder, ColorIndex, PersistenceSeeder, Pixel, WorldSave,
     CHUNK_SIZE,
 };
 
@@ -61,9 +61,9 @@ fn chunk_roundtrip_preserves_painted_pixels() {
         .expect("Failed to save chunk");
     save.flush().expect("Failed to flush save");
 
-    // 5. Create PersistentSeeder with the save file
+    // 5. Create PersistenceSeeder with the save file
     let save_arc = Arc::new(RwLock::new(save));
-    let persistent_seeder = PersistentSeeder::new(NoopSeeder, save_arc);
+    let persistent_seeder = PersistenceSeeder::new(NoopSeeder, save_arc);
 
     // 6. Seed a fresh chunk from the save file
     let mut loaded_chunk = Chunk::new(CHUNK_SIZE, CHUNK_SIZE);
@@ -114,7 +114,7 @@ fn unpersisted_chunk_uses_fallback_seeder() {
         }
     }
 
-    let persistent_seeder = PersistentSeeder::new(StoneFiller, save_arc);
+    let persistent_seeder = PersistenceSeeder::new(StoneFiller, save_arc);
 
     // Seed a chunk that doesn't exist in persistence
     let mut chunk = Chunk::new(CHUNK_SIZE, CHUNK_SIZE);

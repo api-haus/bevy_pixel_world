@@ -40,7 +40,7 @@ pub use render::{
   create_chunk_quad, create_palette_texture, create_pixel_texture, create_texture, materialize,
   spawn_static_chunk, upload_palette, upload_pixels, upload_surface, ChunkMaterial, Rgba,
 };
-pub use seeding::{ChunkSeeder, MaterialSeeder, NoiseSeeder, PersistentSeeder};
+pub use seeding::{ChunkSeeder, MaterialSeeder, NoiseSeeder, PersistenceSeeder};
 pub use simulation::simulate_tick;
 pub use world::plugin::{SharedChunkMesh, SharedPaletteTexture, StreamingCamera};
 pub use world::{PixelWorld, PixelWorldBundle, PixelWorldConfig, SpawnPixelWorld};
