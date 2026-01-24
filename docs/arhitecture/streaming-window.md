@@ -16,7 +16,7 @@ The terms "streaming window" and "active region" are used interchangeably throug
 
 The active region (streaming window) is a fixed-size rectangular grid:
 
-- **Window dimensions** - `WINDOW_WIDTH` × `WINDOW_HEIGHT` chunks (6×4 for landscape)
+- **Window dimensions** - `WINDOW_WIDTH` × `WINDOW_HEIGHT` chunks (4×3 for landscape)
 - **Total chunk count** - `POOL_SIZE` (= `WINDOW_WIDTH * WINDOW_HEIGHT`)
 - **World coverage** - (`WINDOW_WIDTH` × `CHUNK_SIZE`) × (`WINDOW_HEIGHT` × `CHUNK_SIZE`) pixels
 
@@ -90,7 +90,7 @@ flowchart LR
 
 - Track camera velocity direction over several frames
 - Only trigger recycling when direction is consistent
-- Configurable threshold for direction stability [needs clarification: threshold value]
+- Hysteresis is deferred - current implementation does not include boundary oscillation damping. To be added if jitter becomes a problem in practice.
 
 ## Loading Priority
 
@@ -120,22 +120,20 @@ flowchart TB
 ```
         Camera movement →
 
-    +---+---+---+---+---+---+
-    | R | . | . |[C]| . | N |  R = Roll candidates (left edge)
-    +---+---+---+---+---+---+  N = New positions (right edge)
-    | R | . | . | . | . | N |  . = Active chunks
-    +---+---+---+---+---+---+  [C] = Camera position
-    | R | . | . | . | . | N |
-    +---+---+---+---+---+---+
-    | R | . | . | . | . | N |
-    +---+---+---+---+---+---+
-          6 × 4 chunk grid
+    +---+---+---+---+
+    | R | . |[C]| N |  R = Roll candidates (left edge)
+    +---+---+---+---+  N = New positions (right edge)
+    | R | . | . | N |  . = Active chunks
+    +---+---+---+---+  [C] = Camera position
+    | R | . | . | N |
+    +---+---+---+---+
+        4 × 3 chunk grid
 ```
 
 As the camera moves right:
 
 - Left column (R) rolls to become the new right column (N)
-- The grid shifts but maintains its 6×4 rectangular shape
+- The grid shifts but maintains its 4×3 rectangular shape
 - Chunks are reassigned to new world positions and reseeded
 
 ## Related Documentation

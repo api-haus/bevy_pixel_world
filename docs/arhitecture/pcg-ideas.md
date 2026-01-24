@@ -31,7 +31,7 @@ flowchart TB
 
 ## WFC (Wave Function Collapse) Structure Layer
 
-[needs clarification: WFC tile resolution and relationship to chunk size]
+WFC tile resolution to be determined during Phase 6. Candidate: 64x64 pixels (8 tiles per chunk edge) balancing detail vs constraint solving performance.
 
 WFC operates at a coarse grid level to determine macro-level structure.
 
@@ -95,8 +95,8 @@ When multiple stamps overlap the same region:
 
 | Strategy  | Behavior                                                                        |
 |-----------|---------------------------------------------------------------------------------|
-| Priority  | Higher priority stamp overwrites lower [needs clarification: priority scale]    |
-| Blend     | Stamps blend at boundaries using falloff [needs clarification: blend algorithm] |
+| Priority  | Higher priority stamp overwrites lower. Priority: Integer 0-255, higher overwrites lower. Default terrain = 0, structures = 100, player modifications = 255. |
+| Blend     | Stamps blend at boundaries using falloff. Blend: Signed distance field falloff at stencil boundaries, radius configurable per stamp type. |
 | Composite | Stamps combine (e.g., vegetation on terrain)                                    |
 
 ## Material & Coloration Layer

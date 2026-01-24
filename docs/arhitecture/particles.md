@@ -163,7 +163,7 @@ fn check_collision(particle: &Particle) -> bool:
 
 Particles render as elongated quads for a motion blur effect.
 
-**Implementation:** Instanced rendering with Bevy. [needs clarification: requires Bevy 0.18 API research]
+**Implementation:** Bevy API research deferred to Phase 8. Implementation will use `Mesh2d` with instance buffer or sprite batching depending on Bevy version at implementation time.
 
 ```
 Particle Quad:

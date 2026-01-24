@@ -395,3 +395,66 @@ cargo run -p pixel_world --example painting
 - [x] Water flows sideways and pools
 - [x] No visible tile seams during simulation
 - [x] Density displacement works (sand sinks in water)
+
+---
+
+## Phase 5.0: Persistence (Completed)
+
+Chunk serialization with LZ4 compression and streaming integration.
+
+**Files:**
+- `pixel_world/src/persistence/mod.rs` - Core persistence API
+- `pixel_world/src/persistence/format.rs` - File format (header, page table, data region)
+- `pixel_world/src/persistence/compression.rs` - LZ4 and delta compression
+- `pixel_world/tests/persistence_e2e.rs` - End-to-end tests
+- `docs/arhitecture/chunk-persistence.md` - Full specification
+
+### 5.0.1 Three-State Dirty Tracking
+
+Chunks track modification state to determine save behavior:
+
+| State     | Description                       | On Recycle        |
+|-----------|-----------------------------------|-------------------|
+| Clean     | Matches procedural generation     | Skip save         |
+| Modified  | Changed since load/seed           | Save required     |
+| Persisted | Saved to disk, not modified since | Skip save         |
+
+The `modified` flag tracks simulation changes (pixels moved). The `dirty` flag tracks rendering updates. These are separate concerns - a chunk can need rendering without needing persistence.
+
+### 5.0.2 Delta Compression Strategy
+
+Delta vs full storage decision based on modification density:
+
+- **Delta storage**: Only changed pixels stored as `(position, new_pixel)` pairs
+- **Full storage**: Complete chunk buffer when delta would be larger
+- **Threshold**: 75% modification density - below this, delta wins
+
+Delta compression achieves 100-1000x better compression for lightly modified chunks.
+
+### 5.0.3 Streaming Integration
+
+Persistence hooks into chunk lifecycle:
+
+1. **On chunk recycle**: If modified, auto-save before returning to pool
+2. **On chunk load**: Check persistence index before procedural seeding
+3. **Background I/O**: Disk operations don't block simulation
+
+### 5.0.4 File Format Summary
+
+Single file with three regions:
+
+1. **Header** (64 bytes): Magic, version, world seed, chunk count
+2. **Page Table**: Sorted array of `(ChunkPos, offset, size, storage_type)` entries
+3. **Data Region**: LZ4-compressed chunk data, variable length
+
+### Verification
+
+```bash
+cargo test --test persistence_e2e
+```
+
+- [x] Chunks save when modified and recycled
+- [x] Chunks load from disk correctly
+- [x] Delta compression works for sparse modifications
+- [x] Full compression falls back when delta is larger
+- [x] Clean chunks skip persistence

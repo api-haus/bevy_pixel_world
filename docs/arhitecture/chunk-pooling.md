@@ -26,9 +26,7 @@ Each chunk stores its data as separate linear arrays, one per simulation layer:
 | Pixels | 4 bytes per pixel | `CHUNK_SIZE × CHUNK_SIZE × 4`          |
 | Heat   | u8 per cell       | `(CHUNK_SIZE / 4) × (CHUNK_SIZE / 4)`  |
 
-Future layers (moisture, pressure, etc.) follow the same
-pattern. [needs clarification: which additional layers are planned and their resolution factors] Each layer is a
-contiguous array stored alongside the chunk metadata.
+Future layers (moisture, pressure, etc.) follow the same pattern. Additional layers planned for Phase 7: moisture (full resolution), pressure (4x downsampled like heat). See plan.md Phase 7. Each layer is a contiguous array stored alongside the chunk metadata.
 
 ## Chunk Lifecycle
 

@@ -68,7 +68,7 @@ Reduce vertex count while preserving shape.
 | **Output**    | Simplified polylines with fewer vertices |
 | **Algorithm** | Douglas-Peucker                          |
 
-[needs clarification: simplification tolerance value - requires research/tuning]
+Tolerance value to be determined during Phase 5 implementation. Start with 1.0 pixel tolerance and tune based on visual/performance testing.
 
 ### Stage 3: Delaunay Triangulation
 

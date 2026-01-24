@@ -30,7 +30,8 @@ See [plan_history.md](plan_history.md) for archived phases.
 | 2 | Material System | *Completed - see plan_history.md* |
 | 3 | Interaction | *Completed - see plan_history.md* |
 | 4 | Simulation | *Completed - see plan_history.md* |
-| 5 | Game Integration | In progress |
+| 5.0 | Persistence | *Completed - see plan_history.md* |
+| 5 | Game Integration | Not started |
 
 ---
 
@@ -59,6 +60,10 @@ Player physics body collides with solid/powder pixels.
 - Player spawn position based on terrain
 - Camera follows player (with optional free-cam toggle)
 
+### Acceptance Criteria
+
+- Collision mesh uses Douglas-Peucker simplification (start with 1.0 pixel tolerance, tune based on testing)
+
 ### Verification
 
 ```bash
@@ -80,26 +85,22 @@ cargo run -p game
 - Biomes with different material distributions
 - Cave systems and underground features
 - Surface features (trees, rocks, structures)
+- WFC tile resolution: candidate 64x64 pixels (8 tiles per chunk edge)
+- Stamp overlap: priority 0-255 (terrain=0, structures=100, player=255), SDF falloff blending
 
 ### Phase 7: Material Interactions
 
 - Heat system and heat propagation
 - Material reactions (corrosion, ignition, transformation)
 - Decay and erosion
+- Additional simulation layers: moisture (full resolution), pressure (4x downsampled like heat)
 
 ### Phase 8: Particles
 
 - Particle emission from materials
 - Particle deposition back to pixels
 - Visual effects (sparks, smoke, debris)
-
-### Phase 9: Persistence
-
-- Chunk serialization/deserialization
-- Modified chunk tracking
-- Save/load world state
-
----
+- Rendering: Bevy `Mesh2d` with instance buffer or sprite batching (API research at implementation time)
 
 ## Deferred Indefinitely
 
