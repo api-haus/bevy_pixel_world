@@ -25,6 +25,8 @@ bevy_egui = { version = "0.37", optional = true }
 tracing = { version = "0.1", optional = true }
 tracing-tracy = { version = "0.11", optional = true, default-features = false, features = ["flush-on-exit"] }
 tracing-subscriber = { version = "0.3", optional = true, default-features = false, features = ["registry"] }
+avian2d = { version = "0.4", optional = true }
+bevy_rapier2d = { version = "0.32", optional = true }
 
 [dev-dependencies]
 bevy_egui = "0.37"
@@ -59,3 +61,5 @@ headless = []
 visual-debug = []
 diagnostics = ["dep:bevy_egui"]
 tracy = ["dep:tracing", "dep:tracing-tracy", "dep:tracing-subscriber"]
+avian2d = ["dep:avian2d"]
+rapier2d = ["dep:bevy_rapier2d"]
