@@ -1177,6 +1177,7 @@ dependencies = [
  "paste",
  "rand 0.8.5",
  "rayon",
+ "spade",
  "tempfile",
  "tracing",
  "tracing-subscriber",

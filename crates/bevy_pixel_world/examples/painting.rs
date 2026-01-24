@@ -21,8 +21,8 @@ use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
 #[cfg(feature = "diagnostics")]
 use bevy_pixel_world::diagnostics::DiagnosticsPlugin;
 use bevy_pixel_world::{
-  material_ids, ColorIndex, MaterialId, MaterialSeeder, Materials, Pixel, PixelWorld,
-  PixelWorldPlugin, SpawnPixelWorld, StreamingCamera, WorldRect,
+  material_ids, collision::CollisionQueryPoint, ColorIndex, MaterialId, MaterialSeeder, Materials,
+  Pixel, PixelWorld, PixelWorldPlugin, SpawnPixelWorld, StreamingCamera, WorldRect,
 };
 
 const CAMERA_SPEED: f32 = 500.0;
@@ -49,7 +49,10 @@ fn main() {
     .insert_resource(BrushState::default())
     .add_systems(Startup, setup)
     .add_systems(EguiPrimaryContextPass, ui_system)
-    .add_systems(Update, (input_system, camera_input, paint_system).chain());
+    .add_systems(
+      Update,
+      (input_system, camera_input, paint_system, update_collision_query_point).chain(),
+    );
 
   #[cfg(feature = "diagnostics")]
   app.add_plugins(DiagnosticsPlugin);
@@ -98,6 +101,9 @@ fn setup(mut commands: Commands) {
 
   // Spawn the pixel world (Materials and mesh are handled by the plugin)
   commands.queue(SpawnPixelWorld::new(MaterialSeeder::new(42)));
+
+  // Spawn collision query point that follows the mouse cursor
+  commands.spawn((Transform::default(), CollisionQueryPoint));
 }
 
 fn ui_system(mut contexts: EguiContexts, mut brush: ResMut<BrushState>, materials: Res<Materials>) {
@@ -256,4 +262,15 @@ fn paint_system(
     },
     gizmos.get(),
   );
+}
+
+fn update_collision_query_point(
+  brush: Res<BrushState>,
+  mut query_points: Query<&mut Transform, With<CollisionQueryPoint>>,
+) {
+  if let Some((x, y)) = brush.world_pos {
+    if let Ok(mut transform) = query_points.single_mut() {
+      transform.translation = Vec3::new(x as f32, y as f32, 0.0);
+    }
+  }
 }

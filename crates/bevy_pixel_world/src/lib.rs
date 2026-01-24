@@ -9,6 +9,7 @@ use bevy::prelude::*;
 #[cfg(not(feature = "headless"))]
 use bevy::sprite_render::Material2dPlugin;
 
+pub mod collision;
 pub mod coords;
 pub mod debug_shim;
 pub mod text;
@@ -45,6 +46,7 @@ pub use simulation::simulate_tick;
 pub use world::plugin::{SharedChunkMesh, SharedPaletteTexture, StreamingCamera};
 pub use world::{PixelWorld, PixelWorldBundle, PixelWorldConfig, SpawnPixelWorld};
 pub use persistence::{WorldSave, WorldSaveResource};
+pub use collision::{CollisionCache, CollisionConfig, CollisionQueryPoint, CollisionTasks};
 
 #[cfg(feature = "tracy")]
 pub use tracy_init::init_tracy;

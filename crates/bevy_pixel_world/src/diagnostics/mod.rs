@@ -39,6 +39,27 @@ impl Default for SimulationMetrics {
   }
 }
 
+/// Metrics for collision mesh generation timing.
+#[derive(Resource)]
+pub struct CollisionMetrics {
+  /// Time spent dispatching collision tasks (per frame).
+  pub dispatch_time: TimeSeries,
+  /// Time spent polling/completing collision tasks (per frame).
+  pub poll_time: TimeSeries,
+  /// Number of tasks completed this frame.
+  pub tasks_completed: TimeSeries,
+}
+
+impl Default for CollisionMetrics {
+  fn default() -> Self {
+    Self {
+      dispatch_time: TimeSeries::new(SAMPLE_CAPACITY),
+      poll_time: TimeSeries::new(SAMPLE_CAPACITY),
+      tasks_completed: TimeSeries::new(SAMPLE_CAPACITY),
+    }
+  }
+}
+
 pub struct DiagnosticsPlugin;
 
 impl Plugin for DiagnosticsPlugin {
@@ -49,6 +70,7 @@ impl Plugin for DiagnosticsPlugin {
     app
       .init_resource::<FrameTimeMetrics>()
       .init_resource::<SimulationMetrics>()
+      .init_resource::<CollisionMetrics>()
       .add_systems(First, collect_frame_metrics)
       .add_systems(EguiPrimaryContextPass, render_diagnostics_ui);
   }
@@ -71,6 +93,7 @@ fn render_diagnostics_ui(
   mut contexts: EguiContexts,
   mut metrics: ResMut<FrameTimeMetrics>,
   mut sim_metrics: ResMut<SimulationMetrics>,
+  mut collision_metrics: ResMut<CollisionMetrics>,
 ) {
   let Ok(ctx) = contexts.ctx_mut() else {
     return;
@@ -126,6 +149,19 @@ fn render_diagnostics_ui(
           label: "Upload",
           unit: "ms",
           line_color: egui::Color32::from_rgb(200, 100, 255),
+          ..Default::default()
+        },
+      );
+
+      ui.add_space(4.0);
+
+      time_series_graph(
+        ui,
+        &mut collision_metrics.poll_time,
+        TimeSeriesGraphConfig {
+          label: "Collision",
+          unit: "ms",
+          line_color: egui::Color32::from_rgb(100, 255, 200),
           ..Default::default()
         },
       );

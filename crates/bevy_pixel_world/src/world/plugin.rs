@@ -7,6 +7,11 @@ use bevy::prelude::*;
 use bevy::tasks::{AsyncComputeTaskPool, Task};
 
 use super::{PixelWorld, SlotIndex};
+use crate::collision::{
+  dispatch_collision_tasks, draw_collision_gizmos, draw_sample_mesh_gizmos,
+  invalidate_dirty_tiles, poll_collision_tasks, update_sample_mesh, CollisionCache,
+  CollisionConfig, CollisionTasks, SampleMesh,
+};
 use crate::coords::{ChunkPos, WorldPos, WorldRect, CHUNK_SIZE};
 use crate::debug_shim;
 use crate::material::Materials;
@@ -62,6 +67,10 @@ impl Plugin for PixelWorldStreamingPlugin {
     app
       .init_resource::<SeedingTasks>()
       .init_resource::<PersistenceTasks>()
+      .init_resource::<CollisionCache>()
+      .init_resource::<CollisionTasks>()
+      .init_resource::<CollisionConfig>()
+      .init_resource::<SampleMesh>()
       .add_systems(Startup, setup_shared_resources);
 
     #[cfg(not(feature = "headless"))]
@@ -74,10 +83,19 @@ impl Plugin for PixelWorldStreamingPlugin {
         poll_seeding_tasks,
         update_simulation_bounds,
         run_simulation,
+        invalidate_dirty_tiles,
+        dispatch_collision_tasks,
+        poll_collision_tasks,
         upload_dirty_chunks,
         flush_persistence_queue,
       )
         .chain(),
+    );
+
+    #[cfg(not(feature = "headless"))]
+    app.add_systems(
+      PostUpdate,
+      (update_sample_mesh, draw_collision_gizmos, draw_sample_mesh_gizmos),
     );
 
     #[cfg(feature = "headless")]
@@ -89,6 +107,9 @@ impl Plugin for PixelWorldStreamingPlugin {
         poll_seeding_tasks,
         update_simulation_bounds,
         run_simulation,
+        invalidate_dirty_tiles,
+        dispatch_collision_tasks,
+        poll_collision_tasks,
         flush_persistence_queue,
       )
         .chain(),

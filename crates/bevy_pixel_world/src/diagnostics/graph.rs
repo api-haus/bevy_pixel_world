@@ -90,9 +90,12 @@ pub fn time_series_graph(
   let current = series.current().unwrap_or(0.0);
   let avg = series.avg();
 
+  // Use more decimal places for very small values
+  let precision = if max_val.abs() < 0.1 { 3 } else { 1 };
   let stats_text = format!(
-    "{}: {:.1}{} (avg: {:.1}, min: {:.1}, max: {:.1})",
-    config.label, current, config.unit, avg, min_val, max_val
+    "{}: {:.prec$}{} (avg: {:.prec$}, min: {:.prec$}, max: {:.prec$})",
+    config.label, current, config.unit, avg, min_val, max_val,
+    prec = precision
   );
 
   painter.text(

@@ -11,6 +11,7 @@ categories = ["game-development", "simulation"]
 [dependencies]
 bevy = { workspace = true }
 ab_glyph = "0.2"
+spade = "2"
 dirs = "5"
 fastnoise2 = "0.4"
 lz4_flex = "0.11"

@@ -124,6 +124,9 @@ pub struct Chunk {
   pos: Option<ChunkPos>,
   /// Per-tile dirty rectangles for simulation scheduling.
   tile_dirty_rects: Box<[TileDirtyRect]>,
+  /// Per-tile collision dirty flags. When true, the tile's collision mesh
+  /// needs regeneration.
+  tile_collision_dirty: Box<[bool]>,
   /// True if this chunk was loaded from persistence (not procedurally generated).
   pub from_persistence: bool,
 }
@@ -135,6 +138,7 @@ impl Chunk {
       pixels: PixelSurface::new(width, height),
       pos: None,
       tile_dirty_rects: vec![TileDirtyRect::empty(); TILE_COUNT].into_boxed_slice(),
+      tile_collision_dirty: vec![true; TILE_COUNT].into_boxed_slice(),
       from_persistence: false,
     }
   }
@@ -208,5 +212,46 @@ impl Chunk {
     for rect in self.tile_dirty_rects.iter_mut() {
       *rect = TileDirtyRect::full();
     }
+  }
+
+  /// Returns true if the tile at (tx, ty) has dirty collision geometry.
+  pub fn is_tile_collision_dirty(&self, tx: u32, ty: u32) -> bool {
+    let idx = (ty * TILES_PER_CHUNK + tx) as usize;
+    self.tile_collision_dirty[idx]
+  }
+
+  /// Marks a tile's collision geometry as dirty.
+  ///
+  /// Also marks adjacent tiles at boundaries since collision meshes
+  /// include a 1-pixel border.
+  pub fn mark_tile_collision_dirty(&mut self, tx: u32, ty: u32) {
+    let idx = (ty * TILES_PER_CHUNK + tx) as usize;
+    self.tile_collision_dirty[idx] = true;
+  }
+
+  /// Marks a tile's collision geometry as clean.
+  pub fn clear_tile_collision_dirty(&mut self, tx: u32, ty: u32) {
+    let idx = (ty * TILES_PER_CHUNK + tx) as usize;
+    self.tile_collision_dirty[idx] = false;
+  }
+
+  /// Sets all tile collision dirty flags to the given value.
+  pub fn set_all_collision_dirty(&mut self, dirty: bool) {
+    for flag in self.tile_collision_dirty.iter_mut() {
+      *flag = dirty;
+    }
+  }
+
+  /// Returns an iterator over (tx, ty) pairs for tiles with dirty collision.
+  pub fn collision_dirty_tiles(&self) -> impl Iterator<Item = (u32, u32)> + '_ {
+    self.tile_collision_dirty.iter().enumerate().filter_map(|(idx, &dirty)| {
+      if dirty {
+        let tx = (idx as u32) % TILES_PER_CHUNK;
+        let ty = (idx as u32) / TILES_PER_CHUNK;
+        Some((tx, ty))
+      } else {
+        None
+      }
+    })
   }
 }

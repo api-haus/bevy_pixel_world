@@ -360,6 +360,66 @@ fn union_dirty_bounds(
   union_bounds
 }
 
+/// Marks a pixel position as collision dirty if the material changed.
+///
+/// We mark dirty if either pixel is non-air, since collision depends on
+/// material state which we don't have access to here. The collision system
+/// will determine actual collision status using the material registry.
+///
+/// Also marks adjacent tiles dirty when the pixel is at a tile boundary,
+/// since collision meshes sample a 1px border from neighbors.
+#[inline]
+fn mark_collision_dirty_if_changed(chunk: &mut Chunk, local_x: u32, local_y: u32, old: &Pixel, new: &Pixel) {
+  // If either old or new is non-air, mark dirty (material may have collision)
+  // This is conservative but correct - the collision system will filter further
+  if !old.is_air() || !new.is_air() {
+    let tx = local_x / TILE_SIZE;
+    let ty = local_y / TILE_SIZE;
+    chunk.mark_tile_collision_dirty(tx, ty);
+
+    // Also mark adjacent tiles if pixel is at tile boundary
+    // (collision meshes include 1px border from neighbors)
+    let px = local_x % TILE_SIZE;
+    let py = local_y % TILE_SIZE;
+    let max_local = TILE_SIZE - 1;
+    let tiles_per_chunk = crate::coords::TILES_PER_CHUNK;
+
+    // Left boundary: also mark tile to the left
+    if px == 0 && tx > 0 {
+      chunk.mark_tile_collision_dirty(tx - 1, ty);
+    }
+
+    // Right boundary: also mark tile to the right
+    if px == max_local && tx + 1 < tiles_per_chunk {
+      chunk.mark_tile_collision_dirty(tx + 1, ty);
+    }
+
+    // Bottom boundary: also mark tile below
+    if py == 0 && ty > 0 {
+      chunk.mark_tile_collision_dirty(tx, ty - 1);
+    }
+
+    // Top boundary: also mark tile above
+    if py == max_local && ty + 1 < tiles_per_chunk {
+      chunk.mark_tile_collision_dirty(tx, ty + 1);
+    }
+
+    // Corner cases: mark diagonal tiles if at corner
+    if px == 0 && py == 0 && tx > 0 && ty > 0 {
+      chunk.mark_tile_collision_dirty(tx - 1, ty - 1);
+    }
+    if px == max_local && py == 0 && tx + 1 < tiles_per_chunk && ty > 0 {
+      chunk.mark_tile_collision_dirty(tx + 1, ty - 1);
+    }
+    if px == 0 && py == max_local && tx > 0 && ty + 1 < tiles_per_chunk {
+      chunk.mark_tile_collision_dirty(tx - 1, ty + 1);
+    }
+    if px == max_local && py == max_local && tx + 1 < tiles_per_chunk && ty + 1 < tiles_per_chunk {
+      chunk.mark_tile_collision_dirty(tx + 1, ty + 1);
+    }
+  }
+}
+
 /// Swaps two pixels at the given world positions.
 ///
 /// Returns the chunk positions that were modified, or None if swap failed.
@@ -375,6 +435,11 @@ fn swap_pixels(chunks: &Canvas<'_>, a: WorldPos, b: WorldPos) -> Option<[ChunkPo
     let chunk = chunks.get_mut(chunk_a)?;
     let pixel_a = chunk.pixels[la];
     let pixel_b = chunk.pixels[lb];
+
+    // Mark collision dirty if collision state changes
+    mark_collision_dirty_if_changed(chunk, la.0, la.1, &pixel_a, &pixel_b);
+    mark_collision_dirty_if_changed(chunk, lb.0, lb.1, &pixel_b, &pixel_a);
+
     chunk.pixels[la] = pixel_b;
     chunk.pixels[lb] = pixel_a;
     Some([chunk_a, chunk_a])
@@ -384,6 +449,11 @@ fn swap_pixels(chunks: &Canvas<'_>, a: WorldPos, b: WorldPos) -> Option<[ChunkPo
 
     let pixel_a = chunk_ref_a.pixels[la];
     let pixel_b = chunk_ref_b.pixels[lb];
+
+    // Mark collision dirty if collision state changes
+    mark_collision_dirty_if_changed(chunk_ref_a, la.0, la.1, &pixel_a, &pixel_b);
+    mark_collision_dirty_if_changed(chunk_ref_b, lb.0, lb.1, &pixel_b, &pixel_a);
+
     chunk_ref_a.pixels[la] = pixel_b;
     chunk_ref_b.pixels[lb] = pixel_a;
 
@@ -441,13 +511,20 @@ fn process_tile<F>(
       };
 
       // Call the shader function
-      if let Some(pixel) = f(frag) {
+      if let Some(new_pixel) = f(frag) {
         // Convert world pos to chunk + local
         let (chunk_pos, local_pos) = WorldPos::new(world_x, world_y).to_chunk_and_local();
 
         // Try to write the pixel
         if let Some(chunk) = chunks.get_mut(chunk_pos) {
-          chunk.pixels[(local_pos.x as u32, local_pos.y as u32)] = pixel;
+          let lx = local_pos.x as u32;
+          let ly = local_pos.y as u32;
+          let old_pixel = chunk.pixels[(lx, ly)];
+
+          // Mark collision dirty if collision state changes
+          mark_collision_dirty_if_changed(chunk, lx, ly, &old_pixel, &new_pixel);
+
+          chunk.pixels[(lx, ly)] = new_pixel;
           local_dirty.insert(chunk_pos);
           dirty_pixels.push((chunk_pos, local_pos));
         }
