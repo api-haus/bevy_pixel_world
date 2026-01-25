@@ -9,194 +9,341 @@ individual pixels that participate fully in the CA simulation - they can burn, m
 through material interactions. When pixels are destroyed, the object's shape changes, collision mesh updates, and the
 object may split into fragments.
 
-## Simulation Cycle
+## Module Structure
 
-Each simulation tick processes pixel bodies through six phases:
-
-```mermaid
-flowchart TD
-    subgraph Tick["Simulation Tick"]
-        B1["1. Blit: Objects write pixels to CA world"]
-        B2["2. CA Simulation: Movement, interactions, heat"]
-        B3["3. Readback: CA changes mapped back to objects"]
-        B4["4. Clear: Remove object pixels from world"]
-        B5["5. Physics Step: Rapier moves bodies"]
-        B6["6. Transform Update: New positions/matrices applied"]
-
-        B1 --> B2 --> B3 --> B4 --> B5 --> B6
-        B6 -->|"next tick"| B1
-    end
 ```
-
-### Phase 1: Blit (Object to World)
-
-Each pixel body writes its pixels to the Canvas at world-transformed positions:
-
-1. For each non-void pixel in the body's surface buffer
-2. Transform local coordinates to world coordinates via affine matrix
-3. Write to Canvas at world position
-
-The blit operation uses nearest-neighbor sampling when rotation is involved.
-
-### Phase 2: CA Simulation
-
-Standard cellular automata passes execute on the Canvas. Object pixels participate in:
-
-- Movement (falling, flowing based on material state)
-- Material interactions (corrosion, ignition, diffusion)
-- Heat propagation and effects (ignition, melting)
-
-Object pixels are indistinguishable from world pixels during CA simulation.
-
-### Phase 3: Readback (World to Object)
-
-After CA simulation, changes are mapped back to object state:
-
-1. Use the BlittedTransform (position where pixels were written, not current physics position)
-2. For each world position within transformed bounds where `shape_mask=1`:
-   - Read pixel from PixelWorld at world position
-   - If pixel is void OR lacks `PIXEL_BODY` flag: mark as destroyed
-3. Clear shape_mask bits for destroyed pixels
-4. If any bits changed:
-   - Insert `ShapeMaskModified` marker component
-   - Insert `NeedsColliderRegen` marker component
-5. Run connected component analysis
-6. If multiple components: trigger object split
-
-The readback uses `BlittedTransform` rather than current `GlobalTransform` to ensure we read from where pixels were actually written, not where physics has moved the body since blit.
-
-### Phase 4: Clear (Remove from World)
-
-Object pixels are removed from the Canvas before physics moves the bodies:
-
-1. For each world position within the transformed bounds where `shape_mask=1`
-2. Clear the pixel (set to void)
-
-This prevents "ghost" pixels from remaining at the old position. World terrain that was overwritten during blit is
-restored from the underlying chunk data. Debris pixels created during readback (ash, gas) remain as world terrain.
-
-### Phase 5: Physics Step
-
-Rapier physics simulation advances rigid body positions and rotations based on forces, collisions, and constraints.
-
-### Phase 6: Transform Update
-
-Updated positions and rotations from physics are applied to Bevy transforms, preparing for the next tick's blit phase.
+pixel_body/
+├── mod.rs        # Core data structures, markers, plugin
+├── spawn.rs      # Entity spawning commands
+├── loader.rs     # PNG image loading and pixel conversion
+├── blit.rs       # Write/clear pixels to canvas
+├── readback.rs   # Detect pixel destruction
+├── split.rs      # Connected components and fragmentation
+└── collider.rs   # Physics collider generation
+```
 
 ## Data Structures
 
 ### PixelBody Component
 
+The core component storing pixel data:
+
+- **surface**: Object-local pixel buffer (`Surface<Pixel>`)
+- **shape_mask**: Boolean array (row-major) indicating which pixels are solid
+- **origin**: Offset from entity transform to pixel grid center, typically `(-width/2, -height/2)`
+
+The `shape_mask` is the source of truth for collision and physics. When pixels are destroyed, only the mask is updated
+(surface data may remain but is ignored).
+
+### BlittedTransform Component
+
+Stores the exact `GlobalTransform` used during the last blit operation:
+
+- Allows clear system to remove pixels at correct positions even if physics moved the body
+- Used by readback to detect destruction at the actual blitted location
+- Used by persistence to save position where pixels actually are
+
+### State Markers
+
+| Component | Purpose |
+|-----------|---------|
+| `ShapeMaskModified` | Shape mask was modified, triggers split detection |
+| `NeedsColliderRegen` | Collider must be regenerated |
+| `DestroyedPixels` | Temporary batch of destroyed pixel coordinates |
+| `PendingPixelBody` | Waiting for image asset to load |
+| `Persistable` | Body should be saved when chunk unloads |
+
+### PixelBodyId
+
+Stable identifier persisting across save/load cycles. Generated from a session seed + counter to prevent collisions.
+
+## Simulation Cycle
+
+Each frame processes pixel bodies through distinct phases:
+
+```mermaid
+flowchart TD
+    subgraph Frame["Per-Frame Cycle"]
+        direction TB
+
+        EE["1. Detect External Erasure
+        (brush changes before clear)"]
+
+        CL["2. Clear Pixel Bodies
+        (remove at BlittedTransform position)"]
+
+        BL["3. Blit Pixel Bodies
+        (write at current Transform,
+        store BlittedTransform)"]
+
+        CA["4. CA Simulation
+        (pixels may be destroyed)"]
+
+        RB["5. Readback
+        (detect CA destruction)"]
+
+        AP["6. Apply Changes
+        (update shape_mask, add markers)"]
+
+        SP["7. Split Detection
+        (fragment if disconnected)"]
+
+        EE --> CL --> BL --> CA --> RB --> AP --> SP
+    end
+
+    SP -->|"next frame"| EE
 ```
-PixelBody:
-  surface: Surface<Pixel>      # Local pixel buffer (object-local coordinates)
-  shape_mask: BitGrid          # Which pixels belong to object (vs world/void)
-  origin: (i32, i32)           # Offset from entity transform to pixel grid
-  width: u32
-  height: u32
-```
 
-### Shape Mask
+### Phase 1: Detect External Erasure
 
-A bitgrid tracking object ownership of pixels:
+Before clearing, check if external tools (brush, etc.) destroyed any blitted pixels:
 
-| Bit Value | Meaning                           |
-|-----------|-----------------------------------|
-| 1         | Pixel belongs to the object       |
-| 0         | Void or world pixel at this local position |
+- For each solid pixel in `shape_mask`
+- Check if world pixel at blitted position is void or missing `PIXEL_BODY` flag
+- Collect destroyed coordinates in `DestroyedPixels` component
 
-The shape mask is updated when:
+### Phase 2: Clear
 
-- Pixels are destroyed by damage, burning, or decay
-- Pixels transmute to different materials (melting)
-- Pixels move away from their original position
+Remove pixels from the canvas using the stored `BlittedTransform`:
 
-### Transform Integration
+- Uses transform from last blit, not current physics position
+- For each solid pixel: set world pixel to void
+- Ensures no "ghost" pixels remain at old positions
 
-Bevy's `GlobalTransform` provides the affine matrix mapping local pixel coordinates to world coordinates:
+### Phase 3: Blit
 
-- **Blit**: `world_pos = transform.transform_point(local_pos + origin)`
-- **Readback**: `local_pos = transform.inverse().transform_point(world_pos) - origin`
+Write pixel body content to the canvas at current position:
 
-Rotation uses nearest-neighbor sampling - each world position maps to exactly one local pixel.
+- Compute world-space AABB of rotated body
+- Use inverse transform to map world pixels back to local space
+- Write solid pixels with `PIXEL_BODY` flag set
+- Store current `GlobalTransform` in `BlittedTransform`
 
-## Phase Integration
+### Phase 4: CA Simulation
 
-Pixel body operations integrate with existing simulation passes:
+Standard cellular automata execution. Object pixels participate in:
+- Material interactions (corrosion, ignition)
+- Heat propagation
+- Movement rules
+
+Object pixels are indistinguishable from world pixels during simulation.
+
+### Phase 5: Readback
+
+Detect pixels destroyed by CA simulation:
+
+- Use `BlittedTransform` to find where pixels were written
+- For each solid pixel: check if now void or missing `PIXEL_BODY` flag
+- Merge with externally destroyed pixels
+- Store in `DestroyedPixels` component
+
+### Phase 6: Apply Changes
+
+Update object state from destruction data:
+
+- For each destroyed coordinate: set `shape_mask[i] = false`
+- Remove `DestroyedPixels` component
+- Insert `ShapeMaskModified` and `NeedsColliderRegen` markers
+
+### Phase 7: Split Detection
+
+Handle fragmentation when shape becomes disconnected:
 
 ```mermaid
 flowchart LR
-    PB1["Pixel Body Blit"] --> CA["CA Phases A-D"]
-    CA --> PB2["Pixel Body Readback"]
-    PB2 --> P["Particles"]
-    P --> MI["Material Interactions"]
-    MI --> PB3["Pixel Body Clear"]
-    PB3 --> PHY["Physics Step"]
+    SM["ShapeMaskModified"] --> CC["Connected Components
+    (Union-Find)"]
+
+    CC -->|"0 components"| D0["Despawn
+    (fully destroyed)"]
+
+    CC -->|"1 component"| D1["Keep Entity
+    (regen collider)"]
+
+    CC -->|"N > 1"| DN["Split into N Fragments"]
+
+    DN --> F1["Fragment 1"]
+    DN --> F2["Fragment 2"]
+    DN --> FN["Fragment N..."]
 ```
 
-- **Blit** runs before CA simulation begins
-- **Readback** runs after CA completes but before particles, ensuring destroyed pixels can emit particles (smoke, debris) in the same tick
-- **Clear** runs after material interactions but before physics, removing object pixels from the world so physics operates on clean terrain
+Split procedure for N > 1 components:
 
-## Shape Tracking and Collider Updates
+- Clear parent body's blitted pixels from canvas
+- Despawn parent entity
+- For each connected component:
+  - Create new `PixelBody` with tight bounding box
+  - Copy pixels from parent (adjusted to fragment-local coords)
+  - Generate physics collider
+  - Compute world position from component centroid
+  - **Blit fragment immediately** (prevents 1-frame flicker)
+  - Spawn entity with inherited velocity/rotation
 
-### Object Shape vs World Pixels
+## Transform Integration
 
-The shape mask explicitly tracks which pixels belong to the object. World pixels at the same location are separate:
+The separation of `GlobalTransform` (current) and `BlittedTransform` (last write) is critical:
 
-- Object pixels participate in CA simulation
-- When destroyed, object pixels leave the shape (shape_mask bit cleared)
-- Destroyed pixels become world terrain "on top" (ash, gas, debris)
+```mermaid
+sequenceDiagram
+    participant P as Physics
+    participant BT as BlittedTransform
+    participant GT as GlobalTransform
+    participant W as PixelWorld
 
-### Collider Recalculation
+    Note over BT,GT: Frame N
 
-When the shape mask changes, the physics collider must be updated:
+    rect rgb(50, 50, 80)
+        Note right of W: Clear Phase
+        W->>BT: Read stored transform
+        W->>W: Clear at BT position
+    end
 
-1. Run marching squares on the shape mask (same algorithm as terrain collision)
-2. Simplify and triangulate the resulting outline
-3. Update the Rapier collider component
+    rect rgb(50, 80, 50)
+        Note right of W: Blit Phase
+        W->>GT: Read current transform
+        W->>W: Write at GT position
+        GT-->>BT: Store as new BT
+    end
 
-### Object Splitting
+    rect rgb(80, 50, 50)
+        Note right of P: Physics Step
+        P->>GT: Update position
+        Note right of GT: GT moves, BT unchanged
+    end
 
-When destruction breaks connectivity (e.g., object cut in half):
+    Note over BT,GT: Frame N+1
+    Note right of W: Clear uses old BT
+    Note right of W: Blit uses new GT
+```
+
+This ensures:
+- Clear always removes pixels from where they were written
+- Readback detects destruction at correct positions
+- Physics movement doesn't cause orphan pixels
+
+## Physics Integration
+
+### Collider Generation
+
+Shape mask is converted to a compound physics collider:
+
+- Build boolean grid from `shape_mask` with 1-pixel border
+- Run marching squares to extract contours
+- Apply Douglas-Peucker simplification
+- Triangulate polygons
+- Offset vertices by `body.origin`
+- Build compound collider from triangles
+
+### Physics Features
+
+| Feature | avian2d | rapier2d | No Physics |
+|---------|---------|----------|------------|
+| Rigid body | `RigidBody::Dynamic` | `RigidBody::Dynamic` | None |
+| Velocity | `LinearVelocity`, `AngularVelocity` | `Velocity` | None |
+| Collider | Compound triangles | Compound triangles | None |
+
+Fragments inherit parent's velocity and rotation on split.
+
+### Terrain Colliders
+
+Separate from pixel body colliders, terrain uses tile-based static colliders:
+
+- `PhysicsColliderRegistry` tracks terrain collider entities per tile
+- Colliders spawn/despawn based on proximity to `CollisionQueryPoint` entities
+- When terrain changes, nearby sleeping bodies are woken
+
+## Persistence
+
+### Save on Chunk Unload
+
+When a chunk leaves the streaming window:
+
+- Use `BlittedTransform` for position (where pixels actually are)
+- Create `PixelBodyRecord` with shape, pixels, velocity
+- Queue for disk write
+- Despawn entity
+
+### Load on Chunk Load
+
+When a chunk enters the streaming window:
+
+- Retrieve `PixelBodyRecord` from storage
+- Reconstruct `PixelBody` from record
+- Generate collider
+- Ensure ID generator won't reuse loaded ID
+- Spawn entity with `BlittedTransform::default()`
 
 ```mermaid
 flowchart LR
-    Shape["Shape Mask"] --> CC["Connected Components"]
-    CC -->|"1 component"| Single["Update Collider"]
-    CC -->|"N components"| Split["Split into N Bodies"]
+    subgraph Unload["Chunk Unload"]
+        E1["Entity"] --> R1["Record"]
+        R1 --> D1["Disk"]
+        E1 -.->|despawn| X1["×"]
+    end
+
+    subgraph Load["Chunk Load"]
+        D2["Disk"] --> R2["Record"]
+        R2 --> E2["Entity"]
+    end
+
+    D1 -.->|"persistence"| D2
 ```
 
-Split procedure:
+## System Ordering
 
-1. Run connected component analysis on shape mask (union-find with path compression)
-2. If 0 components: body fully destroyed, despawn entity
-3. If 1 component: no split, regenerate collider if shape changed
-4. If N > 1 components:
-   - Despawn the original entity
-   - For each component, spawn a new entity with:
-     - PixelBody containing that component's pixels (tight bounds)
-     - Physics collider generated from component shape
-     - Inherited velocity from parent
-     - New PixelBodyId from generator
+All systems run in the Update schedule across three groups:
 
-## Edge Cases and Design Decisions
+### Pre-Simulation Group
+```
+tick_pixel_worlds
+  → save_pixel_bodies_on_chunk_unload
+  → load_pixel_bodies_on_chunk_load
+  → update_simulation_bounds
+```
 
-| Scenario | Approach |
+### Simulation Group
+```
+detect_external_erasure
+  → clear_pixel_bodies
+  → blit_pixel_bodies
+  → run_simulation
+  → readback_pixel_bodies
+  → apply_readback_changes
+  → split_pixel_bodies
+  → invalidate_dirty_tiles
+```
+
+### Post-Simulation Group
+```
+dispatch_collision_tasks
+  → poll_collision_tasks
+  → sync_physics_colliders
+  → flush_persistence_queue
+```
+
+## Key Invariants
+
+- `BlittedTransform` always reflects the last successful blit position
+- `shape_mask` is the source of truth for solid pixels
+- Fragments are blitted immediately on split (no visual gap)
+- Connected components use 4-connectivity (orthogonal only)
+- Collider generation may return `None` for empty/tiny shapes
+
+## Edge Cases
+
+| Scenario | Handling |
 |----------|----------|
-| **Rotation handling** | Nearest-neighbor pixel sampling; no interpolation |
-| **Object overlap** | Z-order priority determines which object writes to contested world positions |
-| **Burning objects** | Pixels removed from edges via damage; become ash/gas as world terrain |
-| **Object destruction** | Despawn entity when shape mask is entirely empty |
-| **Fast-moving objects** | Clear phase removes old position; blit writes at new position; no interpolation between frames |
-| **Partial overlap with terrain** | Object pixels overwrite terrain during blit; clear phase restores terrain from underlying chunk data |
+| Rotation | Nearest-neighbor sampling, no interpolation |
+| Body fully destroyed | Despawn when 0 connected components |
+| Fragment too small | Skip if `generate_collider()` returns `None` |
+| Fast-moving body | Clear removes old position, blit writes new |
+| Cross-chunk pixels | `PixelWorld` handles cross-chunk reads transparently |
 
 ## Related Documentation
 
-- [Simulation](simulation.md) - Multi-pass simulation overview, CA phases
-- [Scheduling](scheduling.md) - Checkerboard scheduling for parallel processing
+- [Simulation](simulation.md) - CA phases and scheduling
 - [Collision](collision.md) - Marching squares mesh generation
 - [Pixel Format](pixel-format.md) - Pixel data structure
-- [Materials](materials.md) - Material properties affecting pixel bodies
-- [Glossary](glossary.md) - Terminology definitions
-- [Architecture Overview](README.md)
+- [Materials](materials.md) - Material properties
+- [Chunk Persistence](chunk-persistence.md) - Save/load system
+- [Scheduling](scheduling.md) - System ordering
