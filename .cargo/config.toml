@@ -1,5 +1,9 @@
 # Cargo configuration for rust_voxelframework
 
+# Enable sccache for shared compilation cache across worktrees
+[build]
+rustc-wrapper = "sccache"
+
 # WASM build configuration with SIMD + threading support
 [target.wasm32-unknown-unknown]
 rustflags = [

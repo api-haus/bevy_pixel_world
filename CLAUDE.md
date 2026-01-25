@@ -31,6 +31,48 @@
 - Data structure definitions are permitted in plans. Implementation code is not.
 - Use mermaid diagrams for complex systems (state machines, data flow).
 
+## Git Worktrees (Multi-Agent Workflow)
+
+When multiple agents may work concurrently, use git worktrees to prevent interference:
+
+### Worktree Selection
+
+Before starting work, determine task locality from the user's prompt:
+
+1. **Check existing worktrees**: `git worktree list`
+2. **Match task to worktree** by examining active branches:
+   - Docs tasks → worktree with `docs-*` branch
+   - Refactoring → worktree with `refactor-*` branch
+   - Feature work → worktree with `feat-*` branch
+   - If no matching worktree exists, create one
+
+### Creating a Worktree
+
+```bash
+# Create worktree with descriptive branch name
+git worktree add ../sim2d-<task-type> -b <branch-name>
+
+# Examples:
+git worktree add ../sim2d-docs -b docs/architecture-reorg
+git worktree add ../sim2d-refactor -b refactor/split-complexity
+```
+
+### Worktree Conventions
+
+- **Location**: Sibling directories (`../sim2d-<suffix>`)
+- **Branch naming**: `<type>/<description>` (e.g., `docs/buoyancy`, `refactor/plugin-helpers`)
+- **Cleanup**: Remove worktree when task complete and merged: `git worktree remove ../sim2d-<suffix>`
+
+### Why This Matters
+
+- Each worktree has independent staging area and HEAD
+- Prevents one agent's `git add` from polluting another's commit
+- sccache shares compiled artifacts across worktrees (configured in `.cargo/config.toml`)
+
+### Single-Agent Exception
+
+If you are certain no other agents are running, you may work directly in the main worktree. When in doubt, use a worktree.
+
 ## References
 
 See `docs/implementation/methodology.md` for full rationale.
