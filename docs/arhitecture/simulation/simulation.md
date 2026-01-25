@@ -230,7 +230,7 @@ Time-based material transformations independent of pixel activity.
 
 ### Scheduling
 
-- Runs every N ticks (configurable via `decay_tick_rate`, e.g., every 60 ticks - see [Configuration](configuration.md))
+- Runs every N ticks (configurable via `decay_tick_rate`, e.g., every 60 ticks - see [Configuration](../foundational/configuration.md))
 - Ignores dirty flags - processes all pixels
 - Processes all loaded chunks, even if "stable"
 
@@ -279,9 +279,9 @@ Tiles track dirty rectangles for **simulation scheduling only** (separate from p
 - More efficient than per-pixel tracking, finer than whole-chunk
 
 **Note:** Dirty rects do not drive rendering uploads. Rendering uses whole-chunk texture upload -
-see [Rendering](rendering.md).
+see [Rendering](../rendering/rendering.md).
 
-See [Spatial Hierarchy](spatial-hierarchy.md) for tile system details.
+See [Spatial Hierarchy](../foundational/spatial-hierarchy.md) for tile system details.
 
 ---
 
@@ -300,11 +300,11 @@ See [Spatial Hierarchy](spatial-hierarchy.md) for tile system details.
 
 - [Materials](materials.md) - Material properties, tags, and interaction definitions
 - [Particles](particles.md) - Free-form particle system for dynamic effects
-- [Pixel Bodies](pixel-bodies.md) - Dynamic physics objects with pixel content
-- [Pixel Format](pixel-format.md) - Data structure processed by simulation
-- [Spatial Hierarchy](spatial-hierarchy.md) - World, chunk, tile, pixel organization
+- [Pixel Bodies](../physics/pixel-bodies.md) - Dynamic physics objects with pixel content
+- [Pixel Format](../foundational/pixel-format.md) - Data structure processed by simulation
+- [Spatial Hierarchy](../foundational/spatial-hierarchy.md) - World, chunk, tile, pixel organization
 - [Scheduling](scheduling.md) - Checkerboard tile phasing for parallel simulation
-- [Chunk Pooling](chunk-pooling.md) - Memory management for chunk buffers
-- [Streaming Window](streaming-window.md) - Which chunks are active for simulation
-- [Configuration Reference](configuration.md) - Tunable simulation parameters
-- [Architecture Overview](README.md)
+- [Chunk Pooling](../chunk-management/chunk-pooling.md) - Memory management for chunk buffers
+- [Streaming Window](../streaming/streaming-window.md) - Which chunks are active for simulation
+- [Configuration Reference](../foundational/configuration.md) - Tunable simulation parameters
+- [Architecture Overview](../README.md)

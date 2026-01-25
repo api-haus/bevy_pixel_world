@@ -179,7 +179,7 @@ Resource for accepting or rejecting recovery:
 ## Related Documentation
 
 - [Chunk Persistence](chunk-persistence.md) - Primary save file format
-- [Pixel Bodies](pixel-bodies.md) - Entity persistence within saves
-- [Streaming Window](streaming-window.md) - Chunk loading that recovery gates
-- [Glossary](glossary.md) - Recovery terminology
-- [Architecture Overview](README.md)
+- [Pixel Bodies](../physics/pixel-bodies.md) - Entity persistence within saves
+- [Streaming Window](../streaming/streaming-window.md) - Chunk loading that recovery gates
+- [Glossary](../glossary.md) - Recovery terminology
+- [Architecture Overview](../README.md)

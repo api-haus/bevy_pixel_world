@@ -258,5 +258,5 @@ cargo run -p bevy_pixel_world --example painting --features avian2d
 ## Related Documentation
 
 - [Pixel Bodies](pixel-bodies.md) - Core pixel body system
-- [Simulation](simulation.md) - CA passes that redistribute displaced material
-- [Scheduling](scheduling.md) - System ordering guarantees
+- [Simulation](../simulation/simulation.md) - CA passes that redistribute displaced material
+- [Scheduling](../simulation/scheduling.md) - System ordering guarantees

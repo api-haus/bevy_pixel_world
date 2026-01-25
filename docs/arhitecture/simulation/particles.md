@@ -271,7 +271,7 @@ fn particle_pass():
 
 Particles use a simple pool allocator:
 
-- Fixed-size particle pool (see [Configuration](configuration.md) for `pool_size`)
+- Fixed-size particle pool (see [Configuration](../foundational/configuration.md) for `pool_size`)
 - When pool is full, new emissions are silently rejected (with a warning logged)
 - No heap allocation during simulation
 
@@ -279,6 +279,6 @@ Particles use a simple pool allocator:
 
 - [Simulation](simulation.md) - Main simulation passes and scheduling
 - [Materials](materials.md) - Material properties including `particle_gravity`
-- [Pixel Format](pixel-format.md) - Pixel structure that particles convert to/from
-- [Spatial Hierarchy](spatial-hierarchy.md) - World coordinate system
-- [Architecture Overview](README.md)
+- [Pixel Format](../foundational/pixel-format.md) - Pixel structure that particles convert to/from
+- [Spatial Hierarchy](../foundational/spatial-hierarchy.md) - World coordinate system
+- [Architecture Overview](../README.md)

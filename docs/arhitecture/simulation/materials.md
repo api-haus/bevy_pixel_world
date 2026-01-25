@@ -282,8 +282,8 @@ a given tag.
 
 ## Related Documentation
 
-- [Pixel Format](pixel-format.md) - How material ID is stored per pixel
+- [Pixel Format](../foundational/pixel-format.md) - How material ID is stored per pixel
 - [Simulation](simulation.md) - Passes, interaction processing, decay scheduling, heat layer
 - [Particles](particles.md) - Free-form particle system, `particle_gravity` usage
-- [Chunk Seeding](chunk-seeding.md) - How materials are placed during generation
-- [Architecture Overview](README.md)
+- [Chunk Seeding](../chunk-management/chunk-seeding.md) - How materials are placed during generation
+- [Architecture Overview](../README.md)

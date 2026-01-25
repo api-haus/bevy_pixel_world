@@ -38,29 +38,99 @@ flowchart TB
     Seeder -.->|" persistence "| Disk
 ```
 
-## Component Overview
+## Documentation Structure
 
-| Component             | Purpose                                                          | Documentation                                |
-|-----------------------|------------------------------------------------------------------|----------------------------------------------|
-| **Glossary**          | Canonical definitions of technical terms                         | [glossary.md](glossary.md)                   |
-| **Coordinates**       | Canonical coordinate system convention (Y+ up)                   | [coordinates.md](coordinates.md)             |
-| **Spatial Hierarchy** | World, chunk, tile, pixel organization and coordinate systems    | [spatial-hierarchy.md](spatial-hierarchy.md) |
-| **Pixel Format**      | Data structure for individual pixels                             | [pixel-format.md](pixel-format.md)           |
-| **Materials**         | Material definitions, behavior types, tags, and interactions     | [materials.md](materials.md)                 |
-| **Chunk Pool**        | Object pool pattern for zero-allocation chunk management         | [chunk-pooling.md](chunk-pooling.md)         |
-| **Chunk Persistence** | Save file format, random access, compression, dirty tracking     | [chunk-persistence.md](chunk-persistence.md) |
-| **Recovery Persistence** | Dual-save crash recovery with autosave and explicit checkpoints | [recovery-persistence.md](recovery-persistence.md) |
-| **Named Saves**       | Consumer-controlled save management with complete world snapshots | [named-saves.md](named-saves.md)             |
-| **Simulation Engine** | Parallel cellular automata with checkerboard scheduling          | [simulation.md](simulation.md)               |
-| **Particle System**   | Free-form particles for dynamic effects (debris, gases, pouring) | [particles.md](particles.md)                 |
-| **Pixel Bodies**      | Dynamic physics objects with pixel content in CA simulation      | [pixel-bodies.md](pixel-bodies.md)           |
-| **Pixel Displacement**| Conserve pixels when bodies move through fluids                  | [pixel-displacement.md](pixel-displacement.md) |
-| **Buoyancy**          | Physics forces for bodies submerged in liquid                    | [buoyancy.md](buoyancy.md)                   |
-| **Streaming Window**  | Camera-tracking active region management                         | [streaming-window.md](streaming-window.md)   |
-| **Chunk Seeder**      | Trait for procedural generation, noise pipelines                 | [chunk-seeding.md](chunk-seeding.md)         |
-| **Rendering**         | Chunk texture upload and material identity textures              | [rendering.md](rendering.md)                 |
-| **Collision**         | Marching squares mesh generation from solid pixels               | [collision.md](collision.md)                 |
-| **Configuration**     | Tunable parameters and constraints                               | [configuration.md](configuration.md)         |
+Documentation is organized into thematic sections:
+
+### Reference
+
+| Document | Purpose |
+|----------|---------|
+| [Glossary](glossary.md) | Canonical definitions of technical terms |
+
+### Foundational
+
+Core concepts that other documentation depends on.
+
+| Document | Purpose |
+|----------|---------|
+| [Coordinates](foundational/coordinates.md) | Canonical coordinate system convention (Y+ up) |
+| [Spatial Hierarchy](foundational/spatial-hierarchy.md) | World, chunk, tile, pixel organization |
+| [Pixel Format](foundational/pixel-format.md) | Data structure for individual pixels |
+| [Configuration](foundational/configuration.md) | Tunable parameters and constraints |
+
+### Simulation
+
+Cellular automata engine and material system.
+
+| Document | Purpose |
+|----------|---------|
+| [Simulation](simulation/simulation.md) | Parallel CA with checkerboard scheduling |
+| [Scheduling](simulation/scheduling.md) | Thread-safe parallel tile scheduling |
+| [Materials](simulation/materials.md) | Material definitions, behavior types, interactions |
+| [Particles](simulation/particles.md) | Free-form particles for debris, gases, pouring |
+
+### Physics
+
+Dynamic objects and force systems.
+
+| Document | Purpose |
+|----------|---------|
+| [Pixel Bodies](physics/pixel-bodies.md) | Dynamic physics objects with pixel content |
+| [Collision](physics/collision.md) | Marching squares mesh generation |
+| [Pixel Displacement](physics/pixel-displacement.md) | Conserve pixels when bodies move through fluids |
+| [Buoyancy](physics/buoyancy.md) | Physics forces for bodies submerged in liquid |
+
+### Pixel Awareness
+
+Systems that query the pixel world.
+
+| Document | Purpose |
+|----------|---------|
+| [Submergence](pixel-awareness/submergence.md) | Perimeter-based liquid detection and events |
+
+### Chunk Management
+
+Chunk lifecycle and memory management.
+
+| Document | Purpose |
+|----------|---------|
+| [Chunk Pooling](chunk-management/chunk-pooling.md) | Object pool pattern for zero-allocation management |
+| [Chunk Seeding](chunk-management/chunk-seeding.md) | Trait for procedural generation, noise pipelines |
+
+### Persistence
+
+Save files and data persistence.
+
+| Document | Purpose |
+|----------|---------|
+| [Chunk Persistence](persistence/chunk-persistence.md) | Save file format, random access, compression |
+| [Recovery Persistence](persistence/recovery-persistence.md) | Dual-save crash recovery with autosave |
+| [Named Saves](persistence/named-saves.md) | Consumer-controlled save management |
+
+### Rendering
+
+Visual output systems.
+
+| Document | Purpose |
+|----------|---------|
+| [Rendering](rendering/rendering.md) | Chunk texture upload and material identity textures |
+
+### World Generation
+
+Procedural content generation.
+
+| Document | Purpose |
+|----------|---------|
+| [PCG Ideas](world-generation/pcg-ideas.md) | Advanced generation with WFC, stamps |
+
+### Streaming
+
+Infinite world management.
+
+| Document | Purpose |
+|----------|---------|
+| [Streaming Window](streaming/streaming-window.md) | Camera-tracking active region management |
 
 ## Data Flow
 

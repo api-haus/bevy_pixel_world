@@ -23,7 +23,7 @@ The active region (streaming window) is a fixed-size rectangular grid:
 The grid maintains internal positional consistency—it always remains a complete rectangle. As the camera moves, chunks
 roll from one edge to the opposite edge rather than being individually loaded/unloaded.
 
-See [Configuration Reference](configuration.md) for compile-time constants.
+See [Configuration Reference](../foundational/configuration.md) for compile-time constants.
 
 ## Camera Tracking
 
@@ -138,8 +138,8 @@ As the camera moves right:
 
 ## Related Documentation
 
-- [Chunk Pooling](chunk-pooling.md) - Provides chunks for the streaming window
-- [Chunk Seeding](chunk-seeding.md) - Initializes newly assigned chunks
-- [Chunk Persistence](chunk-persistence.md) - Saves modified chunks when recycled
-- [Configuration Reference](configuration.md) - Window and hysteresis parameters
-- [Architecture Overview](README.md)
+- [Chunk Pooling](../chunk-management/chunk-pooling.md) - Provides chunks for the streaming window
+- [Chunk Seeding](../chunk-management/chunk-seeding.md) - Initializes newly assigned chunks
+- [Chunk Persistence](../persistence/chunk-persistence.md) - Saves modified chunks when recycled
+- [Configuration Reference](../foundational/configuration.md) - Window and hysteresis parameters
+- [Architecture Overview](../README.md)

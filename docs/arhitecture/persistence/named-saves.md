@@ -164,5 +164,5 @@ The copy-then-flush order ensures the source save is never corrupted.
 
 - [Chunk Persistence](chunk-persistence.md) - Save file format
 - [Recovery Persistence](recovery-persistence.md) - Crash recovery pattern
-- [Streaming Window](streaming-window.md) - In-memory chunk management
-- [Architecture Overview](README.md)
+- [Streaming Window](../streaming/streaming-window.md) - In-memory chunk management
+- [Architecture Overview](../README.md)

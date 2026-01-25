@@ -35,7 +35,7 @@ Derived values are expressed as formulas, not magic numbers:
 | `CHUNK_MEMORY`    | `CHUNK_SIZE * CHUNK_SIZE * 4`   | 1 MB      |
 
 **Constraint:** `CHUNK_SIZE` must be evenly divisible by `TILE_SIZE`. This ensures the checkerboard pattern aligns
-across chunk boundaries. See [Simulation](simulation.md) for details.
+across chunk boundaries. See [Simulation](../simulation/simulation.md) for details.
 
 ## Runtime Parameters
 
@@ -95,7 +95,7 @@ materials decay in real time.
 | `cooling_factor` | Heat dissipation rate per propagation pass | 0.0-1.0, e.g., 0.95 |
 | `burning_heat`   | Heat emitted by burning pixels per tick    | e.g., 50            |
 
-**Note:** Higher `cooling_factor` values mean heat persists longer. See [Simulation](simulation.md) for heat layer
+**Note:** Higher `cooling_factor` values mean heat persists longer. See [Simulation](../simulation/simulation.md) for heat layer
 details.
 
 ## Particle Physics
@@ -105,7 +105,7 @@ details.
 | `air_drag`  | Velocity damping coefficient per tick         | 0.0-1.0, e.g., 0.1 |
 | `pool_size` | Maximum concurrent particles before rejecting | e.g., 10000        |
 
-**Note:** See [Particles](particles.md) for particle system documentation.
+**Note:** See [Particles](../simulation/particles.md) for particle system documentation.
 
 ## Memory Budget
 
@@ -118,8 +118,8 @@ With the default constants:
 ## Related Documentation
 
 - [Pixel Format](pixel-format.md) - Defines bytes_per_pixel structure
-- [Chunk Pooling](chunk-pooling.md) - How pool parameters affect memory
-- [Streaming Window](streaming-window.md) - How window parameters affect loading
-- [Simulation](simulation.md) - How tile size affects parallelism
-- [Chunk Seeding](chunk-seeding.md) - How seeder parameters affect generation
-- [Architecture Overview](README.md)
+- [Chunk Pooling](../chunk-management/chunk-pooling.md) - How pool parameters affect memory
+- [Streaming Window](../streaming/streaming-window.md) - How window parameters affect loading
+- [Simulation](../simulation/simulation.md) - How tile size affects parallelism
+- [Chunk Seeding](../chunk-management/chunk-seeding.md) - How seeder parameters affect generation
+- [Architecture Overview](../README.md)

@@ -25,7 +25,7 @@ The material identifier determines pixel behavior:
 
 - Indexes into a material registry (up to 256 materials)
 - Material ID 0 is reserved for **void** (empty space)
-- See [Materials](materials.md) for property definitions and interaction system
+- See [Materials](../simulation/materials.md) for property definitions and interaction system
 
 ## Color Field
 
@@ -44,7 +44,7 @@ Accumulated damage tracking:
 - At material-defined threshold: pixel is destroyed or transforms (stone → rubble, wood → ash)
 - Some materials may be indestructible (damage ignored)
 
-See [Materials](materials.md) for `damage_threshold` and `destruction_product` properties.
+See [Materials](../simulation/materials.md) for `damage_threshold` and `destruction_product` properties.
 
 ## Flag Bitmask
 
@@ -62,7 +62,7 @@ Bit layout (u8):
 | Flag      | Bit | Description                                                                                                                                                                                                                                                                        |
 |-----------|-----|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `dirty`   | 0   | Pixel is active and needs simulation this tick. Stable pixels have `dirty=0` and are skipped until a neighbor change wakes them. Major performance optimization - most pixels are stable at any given time. **Note:** This flag tracks *simulation activity* only, not rendering.  |
-| `solid`   | 1   | Caches whether pixel's material is not liquid or gas (i.e., `state: solid` or `state: powder`). Set when pixel is placed, used by collision system to avoid material registry lookup. Collision mesh includes pixels where `solid=1 AND falling=0`. See [Collision](collision.md). |
+| `solid`   | 1   | Caches whether pixel's material is not liquid or gas (i.e., `state: solid` or `state: powder`). Set when pixel is placed, used by collision system to avoid material registry lookup. Collision mesh includes pixels where `solid=1 AND falling=0`. See [Collision](../physics/collision.md). |
 | `falling` | 2   | Pixel has downward momentum. Cheaper than storing a velocity vector. Cleared when pixel comes to rest, set when displaced. Used by collision system: only stable pixels (`falling=0`) are included in collision mesh.                                                              |
 
 ### State Modifier Flags
@@ -76,7 +76,7 @@ Bit layout (u8):
 
 | Flag         | Bit | Description                                                                                                                                                                                                           |
 |--------------|-----|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `pixel_body` | 5   | Pixel belongs to a pixel body, not terrain. Set during blit, cleared during clear. Excluded from terrain collision mesh generation. Prevents terrain systems from treating body pixels as world terrain. See [Pixel Bodies](pixel-bodies.md). |
+| `pixel_body` | 5   | Pixel belongs to a pixel body, not terrain. Set during blit, cleared during clear. Excluded from terrain collision mesh generation. Prevents terrain systems from treating body pixels as world terrain. See [Pixel Bodies](../physics/pixel-bodies.md). |
 
 ### Reserved Bits
 
@@ -108,16 +108,16 @@ For a chunk buffer, total memory = width × height × 4 bytes.
 
 Both systems consume all pixel data. Rendering uses Damage to visually indicate wear (darkening, cracks) and Flags for
 state visualization (fire glow for `burning`, sheen for `wet`). Rendering uses whole-chunk texture upload -
-see [Rendering](rendering.md).
+see [Rendering](../rendering/rendering.md).
 
 ## Related Documentation
 
-- [Materials](materials.md) - Material properties, tags, and interaction system
+- [Materials](../simulation/materials.md) - Material properties, tags, and interaction system
 - [Spatial Hierarchy](spatial-hierarchy.md) - World, chunk, tile, pixel organization
-- [Simulation](simulation.md) - How pixels are processed each tick
-- [Collision](collision.md) - How solid flag drives collision mesh generation
-- [Pixel Bodies](pixel-bodies.md) - Dynamic objects using the pixel_body flag
-- [Rendering](rendering.md) - Texture upload strategy
-- [Chunk Seeding](chunk-seeding.md) - How pixel data is initialized
+- [Simulation](../simulation/simulation.md) - How pixels are processed each tick
+- [Collision](../physics/collision.md) - How solid flag drives collision mesh generation
+- [Pixel Bodies](../physics/pixel-bodies.md) - Dynamic objects using the pixel_body flag
+- [Rendering](../rendering/rendering.md) - Texture upload strategy
+- [Chunk Seeding](../chunk-management/chunk-seeding.md) - How pixel data is initialized
 - [Configuration Reference](configuration.md) - Bytes per pixel parameter
-- [Architecture Overview](README.md)
+- [Architecture Overview](../README.md)

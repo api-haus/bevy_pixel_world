@@ -341,9 +341,9 @@ dispatch_collision_tasks
 
 ## Related Documentation
 
-- [Simulation](simulation.md) - CA phases and scheduling
+- [Simulation](../simulation/simulation.md) - CA phases and scheduling
 - [Collision](collision.md) - Marching squares mesh generation
-- [Pixel Format](pixel-format.md) - Pixel data structure
-- [Materials](materials.md) - Material properties
-- [Chunk Persistence](chunk-persistence.md) - Save/load system
-- [Scheduling](scheduling.md) - System ordering
+- [Pixel Format](../foundational/pixel-format.md) - Pixel data structure
+- [Materials](../simulation/materials.md) - Material properties
+- [Chunk Persistence](../persistence/chunk-persistence.md) - Save/load system
+- [Scheduling](../simulation/scheduling.md) - System ordering

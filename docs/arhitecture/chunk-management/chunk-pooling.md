@@ -15,7 +15,7 @@ The pool consists of:
 - **Uniform chunk buffers** - Each chunk is `CHUNK_SIZE` × `CHUNK_SIZE` pixels
 - **Pre-allocated memory** - `POOL_SIZE * CHUNK_SIZE * CHUNK_SIZE * 4` bytes total
 
-See [Configuration Reference](configuration.md) for compile-time constants.
+See [Configuration Reference](../foundational/configuration.md) for compile-time constants.
 
 ## Chunk Memory Layout
 
@@ -96,8 +96,8 @@ The buffer is never deallocated. Instead:
 
 ## Related Documentation
 
-- [Streaming Window](streaming-window.md) - Decides when chunks enter/leave the pool
+- [Streaming Window](../streaming/streaming-window.md) - Decides when chunks enter/leave the pool
 - [Chunk Seeding](chunk-seeding.md) - Fills pooled chunks with data
-- [Chunk Persistence](chunk-persistence.md) - Saves modified chunks during recycling
-- [Configuration Reference](configuration.md) - Pool size and chunk parameters
-- [Architecture Overview](README.md)
+- [Chunk Persistence](../persistence/chunk-persistence.md) - Saves modified chunks during recycling
+- [Configuration Reference](../foundational/configuration.md) - Pool size and chunk parameters
+- [Architecture Overview](../README.md)

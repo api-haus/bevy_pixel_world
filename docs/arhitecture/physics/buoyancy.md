@@ -4,13 +4,51 @@ Physics force simulation for rigid bodies submerged in liquid.
 
 ## Overview
 
-Buoyancy applies upward forces to pixel bodies based on their submersion depth in liquid materials. Unlike
+Buoyancy applies upward forces to pixel bodies based on their submersion in liquid materials. Unlike
 [displacement](pixel-displacement.md), which conserves pixels during movement, buoyancy applies physics forces that
 affect rigid body dynamics through external physics engines (avian2d/rapier2d).
 
-The system uses coarse density sampling rather than per-pixel force calculation. A persistent grid of sample points
-attached to each body probes the pixel world for liquid presence and surface distance, accumulating force contributions
-based on hydrostatic pressure.
+The system is built in layers:
+
+```
+Submergence Detection (core)
+    ├── Simple Buoyancy Mode
+    │     └── Single-point force at body center
+    └── Density-Sampling Mode
+          └── Multi-point sampling with depth-scaled forces
+```
+
+**[Submergence detection](../pixel-awareness/submergence.md)** is the foundation - a perimeter-sampling system that
+determines how much of a body is submerged and fires events on state transitions. Both buoyancy modes depend on this
+shared detection layer.
+
+**Buoyancy modes** determine how forces are calculated and applied. Simple mode is cheaper and suitable for basic
+floating. Density-sampling mode provides accurate torque and variable liquid support at higher cost.
+
+## Buoyancy Modes
+
+| Mode | Force Application | Submergence Check | Use When |
+|------|-------------------|-------------------|----------|
+| Simple | Single point at body center | Perimeter sample grid | Basic floating, uniform liquid, performance-critical |
+| Density-Sampling | Multi-point grid with depth scaling | Same grid used for force | Variable liquids, accurate torque, realistic behavior |
+
+### Simple Mode
+
+Force applied at body center-of-mass only:
+
+- Magnitude: `liquid_density * gravity * submerged_fraction * body_volume`
+- No torque from buoyancy (body orientation unaffected by liquid)
+- Drag/damping still applied when submerged (via [submergence](../pixel-awareness/submergence.md))
+- Computational cost: O(perimeter samples) for detection only
+
+### Density-Sampling Mode
+
+Force distributed across a grid of sample points:
+
+- Each sample contributes force proportional to its depth below the surface
+- Deeper samples contribute more force (hydrostatic pressure)
+- Off-center samples create corrective torque
+- Computational cost: O(grid samples) for both detection and force
 
 ## Design Rationale
 
@@ -69,18 +107,20 @@ raycast accumulates liquid density along its path, averaging across layers when 
 Global configuration for buoyancy simulation:
 
 ```
-sample_resolution: u8      # Samples per body-width unit (default: 4)
-min_samples: u8            # Minimum sample count (default: 4)
-max_samples: u8            # Maximum sample count (default: 64)
-surface_search_radius: i32 # Max raycast distance in pixels (default: 128)
-force_scale: f32           # Global force multiplier (default: 1.0)
-torque_enabled: bool       # Enable rotational forces (default: true)
-damping_factor: f32        # Water resistance coefficient (default: 0.1)
+mode: BuoyancyMode             # Simple or DensitySampling
+submersion_threshold: f32      # Fraction to trigger is_submerged (default: 0.25)
+sample_resolution: u8          # Samples per body-width unit (default: 4)
+min_samples: u8                # Minimum sample count (default: 4)
+max_samples: u8                # Maximum sample count (default: 64)
+surface_search_radius: i32     # Max raycast distance in pixels (default: 128)
+force_scale: f32               # Global force multiplier (default: 1.0)
+torque_enabled: bool           # Enable rotational forces (default: true)
+damping_factor: f32            # Water resistance coefficient (default: 0.1)
 ```
 
 ### BuoyancySampleGrid (Component)
 
-Persistent sample positions in body-local space:
+Persistent sample positions in body-local space (density-sampling mode):
 
 ```
 samples: Vec<BuoyancySample>
@@ -279,23 +319,29 @@ gantt
     section Pixel Bodies
     Blit pixel bodies: blit, 0, 1
 
-    section Buoyancy
-    Generate grids (on change): gen, 1, 2
+    section Submergence
+    Generate perimeter samples (on change): gen, 1, 2
     Sample world pixels: sample, 2, 3
-    Apply forces: apply, 3, 4
+    Emit Submerged/Surfaced events: events, 3, 4
+    Apply drag modifications: drag, 4, 5
+
+    section Buoyancy
+    Apply forces (mode-dependent): force, 5, 6
 
     section Physics
-    Integrate forces: physics, 4, 5
+    Integrate forces: physics, 6, 7
 ```
 
 System set ordering:
 
 ```
 PixelBodySet::Blit
-  → BuoyancySet::GenerateGrid   # Run on Added<Buoyant> or ShapeMaskModified
-  → BuoyancySet::Sample         # Read pixel world, update BuoyancyState
-  → BuoyancySet::ApplyForce     # Write to ExternalForce/ConstantForce
-  → PhysicsSet::Step            # Physics engine integration
+  → SubmergenceSet::GenerateSamples  # Run on Added<Buoyant> or ShapeMaskModified
+  → SubmergenceSet::Sample           # Read pixel world, update SubmersionState
+  → SubmergenceSet::EmitEvents       # Fire Submerged/Surfaced events
+  → SubmergenceSet::ApplyDrag        # Modify LinearDamping/AngularDamping
+  → BuoyancySet::ApplyForce          # Write to ExternalForce/ConstantForce
+  → PhysicsSet::Step                 # Physics engine integration
 ```
 
 Buoyancy runs after blit to ensure pixel bodies are written to the world before sampling. Force application runs before
@@ -310,6 +356,7 @@ physics step so forces are integrated in the same frame.
 | avian2d | `ExternalForce` | Apply computed buoyancy |
 | rapier2d | `ExternalForce` | Apply computed buoyancy |
 | Pixel Bodies | `shape_mask`, `ShapeMaskModified` | Trigger grid regeneration |
+| Submergence | `SubmersionState`, events | Core detection layer |
 
 ## Key Invariants
 
@@ -335,8 +382,9 @@ physics step so forces are integrated in the same frame.
 
 ## Related Documentation
 
+- [Submergence](../pixel-awareness/submergence.md) - Core detection system (events, drag modification)
 - [Pixel Bodies](pixel-bodies.md) - Core pixel body system
 - [Pixel Displacement](pixel-displacement.md) - Conservation during movement (complementary to buoyancy)
-- [Materials](materials.md) - Density and liquid state properties
-- [Simulation](simulation.md) - CA phases and material behavior
-- [Scheduling](scheduling.md) - System ordering constraints
+- [Materials](../simulation/materials.md) - Density and liquid state properties
+- [Simulation](../simulation/simulation.md) - CA phases and material behavior
+- [Scheduling](../simulation/scheduling.md) - System ordering constraints

@@ -62,7 +62,7 @@ A basic proof-of-concept pipeline for initial development:
 2. **Layer placement** - Depth-based material assignment (dirt, stone, bedrock)
 3. **Cave carving** - 3D noise creates underground cavities (optional)
 
-This serves as a minimal seeder example. For production-quality worlds, see [PCG World Ideas](pcg-ideas.md) for advanced
+This serves as a minimal seeder example. For production-quality worlds, see [PCG World Ideas](../world-generation/pcg-ideas.md) for advanced
 generation with WFC, stamps, and hierarchical content.
 
 ### Noise Configuration
@@ -93,7 +93,7 @@ flowchart TB
 The persistence seeder is a decorator—it wraps a noise seeder (or any other seeder) and intercepts requests to check
 for saved data first.
 
-See [Chunk Persistence](chunk-persistence.md) for:
+See [Chunk Persistence](../persistence/chunk-persistence.md) for:
 
 - Save file binary format
 - Page table structure for random access
@@ -188,10 +188,10 @@ This prevents flat, uniform terrain while keeping material identity consistent.
 
 ## Related Documentation
 
-- [Chunk Persistence](chunk-persistence.md) - Save/load system for modified chunks
+- [Chunk Persistence](../persistence/chunk-persistence.md) - Save/load system for modified chunks
 - [Chunk Pooling](chunk-pooling.md) - Lifecycle that triggers seeding
-- [Streaming Window](streaming-window.md) - Determines which chunks need seeding
-- [PCG World Ideas](pcg-ideas.md) - Advanced generation with stamps and WFC
-- [Materials](materials.md) - Material definitions for seeded pixels
-- [Configuration Reference](configuration.md) - Seeder parameters
-- [Architecture Overview](README.md)
+- [Streaming Window](../streaming/streaming-window.md) - Determines which chunks need seeding
+- [PCG World Ideas](../world-generation/pcg-ideas.md) - Advanced generation with stamps and WFC
+- [Materials](../simulation/materials.md) - Material definitions for seeded pixels
+- [Configuration Reference](../foundational/configuration.md) - Seeder parameters
+- [Architecture Overview](../README.md)

@@ -203,6 +203,6 @@ Stamps exist as templates, not pre-rendered data:
 
 ## Related Documentation
 
-- [Chunk Seeding](chunk-seeding.md) - Core seeder trait and basic implementations
-- [Configuration Reference](configuration.md) - Tunable parameters
-- [Architecture Overview](README.md)
+- [Chunk Seeding](../chunk-management/chunk-seeding.md) - Core seeder trait and basic implementations
+- [Configuration Reference](../foundational/configuration.md) - Tunable parameters
+- [Architecture Overview](../README.md)

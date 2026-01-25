@@ -74,7 +74,7 @@ flowchart LR
 ### Checkerboard Scheduling
 
 Tiles are assigned to one of four phases (A, B, C, D) in a checkerboard pattern. During simulation, tiles of the same
-phase can be processed in parallel because they are never adjacent. See [Scheduling](scheduling.md) for details.
+phase can be processed in parallel because they are never adjacent. See [Scheduling](../simulation/scheduling.md) for details.
 
 ### Dirty Rect Tracking
 
@@ -83,7 +83,7 @@ Each tile maintains a dirty rectangle for **simulation scheduling only**:
 1. **Simulation boundary** - Determines which pixels are candidates for processing
 
 **Note:** Dirty rects do not drive rendering uploads. Rendering uses whole-chunk texture upload -
-see [Rendering](rendering.md).
+see [Rendering](../rendering/rendering.md).
 
 **Lifecycle per simulation pass:**
 
@@ -185,8 +185,8 @@ flowchart TB
 ## Related Documentation
 
 - [Pixel Format](pixel-format.md) - Per-pixel data structure
-- [Simulation](simulation.md) - Multi-pass simulation overview
-- [Scheduling](scheduling.md) - Checkerboard tile phasing for parallel simulation
-- [Chunk Pooling](chunk-pooling.md) - Chunk memory management
-- [Streaming Window](streaming-window.md) - Active region around camera
-- [Architecture Overview](README.md)
+- [Simulation](../simulation/simulation.md) - Multi-pass simulation overview
+- [Scheduling](../simulation/scheduling.md) - Checkerboard tile phasing for parallel simulation
+- [Chunk Pooling](../chunk-management/chunk-pooling.md) - Chunk memory management
+- [Streaming Window](../streaming/streaming-window.md) - Active region around camera
+- [Architecture Overview](../README.md)

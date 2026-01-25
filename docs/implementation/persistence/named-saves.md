@@ -2,6 +2,8 @@
 
 Implementation guide for the named save system.
 
+See [named-saves architecture doc](../../arhitecture/persistence/named-saves.md) for design rationale.
+
 ## Scope
 
 This document covers:

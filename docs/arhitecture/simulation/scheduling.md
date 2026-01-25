@@ -22,7 +22,7 @@ simulation state.
 
 ## Checkerboard Scheduling
 
-Partition each chunk into tiles (e.g., 16x16 pixels per tile - see [Configuration](configuration.md)). Assign each tile
+Partition each chunk into tiles (e.g., 16x16 pixels per tile - see [Configuration](../foundational/configuration.md)). Assign each tile
 to one of four phases (A, B, C, D) in a 2x2 repeating pattern:
 
 **Important:** The "2x2" refers to the phase assignment pattern, not the tile pixel dimensions. A 512x512 chunk with
@@ -193,6 +193,6 @@ concurrent map modifications.
 ## Related Documentation
 
 - [Simulation](simulation.md) - Multi-pass simulation overview
-- [Spatial Hierarchy](spatial-hierarchy.md) - World, chunk, tile, pixel organization
-- [Configuration Reference](configuration.md) - Tunable tile and chunk sizes
-- [Architecture Overview](README.md)
+- [Spatial Hierarchy](../foundational/spatial-hierarchy.md) - World, chunk, tile, pixel organization
+- [Configuration Reference](../foundational/configuration.md) - Tunable tile and chunk sizes
+- [Architecture Overview](../README.md)

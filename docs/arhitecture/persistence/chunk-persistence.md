@@ -496,10 +496,10 @@ This prevents ID collisions when:
 
 ## Related Documentation
 
-- [Pixel Bodies](pixel-bodies.md) - Dynamic objects that persist with chunks
-- [Chunk Seeding](chunk-seeding.md) - Procedural generation (fallback for unpersisted chunks)
-- [Chunk Pooling](chunk-pooling.md) - Lifecycle that triggers save/load
-- [Streaming Window](streaming-window.md) - Determines which chunks to load
-- [Pixel Format](pixel-format.md) - Data structure being persisted
-- [Glossary](glossary.md) - Persistence control terminology
-- [Architecture Overview](README.md)
+- [Pixel Bodies](../physics/pixel-bodies.md) - Dynamic objects that persist with chunks
+- [Chunk Seeding](../chunk-management/chunk-seeding.md) - Procedural generation (fallback for unpersisted chunks)
+- [Chunk Pooling](../chunk-management/chunk-pooling.md) - Lifecycle that triggers save/load
+- [Streaming Window](../streaming/streaming-window.md) - Determines which chunks to load
+- [Pixel Format](../foundational/pixel-format.md) - Data structure being persisted
+- [Glossary](../glossary.md) - Persistence control terminology
+- [Architecture Overview](../README.md)

@@ -137,7 +137,7 @@ Collision mesh updates run at **60 TPS** (same rate as CA and physics simulation
 - Physics object proximity changes (object enters/leaves tile)
 - Cellular automata pixel changes (solid/falling flag modifications)
 
-See [Configuration](configuration.md) for tick rate definitions.
+See [Configuration](../foundational/configuration.md) for tick rate definitions.
 
 ## Collision Cache
 
@@ -247,10 +247,10 @@ commands.spawn((
 
 ## Related Documentation
 
-- [Pixel Format](pixel-format.md) - Solid flag definition
+- [Pixel Format](../foundational/pixel-format.md) - Solid flag definition
 - [Pixel Bodies](pixel-bodies.md) - Dynamic objects with per-body collision
-- [Simulation](simulation.md) - When solid flag changes
-- [Spatial Hierarchy](spatial-hierarchy.md) - Chunk and tile organization
-- [Streaming Window](streaming-window.md) - Window that drives entity culling
-- [Glossary](glossary.md) - Collision terminology
-- [Architecture Overview](README.md)
+- [Simulation](../simulation/simulation.md) - When solid flag changes
+- [Spatial Hierarchy](../foundational/spatial-hierarchy.md) - Chunk and tile organization
+- [Streaming Window](../streaming/streaming-window.md) - Window that drives entity culling
+- [Glossary](../glossary.md) - Collision terminology
+- [Architecture Overview](../README.md)

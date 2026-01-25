@@ -82,13 +82,13 @@ When the chunk seeder places a material with an identity texture:
 | Brick    | Repeating brick pattern | Structured appearance    |
 | Wood     | Grain lines             | Directional wood texture |
 
-**Note:** Identity textures are part of the advanced PCG pipeline. See [PCG World Ideas](pcg-ideas.md) for integration
+**Note:** Identity textures are part of the advanced PCG pipeline. See [PCG World Ideas](../world-generation/pcg-ideas.md) for integration
 with stamps and WFC-based generation.
 
 ## Related Documentation
 
-- [Pixel Format](pixel-format.md) - Color field storing palette index
-- [Chunk Seeding](chunk-seeding.md) - Where identity textures are applied
-- [Materials](materials.md) - Material definitions
-- [Spatial Hierarchy](spatial-hierarchy.md) - Chunk organization
-- [Architecture Overview](README.md)
+- [Pixel Format](../foundational/pixel-format.md) - Color field storing palette index
+- [Chunk Seeding](../chunk-management/chunk-seeding.md) - Where identity textures are applied
+- [Materials](../simulation/materials.md) - Material definitions
+- [Spatial Hierarchy](../foundational/spatial-hierarchy.md) - Chunk organization
+- [Architecture Overview](../README.md)

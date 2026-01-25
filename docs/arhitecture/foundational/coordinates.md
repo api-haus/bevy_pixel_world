@@ -161,5 +161,5 @@ directly without any coordinate manipulation.
 ## Related Documentation
 
 - [Spatial Hierarchy](spatial-hierarchy.md) - World, chunk, tile, pixel organization
-- [Rendering](rendering.md) - Chunk texture upload
-- [Architecture Overview](README.md)
+- [Rendering](../rendering/rendering.md) - Chunk texture upload
+- [Architecture Overview](../README.md)
