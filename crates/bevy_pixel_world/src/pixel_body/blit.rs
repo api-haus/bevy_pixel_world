@@ -99,7 +99,7 @@ pub(super) fn compute_world_aabb(body: &PixelBody, transform: &GlobalTransform) 
 ///
 /// Iterates world pixels in the body's AABB and maps each back to local space.
 /// This guarantees every world pixel in the body's footprint is filled.
-fn blit_single_body(
+pub(super) fn blit_single_body(
   world: &mut PixelWorld,
   body: &PixelBody,
   transform: &GlobalTransform,
@@ -171,7 +171,7 @@ pub fn clear_pixel_bodies(
 ///
 /// Uses the same AABB iteration as blit to ensure all written pixels are
 /// cleared.
-fn clear_single_body(
+pub(super) fn clear_single_body(
   world: &mut PixelWorld,
   body: &PixelBody,
   transform: &GlobalTransform,

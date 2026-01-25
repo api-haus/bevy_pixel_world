@@ -15,6 +15,8 @@ use super::{
 use crate::collision::CollisionQueryPoint;
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 use crate::culling::StreamCulled;
+use crate::debug_shim::GizmosParam;
+use crate::world::PixelWorld;
 
 /// A connected region of pixels within a shape mask.
 pub struct ConnectedComponent {
@@ -164,6 +166,7 @@ pub fn find_connected_components(
 pub fn split_pixel_bodies(
   mut commands: Commands,
   mut id_generator: ResMut<PixelBodyIdGenerator>,
+  mut worlds: Query<&mut PixelWorld>,
   bodies: Query<
     (
       Entity,
@@ -175,12 +178,19 @@ pub fn split_pixel_bodies(
     ),
     With<ShapeMaskModified>,
   >,
+  gizmos: GizmosParam,
 ) {
   for (entity, body, blitted, global_transform, lin_vel, ang_vel) in bodies.iter() {
     let components = find_connected_components(&body.shape_mask, body.width(), body.height());
 
     match components.len() {
       0 => {
+        // Clear blitted pixels before despawning
+        if let Some(transform) = &blitted.transform {
+          if let Ok(mut world) = worlds.single_mut() {
+            super::blit::clear_single_body(&mut world, body, transform, gizmos.get());
+          }
+        }
         // Fully destroyed - despawn
         commands.entity(entity).despawn();
       }
@@ -204,10 +214,17 @@ pub fn split_pixel_bodies(
           continue;
         };
 
+        // Clear blitted pixels before despawning
+        let Ok(mut world) = worlds.single_mut() else {
+          commands.entity(entity).despawn();
+          continue;
+        };
+        super::blit::clear_single_body(&mut world, body, blit_transform, gizmos.get());
+
         // Despawn original
         commands.entity(entity).despawn();
 
-        // Spawn each fragment
+        // Spawn each fragment and blit immediately to avoid flicker
         for component in components {
           let Some(fragment) = create_fragment(body, &component, blit_transform, &mut id_generator)
           else {
@@ -219,6 +236,12 @@ pub fn split_pixel_bodies(
             continue;
           };
 
+          // Compute fragment transform and blit immediately
+          let frag_transform = Transform::from_translation(fragment.world_pos.extend(0.0))
+            .with_rotation(parent_rotation);
+          let frag_global = GlobalTransform::from(frag_transform);
+          super::blit::blit_single_body(&mut world, &fragment.body, &frag_global, gizmos.get());
+
           commands.spawn((
             fragment.body,
             collider,
@@ -227,9 +250,10 @@ pub fn split_pixel_bodies(
             avian2d::prelude::AngularVelocity(parent_angular),
             CollisionQueryPoint,
             StreamCulled,
-            BlittedTransform::default(),
-            Transform::from_translation(fragment.world_pos.extend(0.0))
-              .with_rotation(parent_rotation),
+            BlittedTransform {
+              transform: Some(frag_global),
+            },
+            frag_transform,
             fragment.id,
             Persistable,
           ));
@@ -245,6 +269,7 @@ pub fn split_pixel_bodies(
 pub fn split_pixel_bodies(
   mut commands: Commands,
   mut id_generator: ResMut<PixelBodyIdGenerator>,
+  mut worlds: Query<&mut PixelWorld>,
   bodies: Query<
     (
       Entity,
@@ -255,12 +280,19 @@ pub fn split_pixel_bodies(
     ),
     With<ShapeMaskModified>,
   >,
+  gizmos: GizmosParam,
 ) {
   for (entity, body, blitted, global_transform, velocity) in bodies.iter() {
     let components = find_connected_components(&body.shape_mask, body.width(), body.height());
 
     match components.len() {
       0 => {
+        // Clear blitted pixels before despawning
+        if let Some(transform) = &blitted.transform {
+          if let Ok(mut world) = worlds.single_mut() {
+            super::blit::clear_single_body(&mut world, body, transform, gizmos.get());
+          }
+        }
         commands.entity(entity).despawn();
       }
       1 => {
@@ -281,8 +313,16 @@ pub fn split_pixel_bodies(
           continue;
         };
 
+        // Clear blitted pixels before despawning
+        let Ok(mut world) = worlds.single_mut() else {
+          commands.entity(entity).despawn();
+          continue;
+        };
+        super::blit::clear_single_body(&mut world, body, blit_transform, gizmos.get());
+
         commands.entity(entity).despawn();
 
+        // Spawn each fragment and blit immediately to avoid flicker
         for component in components {
           let Some(fragment) = create_fragment(body, &component, blit_transform, &mut id_generator)
           else {
@@ -292,6 +332,12 @@ pub fn split_pixel_bodies(
           let Some(collider) = super::generate_collider(&fragment.body) else {
             continue;
           };
+
+          // Compute fragment transform and blit immediately
+          let frag_transform = Transform::from_translation(fragment.world_pos.extend(0.0))
+            .with_rotation(parent_rotation);
+          let frag_global = GlobalTransform::from(frag_transform);
+          super::blit::blit_single_body(&mut world, &fragment.body, &frag_global, gizmos.get());
 
           commands.spawn((
             fragment.body,
@@ -303,9 +349,10 @@ pub fn split_pixel_bodies(
             },
             CollisionQueryPoint,
             StreamCulled,
-            BlittedTransform::default(),
-            Transform::from_translation(fragment.world_pos.extend(0.0))
-              .with_rotation(parent_rotation),
+            BlittedTransform {
+              transform: Some(frag_global),
+            },
+            frag_transform,
             fragment.id,
             Persistable,
           ));
@@ -320,13 +367,21 @@ pub fn split_pixel_bodies(
 pub fn split_pixel_bodies(
   mut commands: Commands,
   mut id_generator: ResMut<PixelBodyIdGenerator>,
+  mut worlds: Query<&mut PixelWorld>,
   bodies: Query<(Entity, &PixelBody, &BlittedTransform, &GlobalTransform), With<ShapeMaskModified>>,
+  gizmos: GizmosParam,
 ) {
   for (entity, body, blitted, global_transform) in bodies.iter() {
     let components = find_connected_components(&body.shape_mask, body.width(), body.height());
 
     match components.len() {
       0 => {
+        // Clear blitted pixels before despawning
+        if let Some(transform) = &blitted.transform {
+          if let Ok(mut world) = worlds.single_mut() {
+            super::blit::clear_single_body(&mut world, body, transform, gizmos.get());
+          }
+        }
         commands.entity(entity).despawn();
       }
       1 => {
@@ -344,19 +399,34 @@ pub fn split_pixel_bodies(
           continue;
         };
 
+        // Clear blitted pixels before despawning
+        let Ok(mut world) = worlds.single_mut() else {
+          commands.entity(entity).despawn();
+          continue;
+        };
+        super::blit::clear_single_body(&mut world, body, blit_transform, gizmos.get());
+
         commands.entity(entity).despawn();
 
+        // Spawn each fragment and blit immediately to avoid flicker
         for component in components {
           let Some(fragment) = create_fragment(body, &component, blit_transform, &mut id_generator)
           else {
             continue;
           };
 
+          // Compute fragment transform and blit immediately
+          let frag_transform = Transform::from_translation(fragment.world_pos.extend(0.0))
+            .with_rotation(parent_rotation);
+          let frag_global = GlobalTransform::from(frag_transform);
+          super::blit::blit_single_body(&mut world, &fragment.body, &frag_global, gizmos.get());
+
           commands.spawn((
             fragment.body,
-            BlittedTransform::default(),
-            Transform::from_translation(fragment.world_pos.extend(0.0))
-              .with_rotation(parent_rotation),
+            BlittedTransform {
+              transform: Some(frag_global),
+            },
+            frag_transform,
             fragment.id,
             Persistable,
           ));
