@@ -16,20 +16,26 @@ const GRAVITY: f32 = 9.81 * 10.0; // Scaled for pixel world
 /// Uses Archimedes' principle: the buoyancy force equals the weight of
 /// the displaced fluid. The force is applied at the center of buoyancy,
 /// which may create torque if it doesn't align with the center of mass.
-#[cfg(feature = "avian2d")]
+#[allow(clippy::type_complexity)]
 pub fn compute_buoyancy_forces(
   config: Res<BuoyancyConfig>,
-  mut bodies: Query<(
+  #[cfg(feature = "avian2d")] mut bodies: Query<(
     &PixelBody,
     &GlobalTransform,
     &BuoyancyState,
     &mut avian2d::dynamics::rigid_body::forces::ConstantForce,
     Option<&mut avian2d::dynamics::rigid_body::forces::ConstantTorque>,
   )>,
+  #[cfg(all(feature = "rapier2d", not(feature = "avian2d")))] mut bodies: Query<(
+    &PixelBody,
+    &GlobalTransform,
+    &BuoyancyState,
+    &mut bevy_rapier2d::prelude::ExternalForce,
+  )>,
 ) {
+  #[cfg(feature = "avian2d")]
   for (body, transform, state, mut force, torque) in bodies.iter_mut() {
     if state.submerged_fraction <= 0.0 {
-      // No submersion, clear any buoyancy force
       *force = avian2d::dynamics::rigid_body::forces::ConstantForce::new(0.0, 0.0);
       if let Some(mut torque) = torque {
         *torque = avian2d::dynamics::rigid_body::forces::ConstantTorque(0.0);
@@ -37,48 +43,24 @@ pub fn compute_buoyancy_forces(
       continue;
     }
 
-    // Calculate body volume (number of solid pixels)
     let body_volume = body.solid_count() as f32;
-
-    // Submerged volume
     let submerged_volume = body_volume * state.submerged_fraction;
-
-    // Buoyancy force: F = rho * V * g
-    // We use a configurable density scale since pixel densities are arbitrary
     let buoyancy_magnitude = submerged_volume * GRAVITY * config.liquid_density_scale;
 
-    // Apply the buoyancy force (upward)
     *force = avian2d::dynamics::rigid_body::forces::ConstantForce::new(0.0, buoyancy_magnitude);
 
-    // Calculate torque if enabled
     if config.torque_enabled {
       if let Some(mut torque_component) = torque {
         let body_center = transform.translation().truncate();
         let buoyancy_center = state.submerged_center;
-
-        // Lever arm from center of mass to center of buoyancy
         let lever_arm = buoyancy_center - body_center;
-
-        // Torque = r x F (cross product in 2D gives scalar)
-        // Force is purely in Y direction
         let torque_magnitude = lever_arm.x * buoyancy_magnitude;
         *torque_component = avian2d::dynamics::rigid_body::forces::ConstantTorque(torque_magnitude);
       }
     }
   }
-}
 
-/// Computes and applies buoyancy forces (rapier2d variant).
-#[cfg(all(feature = "rapier2d", not(feature = "avian2d")))]
-pub fn compute_buoyancy_forces(
-  config: Res<BuoyancyConfig>,
-  mut bodies: Query<(
-    &PixelBody,
-    &GlobalTransform,
-    &BuoyancyState,
-    &mut bevy_rapier2d::prelude::ExternalForce,
-  )>,
-) {
+  #[cfg(all(feature = "rapier2d", not(feature = "avian2d")))]
   for (body, transform, state, mut force) in bodies.iter_mut() {
     if state.submerged_fraction <= 0.0 {
       force.force = Vec2::ZERO;

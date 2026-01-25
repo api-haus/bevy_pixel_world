@@ -6,9 +6,8 @@
 
 use bevy::prelude::*;
 
-use super::blit::compute_world_aabb;
-use super::{BlittedTransform, NeedsColliderRegen, PixelBody, ShapeMaskModified};
-use crate::coords::WorldPos;
+use super::blit::for_each_body_pixel;
+use super::{LastBlitTransform, NeedsColliderRegen, PixelBody, ShapeMaskModified};
 use crate::pixel::PixelFlags;
 use crate::world::PixelWorld;
 
@@ -30,7 +29,7 @@ pub fn detect_external_erasure(
   bodies: Query<(
     Entity,
     &PixelBody,
-    &BlittedTransform,
+    &LastBlitTransform,
     Option<&DestroyedPixels>,
   )>,
 ) {
@@ -60,7 +59,7 @@ pub fn detect_external_erasure(
 /// Detects pixels destroyed by CA simulation.
 ///
 /// Runs after simulation to detect pixels that were destroyed during the
-/// CA tick (e.g., burned, dissolved, etc.). Uses BlittedTransform to check
+/// CA tick (e.g., burned, dissolved, etc.). Uses LastBlitTransform to check
 /// positions where pixels were written this frame.
 pub fn readback_pixel_bodies(
   mut commands: Commands,
@@ -68,7 +67,7 @@ pub fn readback_pixel_bodies(
   bodies: Query<(
     Entity,
     &PixelBody,
-    &BlittedTransform,
+    &LastBlitTransform,
     Option<&DestroyedPixels>,
   )>,
 ) {
@@ -107,43 +106,18 @@ fn detect_destroyed_pixels(
   transform: &GlobalTransform,
   world: &PixelWorld,
 ) -> Vec<(u32, u32)> {
-  let width = body.width() as i32;
-  let height = body.height() as i32;
-  let origin = body.origin;
-
-  let aabb = compute_world_aabb(body, transform);
-  let inverse = transform.affine().inverse();
-
   let mut destroyed = Vec::new();
 
-  for world_y in aabb.y..(aabb.y + aabb.height as i64) {
-    for world_x in aabb.x..(aabb.x + aabb.width as i64) {
-      let world_point = Vec3::new(world_x as f32 + 0.5, world_y as f32 + 0.5, 0.0);
-      let local_point = inverse.transform_point3(world_point);
+  for_each_body_pixel(body, transform, |mapping| {
+    let is_destroyed = match world.get_pixel(mapping.world_pos) {
+      Some(pixel) => pixel.is_void() || !pixel.flags.contains(PixelFlags::PIXEL_BODY),
+      None => true,
+    };
 
-      let local_x = (local_point.x - origin.x as f32).floor() as i32;
-      let local_y = (local_point.y - origin.y as f32).floor() as i32;
-
-      if local_x < 0 || local_x >= width || local_y < 0 || local_y >= height {
-        continue;
-      }
-
-      let (lx, ly) = (local_x as u32, local_y as u32);
-
-      if !body.is_solid(lx, ly) {
-        continue;
-      }
-
-      let is_destroyed = match world.get_pixel(WorldPos::new(world_x, world_y)) {
-        Some(pixel) => pixel.is_void() || !pixel.flags.contains(PixelFlags::PIXEL_BODY),
-        None => true,
-      };
-
-      if is_destroyed {
-        destroyed.push((lx, ly));
-      }
+    if is_destroyed {
+      destroyed.push((mapping.local_x, mapping.local_y));
     }
-  }
+  });
 
   destroyed
 }

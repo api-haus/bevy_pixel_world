@@ -43,7 +43,7 @@ pub use material::{Material, Materials, PhysicsState, ids as material_ids};
 pub use persistence::{PixelBodyRecord, WorldSave, WorldSaveResource};
 pub use pixel::{Pixel, PixelFlags, PixelSurface};
 pub use pixel_body::{
-  BlittedTransform, DisplacementState, NeedsColliderRegen, PendingPixelBody, Persistable,
+  DisplacementState, LastBlitTransform, NeedsColliderRegen, PendingPixelBody, Persistable,
   PixelBody, PixelBodyId, PixelBodyIdGenerator, PixelBodyLoader, SpawnPixelBody,
   SpawnPixelBodyFromImage, finalize_pending_pixel_bodies, generate_collider, update_pixel_bodies,
 };

@@ -50,9 +50,12 @@ flowchart TB
 | **Chunk Pool**        | Object pool pattern for zero-allocation chunk management         | [chunk-pooling.md](chunk-pooling.md)         |
 | **Chunk Persistence** | Save file format, random access, compression, dirty tracking     | [chunk-persistence.md](chunk-persistence.md) |
 | **Recovery Persistence** | Dual-save crash recovery with autosave and explicit checkpoints | [recovery-persistence.md](recovery-persistence.md) |
+| **Named Saves**       | Consumer-controlled save management with complete world snapshots | [named-saves.md](named-saves.md)             |
 | **Simulation Engine** | Parallel cellular automata with checkerboard scheduling          | [simulation.md](simulation.md)               |
 | **Particle System**   | Free-form particles for dynamic effects (debris, gases, pouring) | [particles.md](particles.md)                 |
 | **Pixel Bodies**      | Dynamic physics objects with pixel content in CA simulation      | [pixel-bodies.md](pixel-bodies.md)           |
+| **Pixel Displacement**| Conserve pixels when bodies move through fluids                  | [pixel-displacement.md](pixel-displacement.md) |
+| **Buoyancy**          | Physics forces for bodies submerged in liquid                    | [buoyancy.md](buoyancy.md)                   |
 | **Streaming Window**  | Camera-tracking active region management                         | [streaming-window.md](streaming-window.md)   |
 | **Chunk Seeder**      | Trait for procedural generation, noise pipelines                 | [chunk-seeding.md](chunk-seeding.md)         |
 | **Rendering**         | Chunk texture upload and material identity textures              | [rendering.md](rendering.md)                 |

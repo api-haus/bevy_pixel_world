@@ -15,7 +15,7 @@ use super::compression::{compress_lz4, decompress_lz4};
 use super::format::PixelBodyRecordHeader;
 use crate::coords::ChunkPos;
 use crate::pixel::Pixel;
-use crate::pixel_body::{BlittedTransform, PixelBody, PixelBodyId};
+use crate::pixel_body::{LastBlitTransform, PixelBody, PixelBodyId};
 
 /// A pixel body record ready for serialization.
 ///
@@ -128,7 +128,7 @@ impl PixelBodyRecord {
   pub fn from_components_blitted(
     body_id: &PixelBodyId,
     body: &PixelBody,
-    blitted: &BlittedTransform,
+    blitted: &LastBlitTransform,
     linear_velocity: Option<&avian2d::prelude::LinearVelocity>,
     angular_velocity: Option<&avian2d::prelude::AngularVelocity>,
     extension_data: Vec<u8>,
@@ -157,7 +157,7 @@ impl PixelBodyRecord {
   pub fn from_components_blitted(
     body_id: &PixelBodyId,
     body: &PixelBody,
-    blitted: &BlittedTransform,
+    blitted: &LastBlitTransform,
     velocity: Option<&bevy_rapier2d::prelude::Velocity>,
     extension_data: Vec<u8>,
   ) -> Option<Self> {
@@ -185,7 +185,7 @@ impl PixelBodyRecord {
   pub fn from_components_blitted(
     body_id: &PixelBodyId,
     body: &PixelBody,
-    blitted: &BlittedTransform,
+    blitted: &LastBlitTransform,
     extension_data: Vec<u8>,
   ) -> Option<Self> {
     let transform = blitted.transform.as_ref()?;

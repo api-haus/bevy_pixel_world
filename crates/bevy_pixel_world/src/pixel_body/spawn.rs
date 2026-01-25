@@ -2,13 +2,9 @@
 //!
 //! Provides a simple API for spawning pixel bodies from image assets.
 
-#[cfg(feature = "avian2d")]
-use avian2d::prelude::RigidBody;
 use bevy::prelude::*;
-#[cfg(feature = "rapier2d")]
-use bevy_rapier2d::prelude::RigidBody;
 
-use super::{BlittedTransform, DisplacementState, Persistable, PixelBodyId, PixelBodyLoader};
+use super::{DisplacementState, LastBlitTransform, Persistable, PixelBodyId, PixelBodyLoader};
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 use crate::collision::CollisionQueryPoint;
 use crate::coords::MaterialId;
@@ -174,7 +170,6 @@ pub struct PendingPixelBody {
 /// loaded.
 ///
 /// This system should be added to your app when using `SpawnPixelBody`.
-#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 pub fn finalize_pending_pixel_bodies(
   mut commands: Commands,
   pending: Query<(Entity, &PendingPixelBody)>,
@@ -189,72 +184,44 @@ pub fn finalize_pending_pixel_bodies(
 
     // Create pixel body from image
     let Some(body) = PixelBodyLoader::from_image_with_material(image, pending_body.material) else {
-      // Failed to create body (empty image?), despawn the pending entity
       commands.entity(entity).despawn();
       continue;
     };
 
-    // Generate collider
+    // Generate collider (physics only)
+    #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
     let Some(collider) = super::generate_collider(&body) else {
-      // Failed to generate collider, despawn
       commands.entity(entity).despawn();
       continue;
     };
 
-    // Generate unique ID for this body
     let body_id = id_generator.generate();
 
-    // Replace the pending entity with the full pixel body
-    commands
-      .entity(entity)
-      .remove::<PendingPixelBody>()
-      .insert((
-        body,
-        collider,
-        RigidBody::Dynamic,
-        CollisionQueryPoint,
-        StreamCulled,
-        BlittedTransform::default(),
-        DisplacementState::default(),
-        Transform::from_translation(pending_body.position.extend(0.0)),
-        body_id,
-        Persistable,
-      ));
-  }
-}
+    // Replace pending entity with full pixel body
+    let mut entity_commands = commands.entity(entity);
+    entity_commands.remove::<PendingPixelBody>().insert((
+      body,
+      LastBlitTransform::default(),
+      DisplacementState::default(),
+      Transform::from_translation(pending_body.position.extend(0.0)),
+      body_id,
+      Persistable,
+    ));
 
-/// Stub system for when no physics feature is enabled.
-#[cfg(not(any(feature = "avian2d", feature = "rapier2d")))]
-pub fn finalize_pending_pixel_bodies(
-  mut commands: Commands,
-  pending: Query<(Entity, &PendingPixelBody)>,
-  images: Res<Assets<Image>>,
-  mut id_generator: ResMut<PixelBodyIdGenerator>,
-) {
-  for (entity, pending_body) in pending.iter() {
-    let Some(image) = images.get(&pending_body.image) else {
-      continue;
-    };
+    #[cfg(feature = "avian2d")]
+    entity_commands.insert((
+      collider,
+      avian2d::prelude::RigidBody::Dynamic,
+      CollisionQueryPoint,
+      StreamCulled,
+    ));
 
-    // Create pixel body from image (no collider without physics)
-    let Some(body) = PixelBodyLoader::from_image_with_material(image, pending_body.material) else {
-      commands.entity(entity).despawn();
-      continue;
-    };
-
-    // Generate unique ID for this body
-    let body_id = id_generator.generate();
-
-    commands
-      .entity(entity)
-      .remove::<PendingPixelBody>()
-      .insert((
-        body,
-        BlittedTransform::default(),
-        DisplacementState::default(),
-        Transform::from_translation(pending_body.position.extend(0.0)),
-        body_id,
-        Persistable,
-      ));
+    #[cfg(all(feature = "rapier2d", not(feature = "avian2d")))]
+    entity_commands.insert((
+      collider,
+      bevy_rapier2d::prelude::RigidBody::Dynamic,
+      CollisionQueryPoint,
+      StreamCulled,
+    ));
   }
 }

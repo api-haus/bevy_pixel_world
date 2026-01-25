@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use bevy::prelude::*;
 
 use super::{
-  BlittedTransform, NeedsColliderRegen, Persistable, PixelBody, PixelBodyId, PixelBodyIdGenerator,
+  LastBlitTransform, NeedsColliderRegen, Persistable, PixelBody, PixelBodyId, PixelBodyIdGenerator,
   ShapeMaskModified,
 };
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
@@ -162,27 +162,26 @@ pub fn find_connected_components(
 /// - 0 components: despawn entity (fully destroyed)
 /// - 1 component: remove marker (collider regen handles update)
 /// - N > 1 components: despawn original, spawn N fragment entities
-#[cfg(feature = "avian2d")]
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, unused_variables)]
 pub fn split_pixel_bodies(
   mut commands: Commands,
   mut id_generator: ResMut<PixelBodyIdGenerator>,
   mut worlds: Query<&mut PixelWorld>,
   bodies: Query<
-    (
-      Entity,
-      &PixelBody,
-      &BlittedTransform,
-      &GlobalTransform,
-      Option<&avian2d::prelude::LinearVelocity>,
-      Option<&avian2d::prelude::AngularVelocity>,
-    ),
+    (Entity, &PixelBody, &LastBlitTransform, &GlobalTransform),
     With<ShapeMaskModified>,
+  >,
+  #[cfg(feature = "avian2d")] velocities: Query<(
+    Option<&avian2d::prelude::LinearVelocity>,
+    Option<&avian2d::prelude::AngularVelocity>,
+  )>,
+  #[cfg(all(feature = "rapier2d", not(feature = "avian2d")))] velocities: Query<
+    Option<&bevy_rapier2d::prelude::Velocity>,
   >,
   materials: Res<Materials>,
   gizmos: GizmosParam,
 ) {
-  for (entity, body, blitted, global_transform, lin_vel, ang_vel) in bodies.iter() {
+  for (entity, body, blitted, global_transform) in bodies.iter() {
     let components = find_connected_components(&body.shape_mask, body.width(), body.height());
 
     match components.len() {
@@ -190,11 +189,9 @@ pub fn split_pixel_bodies(
         // Clear blitted pixels before despawning (no displacement needed)
         if let Some(transform) = &blitted.transform {
           if let Ok(mut world) = worlds.single_mut() {
-            let mut dummy = Vec::new();
-            super::blit::clear_single_body(&mut world, body, transform, &mut dummy, gizmos.get());
+            super::blit::clear_single_body_no_tracking(&mut world, body, transform, gizmos.get());
           }
         }
-        // Fully destroyed - despawn
         commands.entity(entity).despawn();
       }
       1 => {
@@ -208,118 +205,23 @@ pub fn split_pixel_bodies(
       _ => {
         // Multiple components - split into fragments
         let parent_rotation = global_transform.to_scale_rotation_translation().1;
-        let parent_linear = lin_vel.map(|v| v.0).unwrap_or(Vec2::ZERO);
-        let parent_angular = ang_vel.map(|v| v.0).unwrap_or(0.0);
 
-        // Get the transform used for blitting (where pixels actually are)
-        let Some(blit_transform) = &blitted.transform else {
-          commands.entity(entity).despawn();
-          continue;
-        };
+        #[cfg(feature = "avian2d")]
+        let (parent_linear, parent_angular) = velocities
+          .get(entity)
+          .map(|(lin, ang)| {
+            (
+              lin.map(|v| v.0).unwrap_or(Vec2::ZERO),
+              ang.map(|v| v.0).unwrap_or(0.0),
+            )
+          })
+          .unwrap_or((Vec2::ZERO, 0.0));
 
-        // Clear blitted pixels before despawning
-        let Ok(mut world) = worlds.single_mut() else {
-          commands.entity(entity).despawn();
-          continue;
-        };
-        // No displacement needed for split cleanup
-        let mut dummy = Vec::new();
-        super::blit::clear_single_body(&mut world, body, blit_transform, &mut dummy, gizmos.get());
-
-        // Despawn original
-        commands.entity(entity).despawn();
-
-        // Spawn each fragment and blit immediately to avoid flicker
-        for component in components {
-          let Some(fragment) = create_fragment(body, &component, blit_transform, &mut id_generator)
-          else {
-            continue;
-          };
-
-          // Generate collider for this fragment
-          let Some(collider) = super::generate_collider(&fragment.body) else {
-            continue;
-          };
-
-          // Compute fragment transform and blit immediately (no displacement)
-          let frag_transform = Transform::from_translation(fragment.world_pos.extend(0.0))
-            .with_rotation(parent_rotation);
-          let frag_global = GlobalTransform::from(frag_transform);
-          let mut frag_dummy = Vec::new();
-          super::blit::blit_single_body(
-            &mut world,
-            &fragment.body,
-            &frag_global,
-            &mut frag_dummy,
-            &materials,
-            gizmos.get(),
-          );
-
-          commands.spawn((
-            fragment.body,
-            collider,
-            avian2d::prelude::RigidBody::Dynamic,
-            avian2d::prelude::LinearVelocity(parent_linear),
-            avian2d::prelude::AngularVelocity(parent_angular),
-            CollisionQueryPoint,
-            StreamCulled,
-            BlittedTransform {
-              transform: Some(frag_global),
-            },
-            frag_transform,
-            fragment.id,
-            Persistable,
-          ));
-        }
-      }
-    }
-  }
-}
-
-/// Handles entity splitting when pixel bodies fragment (rapier2d variant).
-#[cfg(all(feature = "rapier2d", not(feature = "avian2d")))]
-#[allow(clippy::type_complexity)]
-pub fn split_pixel_bodies(
-  mut commands: Commands,
-  mut id_generator: ResMut<PixelBodyIdGenerator>,
-  mut worlds: Query<&mut PixelWorld>,
-  bodies: Query<
-    (
-      Entity,
-      &PixelBody,
-      &BlittedTransform,
-      &GlobalTransform,
-      Option<&bevy_rapier2d::prelude::Velocity>,
-    ),
-    With<ShapeMaskModified>,
-  >,
-  materials: Res<Materials>,
-  gizmos: GizmosParam,
-) {
-  for (entity, body, blitted, global_transform, velocity) in bodies.iter() {
-    let components = find_connected_components(&body.shape_mask, body.width(), body.height());
-
-    match components.len() {
-      0 => {
-        // Clear blitted pixels before despawning (no displacement needed)
-        if let Some(transform) = &blitted.transform {
-          if let Ok(mut world) = worlds.single_mut() {
-            let mut dummy = Vec::new();
-            super::blit::clear_single_body(&mut world, body, transform, &mut dummy, gizmos.get());
-          }
-        }
-        commands.entity(entity).despawn();
-      }
-      1 => {
-        commands
-          .entity(entity)
-          .remove::<ShapeMaskModified>()
-          .remove::<NeedsColliderRegen>()
-          .insert(NeedsColliderRegen);
-      }
-      _ => {
-        let parent_rotation = global_transform.to_scale_rotation_translation().1;
-        let parent_velocity = velocity
+        #[cfg(all(feature = "rapier2d", not(feature = "avian2d")))]
+        let (parent_linear, parent_angular) = velocities
+          .get(entity)
+          .ok()
+          .flatten()
           .map(|v| (v.linvel, v.angvel))
           .unwrap_or((Vec2::ZERO, 0.0));
 
@@ -328,13 +230,13 @@ pub fn split_pixel_bodies(
           continue;
         };
 
-        // Clear blitted pixels before despawning (no displacement needed)
         let Ok(mut world) = worlds.single_mut() else {
           commands.entity(entity).despawn();
           continue;
         };
-        let mut dummy = Vec::new();
-        super::blit::clear_single_body(&mut world, body, blit_transform, &mut dummy, gizmos.get());
+
+        // Clear blitted pixels before despawning (no displacement needed)
+        super::blit::clear_single_body_no_tracking(&mut world, body, blit_transform, gizmos.get());
 
         commands.entity(entity).despawn();
 
@@ -345,120 +247,63 @@ pub fn split_pixel_bodies(
             continue;
           };
 
+          #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
           let Some(collider) = super::generate_collider(&fragment.body) else {
             continue;
           };
 
-          // Compute fragment transform and blit immediately (no displacement)
           let frag_transform = Transform::from_translation(fragment.world_pos.extend(0.0))
             .with_rotation(parent_rotation);
           let frag_global = GlobalTransform::from(frag_transform);
-          let mut frag_dummy = Vec::new();
-          super::blit::blit_single_body(
+
+          // Blit fragment immediately (no displacement needed)
+          super::blit::blit_single_body_no_displacement(
             &mut world,
             &fragment.body,
             &frag_global,
-            &mut frag_dummy,
-            &materials,
             gizmos.get(),
           );
 
+          #[cfg(feature = "avian2d")]
           commands.spawn((
             fragment.body,
             collider,
-            bevy_rapier2d::prelude::RigidBody::Dynamic,
-            bevy_rapier2d::prelude::Velocity {
-              linvel: parent_velocity.0,
-              angvel: parent_velocity.1,
-            },
+            avian2d::prelude::RigidBody::Dynamic,
+            avian2d::prelude::LinearVelocity(parent_linear),
+            avian2d::prelude::AngularVelocity(parent_angular),
             CollisionQueryPoint,
             StreamCulled,
-            BlittedTransform {
+            LastBlitTransform {
               transform: Some(frag_global),
             },
             frag_transform,
             fragment.id,
             Persistable,
           ));
-        }
-      }
-    }
-  }
-}
 
-/// Handles entity splitting when pixel bodies fragment (no physics variant).
-#[cfg(not(any(feature = "avian2d", feature = "rapier2d")))]
-pub fn split_pixel_bodies(
-  mut commands: Commands,
-  mut id_generator: ResMut<PixelBodyIdGenerator>,
-  mut worlds: Query<&mut PixelWorld>,
-  bodies: Query<(Entity, &PixelBody, &BlittedTransform, &GlobalTransform), With<ShapeMaskModified>>,
-  materials: Res<Materials>,
-  gizmos: GizmosParam,
-) {
-  for (entity, body, blitted, global_transform) in bodies.iter() {
-    let components = find_connected_components(&body.shape_mask, body.width(), body.height());
-
-    match components.len() {
-      0 => {
-        // Clear blitted pixels before despawning (no displacement needed)
-        if let Some(transform) = &blitted.transform {
-          if let Ok(mut world) = worlds.single_mut() {
-            let mut dummy = Vec::new();
-            super::blit::clear_single_body(&mut world, body, transform, &mut dummy, gizmos.get());
-          }
-        }
-        commands.entity(entity).despawn();
-      }
-      1 => {
-        commands
-          .entity(entity)
-          .remove::<ShapeMaskModified>()
-          .remove::<NeedsColliderRegen>()
-          .insert(NeedsColliderRegen);
-      }
-      _ => {
-        let parent_rotation = global_transform.to_scale_rotation_translation().1;
-
-        let Some(blit_transform) = &blitted.transform else {
-          commands.entity(entity).despawn();
-          continue;
-        };
-
-        // Clear blitted pixels before despawning (no displacement needed)
-        let Ok(mut world) = worlds.single_mut() else {
-          commands.entity(entity).despawn();
-          continue;
-        };
-        let mut dummy = Vec::new();
-        super::blit::clear_single_body(&mut world, body, blit_transform, &mut dummy, gizmos.get());
-
-        commands.entity(entity).despawn();
-
-        // Spawn each fragment and blit immediately to avoid flicker
-        for component in components {
-          let Some(fragment) = create_fragment(body, &component, blit_transform, &mut id_generator)
-          else {
-            continue;
-          };
-
-          // Compute fragment transform and blit immediately (no displacement)
-          let frag_transform = Transform::from_translation(fragment.world_pos.extend(0.0))
-            .with_rotation(parent_rotation);
-          let frag_global = GlobalTransform::from(frag_transform);
-          let mut frag_dummy = Vec::new();
-          super::blit::blit_single_body(
-            &mut world,
-            &fragment.body,
-            &frag_global,
-            &mut frag_dummy,
-            &materials,
-            gizmos.get(),
-          );
-
+          #[cfg(all(feature = "rapier2d", not(feature = "avian2d")))]
           commands.spawn((
             fragment.body,
-            BlittedTransform {
+            collider,
+            bevy_rapier2d::prelude::RigidBody::Dynamic,
+            bevy_rapier2d::prelude::Velocity {
+              linvel: parent_linear,
+              angvel: parent_angular,
+            },
+            CollisionQueryPoint,
+            StreamCulled,
+            LastBlitTransform {
+              transform: Some(frag_global),
+            },
+            frag_transform,
+            fragment.id,
+            Persistable,
+          ));
+
+          #[cfg(not(any(feature = "avian2d", feature = "rapier2d")))]
+          commands.spawn((
+            fragment.body,
+            LastBlitTransform {
               transform: Some(frag_global),
             },
             frag_transform,

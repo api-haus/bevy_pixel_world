@@ -33,7 +33,7 @@ use crate::persistence::{
   format::StorageType,
 };
 use crate::pixel_body::{
-  BlittedTransform, DisplacementState, Persistable, PixelBody, PixelBodyId, PixelBodyIdGenerator,
+  DisplacementState, LastBlitTransform, Persistable, PixelBody, PixelBodyId, PixelBodyIdGenerator,
   apply_readback_changes, detect_external_erasure, readback_pixel_bodies, split_pixel_bodies,
   update_pixel_bodies,
 };
@@ -807,7 +807,7 @@ fn clear_chunk_tracking(mut unloading: ResMut<UnloadingChunks>, mut loaded: ResM
 ///
 /// Uses the blitted transform to ensure saved position matches where pixels
 /// were written.
-#[cfg(feature = "avian2d")]
+#[allow(unused_variables)]
 fn save_pixel_bodies_on_chunk_unload(
   mut commands: Commands,
   unloading_chunks: Res<UnloadingChunks>,
@@ -817,104 +817,15 @@ fn save_pixel_bodies_on_chunk_unload(
     &PixelBodyId,
     &PixelBody,
     &Persistable,
-    &BlittedTransform,
+    &LastBlitTransform,
+  )>,
+  #[cfg(feature = "avian2d")] velocities: Query<(
     Option<&avian2d::prelude::LinearVelocity>,
     Option<&avian2d::prelude::AngularVelocity>,
   )>,
-) {
-  if unloading_chunks.positions.is_empty() {
-    return;
-  }
-
-  let unloading_set: HashSet<_> = unloading_chunks.positions.iter().copied().collect();
-
-  for (entity, body_id, body, _, blitted, lin_vel, ang_vel) in bodies.iter() {
-    // Use BLITTED position to determine chunk membership
-    let Some(bt) = &blitted.transform else {
-      continue;
-    };
-
-    let (chunk_pos, _) =
-      WorldPos::new(bt.translation().x as i64, bt.translation().y as i64).to_chunk_and_local();
-
-    if !unloading_set.contains(&chunk_pos) {
-      continue;
-    }
-
-    // Create record using BLITTED transform
-    let Some(record) = PixelBodyRecord::from_components_blitted(
-      body_id,
-      body,
-      blitted,
-      lin_vel,
-      ang_vel,
-      Vec::new(),
-    ) else {
-      continue;
-    };
-
-    persistence_tasks.queue_body_save(record);
-    commands.entity(entity).despawn();
-  }
-}
-
-/// System: Saves pixel bodies when their chunk unloads (rapier2d variant).
-#[cfg(all(feature = "rapier2d", not(feature = "avian2d")))]
-fn save_pixel_bodies_on_chunk_unload(
-  mut commands: Commands,
-  unloading_chunks: Res<UnloadingChunks>,
-  mut persistence_tasks: ResMut<PersistenceTasks>,
-  bodies: Query<(
-    Entity,
-    &PixelBodyId,
-    &PixelBody,
-    &Persistable,
-    &BlittedTransform,
+  #[cfg(all(feature = "rapier2d", not(feature = "avian2d")))] velocities: Query<
     Option<&bevy_rapier2d::prelude::Velocity>,
-  )>,
-) {
-  if unloading_chunks.positions.is_empty() {
-    return;
-  }
-
-  let unloading_set: HashSet<_> = unloading_chunks.positions.iter().copied().collect();
-
-  for (entity, body_id, body, _, blitted, velocity) in bodies.iter() {
-    let Some(bt) = &blitted.transform else {
-      continue;
-    };
-
-    let (chunk_pos, _) =
-      WorldPos::new(bt.translation().x as i64, bt.translation().y as i64).to_chunk_and_local();
-
-    if !unloading_set.contains(&chunk_pos) {
-      continue;
-    }
-
-    let Some(record) =
-      PixelBodyRecord::from_components_blitted(body_id, body, blitted, velocity, Vec::new())
-    else {
-      continue;
-    };
-
-    persistence_tasks.queue_body_save(record);
-    commands.entity(entity).despawn();
-  }
-}
-
-/// System: Saves pixel bodies when their chunk unloads (no physics variant).
-#[cfg(not(any(feature = "avian2d", feature = "rapier2d")))]
-fn save_pixel_bodies_on_chunk_unload(
-  mut commands: Commands,
-  unloading_chunks: Res<UnloadingChunks>,
-  mut persistence_tasks: ResMut<PersistenceTasks>,
-  bodies: Query<(
-    Entity,
-    &PixelBodyId,
-    &PixelBody,
-    &Persistable,
-    &BlittedTransform,
-  )>,
+  >,
 ) {
   if unloading_chunks.positions.is_empty() {
     return;
@@ -934,8 +845,22 @@ fn save_pixel_bodies_on_chunk_unload(
       continue;
     }
 
-    let Some(record) = PixelBodyRecord::from_components_blitted(body_id, body, blitted, Vec::new())
-    else {
+    #[cfg(feature = "avian2d")]
+    let record = {
+      let (lin_vel, ang_vel) = velocities.get(entity).unwrap_or((None, None));
+      PixelBodyRecord::from_components_blitted(body_id, body, blitted, lin_vel, ang_vel, Vec::new())
+    };
+
+    #[cfg(all(feature = "rapier2d", not(feature = "avian2d")))]
+    let record = {
+      let velocity = velocities.get(entity).ok().flatten();
+      PixelBodyRecord::from_components_blitted(body_id, body, blitted, velocity, Vec::new())
+    };
+
+    #[cfg(not(any(feature = "avian2d", feature = "rapier2d")))]
+    let record = PixelBodyRecord::from_components_blitted(body_id, body, blitted, Vec::new());
+
+    let Some(record) = record else {
       continue;
     };
 
@@ -945,7 +870,6 @@ fn save_pixel_bodies_on_chunk_unload(
 }
 
 /// System: Loads pixel bodies when their chunk loads.
-#[cfg(feature = "avian2d")]
 fn load_pixel_bodies_on_chunk_load(
   mut commands: Commands,
   loaded_chunks: Res<LoadedChunks>,
@@ -969,82 +893,43 @@ fn load_pixel_bodies_on_chunk_load(
     let records = save.load_bodies_for_chunk(chunk_pos);
 
     for record in records {
-      // Ensure ID generator won't reuse this ID
       id_generator.ensure_above(record.stable_id);
 
-      // Reconstruct the pixel body
       let body = record.to_pixel_body();
 
-      // Generate collider
+      #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
       let Some(collider) = crate::pixel_body::generate_collider(&body) else {
         continue;
       };
 
-      // Spawn entity with restored transform
       let transform = Transform {
         translation: record.position.extend(0.0),
         rotation: Quat::from_rotation_z(record.rotation),
         scale: Vec3::ONE,
       };
 
-      commands.spawn((
+      #[allow(unused_mut, unused_variables)]
+      let mut entity_commands = commands.spawn((
         body,
+        LastBlitTransform::default(),
+        DisplacementState::default(),
+        transform,
+        PixelBodyId::new(record.stable_id),
+        Persistable,
+      ));
+
+      #[cfg(feature = "avian2d")]
+      entity_commands.insert((
         collider,
         avian2d::prelude::RigidBody::Dynamic,
         avian2d::prelude::LinearVelocity(record.linear_velocity),
         avian2d::prelude::AngularVelocity(record.angular_velocity),
         crate::collision::CollisionQueryPoint,
         crate::culling::StreamCulled,
-        BlittedTransform::default(),
-        DisplacementState::default(),
-        transform,
-        PixelBodyId::new(record.stable_id),
-        Persistable,
       ));
-    }
-  }
-}
 
-/// System: Loads pixel bodies when their chunk loads (rapier2d variant).
-#[cfg(all(feature = "rapier2d", not(feature = "avian2d")))]
-fn load_pixel_bodies_on_chunk_load(
-  mut commands: Commands,
-  loaded_chunks: Res<LoadedChunks>,
-  save_resource: Option<Res<WorldSaveResource>>,
-  mut id_generator: ResMut<PixelBodyIdGenerator>,
-) {
-  if loaded_chunks.positions.is_empty() {
-    return;
-  }
-
-  let Some(save_resource) = save_resource else {
-    return;
-  };
-
-  let save = match save_resource.save.read() {
-    Ok(s) => s,
-    Err(_) => return,
-  };
-
-  for &chunk_pos in &loaded_chunks.positions {
-    let records = save.load_bodies_for_chunk(chunk_pos);
-
-    for record in records {
-      id_generator.ensure_above(record.stable_id);
-
-      let body = record.to_pixel_body();
-      let Some(collider) = crate::pixel_body::generate_collider(&body) else {
-        continue;
-      };
-
-      let transform = Transform {
-        translation: record.position.extend(0.0),
-        rotation: Quat::from_rotation_z(record.rotation),
-        scale: Vec3::ONE,
-      };
-
-      commands.spawn((
-        body,
+      #[cfg(all(feature = "rapier2d", not(feature = "avian2d")))]
+      entity_commands.insert((
         collider,
         bevy_rapier2d::prelude::RigidBody::Dynamic,
         bevy_rapier2d::prelude::Velocity {
@@ -1053,58 +938,6 @@ fn load_pixel_bodies_on_chunk_load(
         },
         crate::collision::CollisionQueryPoint,
         crate::culling::StreamCulled,
-        BlittedTransform::default(),
-        DisplacementState::default(),
-        transform,
-        PixelBodyId::new(record.stable_id),
-        Persistable,
-      ));
-    }
-  }
-}
-
-/// System: Loads pixel bodies when their chunk loads (no physics variant).
-#[cfg(not(any(feature = "avian2d", feature = "rapier2d")))]
-fn load_pixel_bodies_on_chunk_load(
-  mut commands: Commands,
-  loaded_chunks: Res<LoadedChunks>,
-  save_resource: Option<Res<WorldSaveResource>>,
-  mut id_generator: ResMut<PixelBodyIdGenerator>,
-) {
-  if loaded_chunks.positions.is_empty() {
-    return;
-  }
-
-  let Some(save_resource) = save_resource else {
-    return;
-  };
-
-  let save = match save_resource.save.read() {
-    Ok(s) => s,
-    Err(_) => return,
-  };
-
-  for &chunk_pos in &loaded_chunks.positions {
-    let records = save.load_bodies_for_chunk(chunk_pos);
-
-    for record in records {
-      id_generator.ensure_above(record.stable_id);
-
-      let body = record.to_pixel_body();
-
-      let transform = Transform {
-        translation: record.position.extend(0.0),
-        rotation: Quat::from_rotation_z(record.rotation),
-        scale: Vec3::ONE,
-      };
-
-      commands.spawn((
-        body,
-        BlittedTransform::default(),
-        DisplacementState::default(),
-        transform,
-        PixelBodyId::new(record.stable_id),
-        Persistable,
       ));
     }
   }
@@ -1208,67 +1041,28 @@ fn process_pending_save_requests(
   }
 }
 
-/// System: Saves all pixel bodies when a full save is requested (avian2d).
+/// System: Saves all pixel bodies when a full save is requested.
 ///
 /// Unlike `save_pixel_bodies_on_chunk_unload`, this saves ALL bodies without
 /// despawning them, used for manual saves (Ctrl+S) and auto-saves.
-#[cfg(feature = "avian2d")]
+#[allow(unused_variables)]
 fn save_pixel_bodies_on_request(
   persistence: Res<PersistenceControl>,
   mut persistence_tasks: ResMut<PersistenceTasks>,
   bodies: Query<(
+    Entity,
     &PixelBodyId,
     &PixelBody,
     &Persistable,
-    &BlittedTransform,
+    &LastBlitTransform,
+  )>,
+  #[cfg(feature = "avian2d")] velocities: Query<(
     Option<&avian2d::prelude::LinearVelocity>,
     Option<&avian2d::prelude::AngularVelocity>,
   )>,
-) {
-  // Check if any pending request includes bodies
-  let save_bodies = persistence
-    .pending_requests
-    .iter()
-    .any(|req| req.include_bodies);
-
-  if !save_bodies {
-    return;
-  }
-
-  let mut count = 0;
-  for (body_id, body, _, blitted, lin_vel, ang_vel) in bodies.iter() {
-    let Some(record) = PixelBodyRecord::from_components_blitted(
-      body_id,
-      body,
-      blitted,
-      lin_vel,
-      ang_vel,
-      Vec::new(),
-    ) else {
-      continue;
-    };
-
-    persistence_tasks.queue_body_save(record);
-    count += 1;
-  }
-
-  if count > 0 {
-    info!("Queued {} pixel bodies for saving", count);
-  }
-}
-
-/// System: Saves all pixel bodies when a full save is requested (rapier2d).
-#[cfg(all(feature = "rapier2d", not(feature = "avian2d")))]
-fn save_pixel_bodies_on_request(
-  persistence: Res<PersistenceControl>,
-  mut persistence_tasks: ResMut<PersistenceTasks>,
-  bodies: Query<(
-    &PixelBodyId,
-    &PixelBody,
-    &Persistable,
-    &BlittedTransform,
+  #[cfg(all(feature = "rapier2d", not(feature = "avian2d")))] velocities: Query<
     Option<&bevy_rapier2d::prelude::Velocity>,
-  )>,
+  >,
 ) {
   let save_bodies = persistence
     .pending_requests
@@ -1280,42 +1074,23 @@ fn save_pixel_bodies_on_request(
   }
 
   let mut count = 0;
-  for (body_id, body, _, blitted, velocity) in bodies.iter() {
-    let Some(record) =
-      PixelBodyRecord::from_components_blitted(body_id, body, blitted, velocity, Vec::new())
-    else {
-      continue;
+  for (entity, body_id, body, _, blitted) in bodies.iter() {
+    #[cfg(feature = "avian2d")]
+    let record = {
+      let (lin_vel, ang_vel) = velocities.get(entity).unwrap_or((None, None));
+      PixelBodyRecord::from_components_blitted(body_id, body, blitted, lin_vel, ang_vel, Vec::new())
     };
 
-    persistence_tasks.queue_body_save(record);
-    count += 1;
-  }
+    #[cfg(all(feature = "rapier2d", not(feature = "avian2d")))]
+    let record = {
+      let velocity = velocities.get(entity).ok().flatten();
+      PixelBodyRecord::from_components_blitted(body_id, body, blitted, velocity, Vec::new())
+    };
 
-  if count > 0 {
-    info!("Queued {} pixel bodies for saving", count);
-  }
-}
+    #[cfg(not(any(feature = "avian2d", feature = "rapier2d")))]
+    let record = PixelBodyRecord::from_components_blitted(body_id, body, blitted, Vec::new());
 
-/// System: Saves all pixel bodies when a full save is requested (no physics).
-#[cfg(not(any(feature = "avian2d", feature = "rapier2d")))]
-fn save_pixel_bodies_on_request(
-  persistence: Res<PersistenceControl>,
-  mut persistence_tasks: ResMut<PersistenceTasks>,
-  bodies: Query<(&PixelBodyId, &PixelBody, &Persistable, &BlittedTransform)>,
-) {
-  let save_bodies = persistence
-    .pending_requests
-    .iter()
-    .any(|req| req.include_bodies);
-
-  if !save_bodies {
-    return;
-  }
-
-  let mut count = 0;
-  for (body_id, body, _, blitted) in bodies.iter() {
-    let Some(record) = PixelBodyRecord::from_components_blitted(body_id, body, blitted, Vec::new())
-    else {
+    let Some(record) = record else {
       continue;
     };
 
