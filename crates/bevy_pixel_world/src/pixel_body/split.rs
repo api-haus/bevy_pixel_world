@@ -17,6 +17,7 @@ use crate::collision::CollisionQueryPoint;
 use crate::culling::StreamCulled;
 use crate::debug_shim::GizmosParam;
 use crate::material::Materials;
+use crate::persistence::PersistenceTasks;
 use crate::world::PixelWorld;
 
 /// A connected region of pixels within a shape mask.
@@ -166,9 +167,16 @@ pub fn find_connected_components(
 pub fn split_pixel_bodies(
   mut commands: Commands,
   mut id_generator: ResMut<PixelBodyIdGenerator>,
+  mut persistence_tasks: Option<ResMut<PersistenceTasks>>,
   mut worlds: Query<&mut PixelWorld>,
   bodies: Query<
-    (Entity, &PixelBody, &LastBlitTransform, &GlobalTransform),
+    (
+      Entity,
+      &PixelBody,
+      &PixelBodyId,
+      &LastBlitTransform,
+      &GlobalTransform,
+    ),
     With<ShapeMaskModified>,
   >,
   #[cfg(feature = "avian2d")] velocities: Query<(
@@ -181,11 +189,15 @@ pub fn split_pixel_bodies(
   materials: Res<Materials>,
   gizmos: GizmosParam,
 ) {
-  for (entity, body, blitted, global_transform) in bodies.iter() {
+  for (entity, body, body_id, blitted, global_transform) in bodies.iter() {
     let components = find_connected_components(&body.shape_mask, body.width(), body.height());
 
     match components.len() {
       0 => {
+        // Queue removal from persistence before despawning
+        if let Some(ref mut tasks) = persistence_tasks {
+          tasks.queue_body_remove(body_id.value());
+        }
         // Clear blitted pixels before despawning (no displacement needed)
         if let Some(transform) = &blitted.transform
           && let Ok(mut world) = worlds.single_mut()
@@ -203,6 +215,10 @@ pub fn split_pixel_bodies(
           .insert(NeedsColliderRegen);
       }
       _ => {
+        // Queue removal of original body from persistence (fragments get new IDs)
+        if let Some(ref mut tasks) = persistence_tasks {
+          tasks.queue_body_remove(body_id.value());
+        }
         // Multiple components - split into fragments
         let parent_rotation = global_transform.to_scale_rotation_translation().1;
 

@@ -733,15 +733,17 @@ fn flush_persistence_queue(
 ) {
   let has_chunk_saves = !persistence_tasks.save_queue.is_empty();
   let has_body_saves = !persistence_tasks.body_save_queue.is_empty();
+  let has_body_removes = !persistence_tasks.body_remove_queue.is_empty();
 
-  if !has_chunk_saves && !has_body_saves {
+  if !has_chunk_saves && !has_body_saves && !has_body_removes {
     return;
   }
 
   let Some(save_resource) = save_resource else {
-    // No save file configured, discard queued saves
+    // No save file configured, discard queued operations
     persistence_tasks.save_queue.clear();
     persistence_tasks.body_save_queue.clear();
+    persistence_tasks.body_remove_queue.clear();
     return;
   };
 
@@ -752,6 +754,7 @@ fn flush_persistence_queue(
       eprintln!("Warning: failed to acquire save lock: {}", e);
       persistence_tasks.save_queue.clear();
       persistence_tasks.body_save_queue.clear();
+      persistence_tasks.body_remove_queue.clear();
       return;
     }
   };
@@ -787,6 +790,11 @@ fn flush_persistence_queue(
         task.record.stable_id, e
       );
     }
+  }
+
+  // Remove pixel bodies
+  for task in persistence_tasks.body_remove_queue.drain(..) {
+    save.remove_body(task.stable_id);
   }
 
   // Flush page table periodically (every N chunks or on demand)
@@ -883,6 +891,13 @@ fn save_pixel_bodies_on_chunk_unload(
       continue;
     }
 
+    // If body is empty (fully erased), queue removal instead of save
+    if body.is_empty() {
+      persistence_tasks.queue_body_remove(body_id.value());
+      commands.entity(entity).despawn();
+      continue;
+    }
+
     let Some(record) = create_body_record_blitted(
       entity,
       body_id,
@@ -908,6 +923,7 @@ fn load_pixel_bodies_on_chunk_load(
   loaded_chunks: Res<LoadedChunks>,
   save_resource: Option<Res<WorldSaveResource>>,
   mut id_generator: ResMut<PixelBodyIdGenerator>,
+  mut persistence_tasks: ResMut<PersistenceTasks>,
 ) {
   if loaded_chunks.positions.is_empty() {
     return;
@@ -929,6 +945,12 @@ fn load_pixel_bodies_on_chunk_load(
       id_generator.ensure_above(record.stable_id);
 
       let body = record.to_pixel_body();
+
+      // Skip empty bodies (stale records) and queue removal
+      if body.is_empty() {
+        persistence_tasks.queue_body_remove(record.stable_id);
+        continue;
+      }
 
       #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
       let Some(collider) = crate::pixel_body::generate_collider(&body) else {
@@ -1108,6 +1130,12 @@ fn save_pixel_bodies_on_request(
 
   let mut count = 0;
   for (entity, body_id, body, _, blitted) in bodies.iter() {
+    // If body is empty (fully erased), queue removal instead of save
+    if body.is_empty() {
+      persistence_tasks.queue_body_remove(body_id.value());
+      continue;
+    }
+
     let Some(record) = create_body_record_blitted(
       entity,
       body_id,
