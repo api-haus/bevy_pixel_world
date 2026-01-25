@@ -244,7 +244,7 @@ pub fn poll_collision_tasks(
 }
 
 /// System: Draws collision meshes as debug gizmos.
-#[cfg(feature = "visual-debug")]
+#[cfg(feature = "visual_debug")]
 pub fn draw_collision_gizmos(
   cache: Res<CollisionCache>,
   query_points: Query<&Transform, With<CollisionQueryPoint>>,
@@ -310,7 +310,7 @@ pub fn invalidate_dirty_tiles(mut cache: ResMut<CollisionCache>, worlds: Query<&
 }
 
 /// Shape types for sample mesh.
-#[cfg(feature = "visual-debug")]
+#[cfg(feature = "visual_debug")]
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub enum SampleShapeType {
   #[default]
@@ -320,7 +320,7 @@ pub enum SampleShapeType {
 }
 
 /// Resource holding a sample mesh for visualization testing.
-#[cfg(feature = "visual-debug")]
+#[cfg(feature = "visual_debug")]
 #[derive(Resource, Default)]
 pub struct SampleMesh {
   /// The polygon mesh to visualize.
@@ -333,7 +333,7 @@ pub struct SampleMesh {
   pub shape_type: SampleShapeType,
 }
 
-#[cfg(feature = "visual-debug")]
+#[cfg(feature = "visual_debug")]
 impl SampleMesh {
   /// Creates a regular polygon (circle approximation) centered at position.
   pub fn regular_polygon(center: Vec2, radius: f32, num_vertices: usize) -> PolygonMesh {
@@ -403,7 +403,7 @@ impl SampleMesh {
 }
 
 /// Returns the shape type selected by key press, if any.
-#[cfg(feature = "visual-debug")]
+#[cfg(feature = "visual_debug")]
 fn shape_key_pressed(keys: &ButtonInput<KeyCode>) -> Option<SampleShapeType> {
   if keys.just_pressed(KeyCode::Digit1) {
     bevy::log::info!("Sample mesh: Hexagon");
@@ -420,7 +420,7 @@ fn shape_key_pressed(keys: &ButtonInput<KeyCode>) -> Option<SampleShapeType> {
 }
 
 /// System: Updates the sample mesh position to follow the cursor.
-#[cfg(feature = "visual-debug")]
+#[cfg(feature = "visual_debug")]
 pub fn update_sample_mesh(
   mut sample_mesh: ResMut<SampleMesh>,
   query_points: Query<&Transform, With<CollisionQueryPoint>>,
@@ -480,7 +480,7 @@ pub fn update_sample_mesh(
 }
 
 /// System: Draws the sample mesh as debug gizmos.
-#[cfg(feature = "visual-debug")]
+#[cfg(feature = "visual_debug")]
 pub fn draw_sample_mesh_gizmos(sample_mesh: Res<SampleMesh>, mut gizmos: Gizmos) {
   let Some(mesh) = &sample_mesh.mesh else {
     return;

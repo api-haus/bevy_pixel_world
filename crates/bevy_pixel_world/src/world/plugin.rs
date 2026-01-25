@@ -20,7 +20,7 @@ use crate::collision::{
   CollisionCache, CollisionConfig, CollisionTasks, dispatch_collision_tasks,
   invalidate_dirty_tiles, poll_collision_tasks,
 };
-#[cfg(feature = "visual-debug")]
+#[cfg(feature = "visual_debug")]
 use crate::collision::{
   SampleMesh, draw_collision_gizmos, draw_sample_mesh_gizmos, update_sample_mesh,
 };
@@ -127,7 +127,7 @@ impl Plugin for PixelWorldStreamingPlugin {
     #[cfg(not(feature = "headless"))]
     app.add_systems(PreStartup, setup_shared_resources);
 
-    #[cfg(feature = "visual-debug")]
+    #[cfg(feature = "visual_debug")]
     app.init_resource::<SampleMesh>();
 
     #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
@@ -182,7 +182,7 @@ impl Plugin for PixelWorldStreamingPlugin {
         .chain(),
     );
 
-    #[cfg(all(not(feature = "headless"), feature = "visual-debug"))]
+    #[cfg(all(not(feature = "headless"), feature = "visual_debug"))]
     app.add_systems(
       PostUpdate,
       (

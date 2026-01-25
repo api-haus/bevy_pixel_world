@@ -50,7 +50,7 @@ pub use simplify::{douglas_peucker, simplify_polylines};
 pub use systems::{
   CollisionQueryPoint, dispatch_collision_tasks, invalidate_dirty_tiles, poll_collision_tasks,
 };
-#[cfg(feature = "visual-debug")]
+#[cfg(feature = "visual_debug")]
 pub use systems::{SampleMesh, draw_collision_gizmos, draw_sample_mesh_gizmos, update_sample_mesh};
 pub use triangulate::{Triangle, point_in_polygon, triangulate_polygon, triangulate_polygons};
 

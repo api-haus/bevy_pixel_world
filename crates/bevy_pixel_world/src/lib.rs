@@ -27,7 +27,7 @@ pub mod simulation;
 pub mod text;
 #[cfg(feature = "tracy")]
 mod tracy_init;
-#[cfg(feature = "visual-debug")]
+#[cfg(feature = "visual_debug")]
 pub mod visual_debug;
 pub mod world;
 
@@ -217,7 +217,7 @@ impl Plugin for PixelWorldPlugin {
     app.add_plugins(world::plugin::PixelWorldStreamingPlugin);
 
     // Add visual debug plugin if feature is enabled
-    #[cfg(feature = "visual-debug")]
+    #[cfg(feature = "visual_debug")]
     app.add_plugins(visual_debug::VisualDebugPlugin);
   }
 }

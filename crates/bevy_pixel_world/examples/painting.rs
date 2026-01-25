@@ -28,7 +28,7 @@ use bevy::window::PrimaryWindow;
 use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
 #[cfg(feature = "diagnostics")]
 use bevy_pixel_world::diagnostics::DiagnosticsPlugin;
-#[cfg(feature = "visual-debug")]
+#[cfg(feature = "visual_debug")]
 use bevy_pixel_world::visual_debug::{
   SettingsPersistence, VisualDebugSettings, visual_debug_checkboxes,
 };
@@ -219,8 +219,8 @@ fn ui_system(
   mut brush: ResMut<BrushState>,
   materials: Res<Materials>,
   mut ui_state: ResMut<UiState>,
-  #[cfg(feature = "visual-debug")] mut settings: ResMut<VisualDebugSettings>,
-  #[cfg(feature = "visual-debug")] mut persistence: ResMut<SettingsPersistence>,
+  #[cfg(feature = "visual_debug")] mut settings: ResMut<VisualDebugSettings>,
+  #[cfg(feature = "visual_debug")] mut persistence: ResMut<SettingsPersistence>,
 ) {
   let Ok(ctx) = contexts.ctx_mut() else {
     return;
@@ -267,7 +267,7 @@ fn ui_system(
         });
 
       // Visual Debug section (feature-gated, collapsed by default)
-      #[cfg(feature = "visual-debug")]
+      #[cfg(feature = "visual_debug")]
       egui::CollapsingHeader::new("Visual Debug")
         .default_open(false)
         .show(ui, |ui| {
