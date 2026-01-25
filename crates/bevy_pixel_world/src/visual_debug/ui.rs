@@ -24,6 +24,9 @@ pub fn visual_debug_checkboxes(ui: &mut egui::Ui, settings: &mut VisualDebugSett
   changed |= ui
     .checkbox(&mut settings.show_blit_rects, "Blit rects")
     .changed();
+  changed |= ui
+    .checkbox(&mut settings.show_pixel_body_centers, "Pixel body centers")
+    .changed();
 
   changed
 }

@@ -4,6 +4,7 @@ use bevy::prelude::*;
 
 use super::gizmos::{ActiveGizmo, ActiveGizmos, PendingDebugGizmos};
 use super::settings::VisualDebugSettings;
+use crate::pixel_body::PixelBody;
 
 /// System that renders debug gizmos.
 ///
@@ -72,6 +73,26 @@ pub fn render_debug_gizmos(
   // Remove expired gizmos (in reverse order to preserve indices)
   for i in expired_indices.into_iter().rev() {
     active.gizmos.swap_remove(i);
+  }
+}
+
+/// Draws small red circles at the centers of pixel body entities.
+pub fn draw_pixel_body_centers(
+  mut gizmos: Gizmos,
+  settings: Option<Res<VisualDebugSettings>>,
+  bodies: Query<&Transform, With<PixelBody>>,
+) {
+  let Some(settings) = settings else { return };
+  if !settings.show_pixel_body_centers {
+    return;
+  }
+
+  let color = Color::srgb(1.0, 0.2, 0.2);
+  let radius = 3.0;
+
+  for transform in bodies.iter() {
+    let center = transform.translation.truncate();
+    gizmos.circle_2d(center, radius, color);
   }
 }
 

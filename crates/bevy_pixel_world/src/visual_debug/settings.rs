@@ -9,6 +9,7 @@ use super::gizmos::GizmoKind;
 ///
 /// All visualizations are opt-in (disabled by default).
 #[derive(Resource, Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct VisualDebugSettings {
   /// Show collision mesh outlines.
   pub show_collision_meshes: bool,
@@ -20,6 +21,8 @@ pub struct VisualDebugSettings {
   pub show_dirty_rects: bool,
   /// Show blit rect highlights.
   pub show_blit_rects: bool,
+  /// Show red circles at pixel body centers.
+  pub show_pixel_body_centers: bool,
 }
 
 impl VisualDebugSettings {
