@@ -34,6 +34,8 @@ use crate::persistence::{
 };
 use crate::pixel_body::{
   BlittedTransform, Persistable, PixelBody, PixelBodyId, PixelBodyIdGenerator,
+  apply_readback_changes, blit_pixel_bodies, clear_pixel_bodies, detect_external_erasure,
+  readback_pixel_bodies, split_pixel_bodies,
 };
 use crate::primitives::Chunk;
 #[cfg(not(feature = "headless"))]
@@ -138,26 +140,44 @@ impl Plugin for PixelWorldStreamingPlugin {
     app.add_systems(
       Update,
       (
-        clear_chunk_tracking,
-        tick_auto_save_timer,
-        handle_persistence_messages,
-        initialize_palette,
-        tick_pixel_worlds,
-        save_pixel_bodies_on_chunk_unload,
-        update_entity_culling,
-        dispatch_seeding,
-        poll_seeding_tasks,
-        load_pixel_bodies_on_chunk_load,
-        update_simulation_bounds,
-        run_simulation.run_if(simulation_not_paused),
-        invalidate_dirty_tiles,
-        dispatch_collision_tasks,
-        poll_collision_tasks,
-        upload_dirty_chunks,
-        process_pending_save_requests,
-        save_pixel_bodies_on_request,
-        flush_persistence_queue,
-        notify_persistence_complete,
+        // Pre-simulation group
+        (
+          clear_chunk_tracking,
+          tick_auto_save_timer,
+          handle_persistence_messages,
+          initialize_palette,
+          tick_pixel_worlds,
+          save_pixel_bodies_on_chunk_unload,
+          update_entity_culling,
+          dispatch_seeding,
+          poll_seeding_tasks,
+          load_pixel_bodies_on_chunk_load,
+          update_simulation_bounds,
+        )
+          .chain(),
+        // Simulation group
+        (
+          detect_external_erasure,
+          clear_pixel_bodies,
+          blit_pixel_bodies,
+          run_simulation.run_if(simulation_not_paused),
+          readback_pixel_bodies,
+          apply_readback_changes,
+          split_pixel_bodies,
+          invalidate_dirty_tiles,
+        )
+          .chain(),
+        // Post-simulation group
+        (
+          dispatch_collision_tasks,
+          poll_collision_tasks,
+          upload_dirty_chunks,
+          process_pending_save_requests,
+          save_pixel_bodies_on_request,
+          flush_persistence_queue,
+          notify_persistence_complete,
+        )
+          .chain(),
       )
         .chain(),
     );
@@ -176,23 +196,41 @@ impl Plugin for PixelWorldStreamingPlugin {
     app.add_systems(
       Update,
       (
-        clear_chunk_tracking,
-        tick_auto_save_timer,
-        handle_persistence_messages,
-        tick_pixel_worlds,
-        save_pixel_bodies_on_chunk_unload,
-        update_entity_culling,
-        dispatch_seeding,
-        load_pixel_bodies_on_chunk_load,
-        update_simulation_bounds,
-        run_simulation.run_if(simulation_not_paused),
-        invalidate_dirty_tiles,
-        dispatch_collision_tasks,
-        poll_collision_tasks,
-        process_pending_save_requests,
-        save_pixel_bodies_on_request,
-        flush_persistence_queue,
-        notify_persistence_complete,
+        // Pre-simulation group
+        (
+          clear_chunk_tracking,
+          tick_auto_save_timer,
+          handle_persistence_messages,
+          tick_pixel_worlds,
+          save_pixel_bodies_on_chunk_unload,
+          update_entity_culling,
+          dispatch_seeding,
+          load_pixel_bodies_on_chunk_load,
+          update_simulation_bounds,
+        )
+          .chain(),
+        // Simulation group
+        (
+          detect_external_erasure,
+          clear_pixel_bodies,
+          blit_pixel_bodies,
+          run_simulation.run_if(simulation_not_paused),
+          readback_pixel_bodies,
+          apply_readback_changes,
+          split_pixel_bodies,
+          invalidate_dirty_tiles,
+        )
+          .chain(),
+        // Post-simulation group
+        (
+          dispatch_collision_tasks,
+          poll_collision_tasks,
+          process_pending_save_requests,
+          save_pixel_bodies_on_request,
+          flush_persistence_queue,
+          notify_persistence_complete,
+        )
+          .chain(),
       )
         .chain(),
     );

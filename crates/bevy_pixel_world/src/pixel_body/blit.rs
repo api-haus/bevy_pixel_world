@@ -64,7 +64,7 @@ pub fn blit_pixel_bodies(
 
 /// Computes the axis-aligned bounding box of a rotated pixel body in world
 /// space.
-fn compute_world_aabb(body: &PixelBody, transform: &GlobalTransform) -> WorldRect {
+pub(super) fn compute_world_aabb(body: &PixelBody, transform: &GlobalTransform) -> WorldRect {
   let width = body.width() as f32;
   let height = body.height() as f32;
   let ox = body.origin.x as f32;

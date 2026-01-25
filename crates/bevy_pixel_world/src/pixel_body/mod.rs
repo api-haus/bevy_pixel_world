@@ -28,16 +28,20 @@
 mod blit;
 mod collider;
 mod loader;
+mod readback;
 mod spawn;
+mod split;
 
 use bevy::prelude::*;
 pub use blit::{BlittedTransform, blit_pixel_bodies, clear_pixel_bodies};
 pub use collider::generate_collider;
 pub use loader::PixelBodyLoader;
+pub use readback::{apply_readback_changes, detect_external_erasure, readback_pixel_bodies};
 pub use spawn::{
   PendingPixelBody, PixelBodyIdGenerator, SpawnPixelBody, SpawnPixelBodyFromImage,
   finalize_pending_pixel_bodies,
 };
+pub use split::split_pixel_bodies;
 
 /// Stable identifier for pixel bodies across sessions.
 ///
@@ -163,3 +167,10 @@ impl PixelBody {
 /// Marker component indicating this pixel body needs its collider regenerated.
 #[derive(Component)]
 pub struct NeedsColliderRegen;
+
+/// Marker component indicating the shape mask was modified by readback.
+///
+/// Added by `readback_pixel_bodies` when pixels are destroyed. The split system
+/// uses this to check for fragmentation and handle entity splitting.
+#[derive(Component)]
+pub struct ShapeMaskModified;
