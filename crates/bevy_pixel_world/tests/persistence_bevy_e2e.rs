@@ -11,7 +11,7 @@ use bevy::ecs::world::Mut;
 use bevy::prelude::*;
 use bevy_pixel_world::{
   CHUNK_SIZE, ColorIndex, MaterialSeeder, PersistenceConfig, Pixel, PixelWorld, PixelWorldPlugin,
-  SpawnPixelWorld, StreamingCamera, WorldPos, material_ids,
+  SpawnPixelWorld, StreamingCamera, WorldPos, debug_shim::DebugGizmos, material_ids,
 };
 
 /// Camera speed in pixels per simulated second (matches painting demo)
@@ -168,7 +168,7 @@ fn painted_chunks_persist_across_scroll() {
             world.set_pixel(
               WorldPos::new(pos.x + dx, pos.y + dy),
               Pixel::new(material_ids::STONE, *color),
-              Default::default(),
+              DebugGizmos::none(),
             );
           }
         }

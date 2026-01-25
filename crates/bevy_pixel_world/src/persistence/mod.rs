@@ -334,6 +334,29 @@ impl WorldSave {
     Ok(())
   }
 
+  /// Copies this save file to a new path, returning a new `WorldSave` handle.
+  ///
+  /// This flushes any pending changes to ensure consistency, then copies
+  /// the entire file to the new location.
+  pub fn copy_to(&mut self, new_path: &Path) -> io::Result<WorldSave> {
+    // Ensure current file is consistent
+    self.flush()?;
+
+    // Create parent directory if needed
+    if let Some(parent) = new_path.parent() {
+      fs::create_dir_all(parent)?;
+    }
+
+    // Copy file
+    fs::copy(&self.path, new_path)?;
+
+    // Open new handle
+    WorldSave::open(new_path).map_err(|e| match e {
+      OpenError::Io(io_err) => io_err,
+      OpenError::Header(h) => io::Error::new(io::ErrorKind::InvalidData, h.to_string()),
+    })
+  }
+
   /// Flushes the page table, entity section, and header to disk.
   ///
   /// Rewrites header in-place and appends page table and entity section at end

@@ -24,6 +24,7 @@ use std::time::{Duration, Instant};
 use bevy::camera::ScalingMode;
 use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
+use bevy::time::{Timer, TimerMode};
 use bevy::window::PrimaryWindow;
 use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
 #[cfg(feature = "diagnostics")]
@@ -97,8 +98,8 @@ fn main() {
       }),
       ..default()
     }))
-    // Enable persistence - paintings are saved automatically
-    .add_plugins(PixelWorldPlugin::with_persistence("pixel_world_painting"))
+    // Enable persistence with named save "world"
+    .add_plugins(PixelWorldPlugin::with_persistence("pixel_world_painting").load("world"))
     .add_plugins(EguiPlugin::default())
     .insert_resource(BrushState::default())
     .init_resource::<UiState>()
@@ -119,6 +120,7 @@ fn main() {
         paint_system,
         update_collision_query_point,
         handle_save_hotkey,
+        auto_save_system,
       )
         .chain(),
     );
@@ -730,7 +732,21 @@ fn handle_save_hotkey(
   let s_pressed = keys.just_pressed(KeyCode::KeyS);
 
   if ctrl_pressed && s_pressed {
-    let handle = persistence.request_save();
+    let handle = persistence.save("world");
     info!("Manual save requested (id: {})", handle.id());
+  }
+}
+
+/// Auto-save system that saves periodically.
+fn auto_save_system(
+  time: Res<Time>,
+  mut timer: Local<Option<Timer>>,
+  mut persistence: ResMut<PersistenceControl>,
+) {
+  let timer = timer.get_or_insert_with(|| Timer::from_seconds(5.0, TimerMode::Repeating));
+  timer.tick(time.delta());
+
+  if timer.just_finished() {
+    persistence.save("world");
   }
 }

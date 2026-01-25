@@ -15,7 +15,7 @@ pub use super::persistence::{LoadedChunks, UnloadingChunks};
 use super::persistence::{
   clear_chunk_tracking, flush_persistence_queue, handle_persistence_messages,
   notify_persistence_complete, process_pending_save_requests, save_pixel_bodies_on_chunk_unload,
-  save_pixel_bodies_on_request, tick_auto_save_timer,
+  save_pixel_bodies_on_request,
 };
 use super::{PixelWorld, SlotIndex};
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
@@ -162,7 +162,6 @@ impl Plugin for PixelWorldStreamingPlugin {
         // Pre-simulation group
         (
           clear_chunk_tracking,
-          tick_auto_save_timer,
           handle_persistence_messages,
           initialize_palette,
           tick_pixel_worlds,
@@ -218,7 +217,6 @@ impl Plugin for PixelWorldStreamingPlugin {
         // Pre-simulation group
         (
           clear_chunk_tracking,
-          tick_auto_save_timer,
           handle_persistence_messages,
           tick_pixel_worlds,
           save_pixel_bodies_on_chunk_unload,
