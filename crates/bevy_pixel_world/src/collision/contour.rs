@@ -115,6 +115,28 @@ fn log_solo_endpoints(adjacency: &HashMap<(i32, i32), Vec<(usize, bool)>>, segme
   }
 }
 
+/// Adds segment vertices to a polyline in traversal order.
+///
+/// When `entering_from_start` is true, vertices are added start→end.
+/// When false, vertices are added end→start (reversed traversal).
+fn add_segment_vertices(
+  polyline: &mut Vec<Vec2>,
+  seg_start: Vec2,
+  seg_end: Vec2,
+  entering_from_start: bool,
+) {
+  let (first_vertex, second_vertex) = if entering_from_start {
+    (seg_start, seg_end)
+  } else {
+    (seg_end, seg_start)
+  };
+
+  if polyline.is_empty() {
+    polyline.push(first_vertex);
+  }
+  polyline.push(second_vertex);
+}
+
 /// Traverses connected segments starting from a given index, building a
 /// polyline.
 ///
@@ -134,18 +156,7 @@ fn traverse_polyline(
     used[current_idx] = true;
     let (seg_start, seg_end) = segments[current_idx];
 
-    // Add vertices in traversal order
-    if entering_from_start {
-      if polyline.is_empty() {
-        polyline.push(seg_start);
-      }
-      polyline.push(seg_end);
-    } else {
-      if polyline.is_empty() {
-        polyline.push(seg_end);
-      }
-      polyline.push(seg_start);
-    }
+    add_segment_vertices(&mut polyline, seg_start, seg_end, entering_from_start);
 
     // Find next segment sharing current endpoint
     let current_end = *polyline.last().unwrap();

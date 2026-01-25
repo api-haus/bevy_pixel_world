@@ -80,25 +80,8 @@ impl UnionFind {
   }
 }
 
-/// Finds connected components in a shape mask using 4-connectivity.
-///
-/// Returns components sorted by pixel count (largest first).
-pub fn find_connected_components(
-  shape_mask: &[bool],
-  width: u32,
-  height: u32,
-) -> Vec<ConnectedComponent> {
-  let w = width as usize;
-  let h = height as usize;
-  let size = w * h;
-
-  if size == 0 {
-    return Vec::new();
-  }
-
-  let mut uf = UnionFind::new(size);
-
-  // Union adjacent solid pixels (4-connectivity)
+/// Unions adjacent solid pixels using 4-connectivity.
+fn union_adjacent_pixels(uf: &mut UnionFind, shape_mask: &[bool], w: usize, h: usize) {
   for y in 0..h {
     for x in 0..w {
       let idx = y * w + x;
@@ -116,6 +99,39 @@ pub fn find_connected_components(
       }
     }
   }
+}
+
+/// Computes the bounding box for a list of pixel coordinates.
+fn compute_bounding_box(pixels: &[(u32, u32)]) -> (u32, u32, u32, u32) {
+  let (mut min_x, mut min_y) = (u32::MAX, u32::MAX);
+  let (mut max_x, mut max_y) = (0u32, 0u32);
+  for &(x, y) in pixels {
+    min_x = min_x.min(x);
+    min_y = min_y.min(y);
+    max_x = max_x.max(x);
+    max_y = max_y.max(y);
+  }
+  (min_x, min_y, max_x - min_x + 1, max_y - min_y + 1)
+}
+
+/// Finds connected components in a shape mask using 4-connectivity.
+///
+/// Returns components sorted by pixel count (largest first).
+pub fn find_connected_components(
+  shape_mask: &[bool],
+  width: u32,
+  height: u32,
+) -> Vec<ConnectedComponent> {
+  let w = width as usize;
+  let h = height as usize;
+  let size = w * h;
+
+  if size == 0 {
+    return Vec::new();
+  }
+
+  let mut uf = UnionFind::new(size);
+  union_adjacent_pixels(&mut uf, shape_mask, w, h);
 
   // Group pixels by their root
   let mut groups: HashMap<usize, Vec<(u32, u32)>> = HashMap::new();
@@ -133,19 +149,12 @@ pub fn find_connected_components(
   let mut components: Vec<ConnectedComponent> = groups
     .into_values()
     .map(|pixels| {
-      let (mut min_x, mut min_y) = (u32::MAX, u32::MAX);
-      let (mut max_x, mut max_y) = (0u32, 0u32);
-      for &(x, y) in &pixels {
-        min_x = min_x.min(x);
-        min_y = min_y.min(y);
-        max_x = max_x.max(x);
-        max_y = max_y.max(y);
-      }
+      let (min_x, min_y, width, height) = compute_bounding_box(&pixels);
       ConnectedComponent {
         min_x,
         min_y,
-        width: max_x - min_x + 1,
-        height: max_y - min_y + 1,
+        width,
+        height,
         pixels,
       }
     })
@@ -157,13 +166,131 @@ pub fn find_connected_components(
   components
 }
 
+/// Handles the case where a pixel body has no remaining pixels.
+///
+/// Clears blitted pixels, queues removal from persistence, and despawns the
+/// entity.
+#[allow(clippy::too_many_arguments)]
+fn handle_empty_body(
+  commands: &mut Commands,
+  persistence_tasks: &mut Option<ResMut<PersistenceTasks>>,
+  world: &mut Option<Mut<PixelWorld>>,
+  entity: Entity,
+  body: &PixelBody,
+  body_id: &PixelBodyId,
+  blitted: &LastBlitTransform,
+  gizmos: crate::debug_shim::DebugGizmos<'_>,
+) {
+  if let Some(tasks) = persistence_tasks {
+    tasks.queue_body_remove(body_id.value());
+  }
+  if let Some(transform) = &blitted.transform
+    && let Some(w) = world
+  {
+    super::blit::clear_single_body_no_tracking(w, body, transform, gizmos);
+  }
+  commands.entity(entity).despawn();
+}
+
+/// Handles the case where a pixel body has a single connected component.
+///
+/// Removes modification markers and triggers collider regeneration.
+fn handle_single_component(commands: &mut Commands, entity: Entity) {
+  commands
+    .entity(entity)
+    .remove::<ShapeMaskModified>()
+    .remove::<NeedsColliderRegen>()
+    .insert(NeedsColliderRegen);
+}
+
+/// Context for spawning fragment entities from a split pixel body.
+struct FragmentSpawnContext<'a, 'w, 's> {
+  commands: &'a mut Commands<'w, 's>,
+  id_generator: &'a mut PixelBodyIdGenerator,
+  world: &'a mut PixelWorld,
+  parent_body: &'a PixelBody,
+  blit_transform: &'a GlobalTransform,
+  parent_rotation: Quat,
+  #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+  parent_linear: Vec2,
+  #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+  parent_angular: f32,
+  gizmos: crate::debug_shim::DebugGizmos<'a>,
+}
+
+/// Spawns fragment entities for each connected component.
+fn spawn_fragment_entities(
+  ctx: FragmentSpawnContext<'_, '_, '_>,
+  components: Vec<ConnectedComponent>,
+) {
+  for component in components {
+    let Some(fragment) = create_fragment(
+      ctx.parent_body,
+      &component,
+      ctx.blit_transform,
+      ctx.id_generator,
+    ) else {
+      continue;
+    };
+
+    #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+    let Some(collider) = super::generate_collider(&fragment.body) else {
+      continue;
+    };
+
+    let frag_transform = Transform::from_translation(fragment.world_pos.extend(0.0))
+      .with_rotation(ctx.parent_rotation);
+    let frag_global = GlobalTransform::from(frag_transform);
+
+    super::blit::blit_single_body_no_displacement(
+      ctx.world,
+      &fragment.body,
+      &frag_global,
+      ctx.gizmos,
+    );
+
+    #[allow(unused_mut)]
+    let mut entity_commands = ctx.commands.spawn((
+      fragment.body,
+      LastBlitTransform {
+        transform: Some(frag_global),
+      },
+      frag_transform,
+      fragment.id,
+      Persistable,
+    ));
+
+    #[cfg(feature = "avian2d")]
+    entity_commands.insert((
+      collider,
+      avian2d::prelude::RigidBody::Dynamic,
+      avian2d::prelude::LinearVelocity(ctx.parent_linear),
+      avian2d::prelude::AngularVelocity(ctx.parent_angular),
+      CollisionQueryPoint,
+      StreamCulled,
+    ));
+
+    #[cfg(all(feature = "rapier2d", not(feature = "avian2d")))]
+    entity_commands.insert((
+      collider,
+      bevy_rapier2d::prelude::RigidBody::Dynamic,
+      bevy_rapier2d::prelude::Velocity {
+        linvel: ctx.parent_linear,
+        angvel: ctx.parent_angular,
+      },
+      CollisionQueryPoint,
+      StreamCulled,
+    ));
+  }
+}
+
 /// Handles entity splitting when pixel bodies fragment.
 ///
 /// For bodies marked with `ShapeMaskModified`:
 /// - 0 components: despawn entity (fully destroyed)
 /// - 1 component: remove marker (collider regen handles update)
 /// - N > 1 components: despawn original, spawn N fragment entities
-#[allow(clippy::type_complexity, unused_variables)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments, unused_variables)]
 pub fn split_pixel_bodies(
   mut commands: Commands,
   mut id_generator: ResMut<PixelBodyIdGenerator>,
@@ -189,37 +316,32 @@ pub fn split_pixel_bodies(
   materials: Res<Materials>,
   gizmos: GizmosParam,
 ) {
+  let mut world = worlds.single_mut().ok();
+
   for (entity, body, body_id, blitted, global_transform) in bodies.iter() {
     let components = find_connected_components(&body.shape_mask, body.width(), body.height());
 
     match components.len() {
       0 => {
-        // Queue removal from persistence before despawning
-        if let Some(ref mut tasks) = persistence_tasks {
-          tasks.queue_body_remove(body_id.value());
-        }
-        // Clear blitted pixels before despawning (no displacement needed)
-        if let Some(transform) = &blitted.transform
-          && let Ok(mut world) = worlds.single_mut()
-        {
-          super::blit::clear_single_body_no_tracking(&mut world, body, transform, gizmos.get());
-        }
-        commands.entity(entity).despawn();
+        handle_empty_body(
+          &mut commands,
+          &mut persistence_tasks,
+          &mut world,
+          entity,
+          body,
+          body_id,
+          blitted,
+          gizmos.get(),
+        );
       }
       1 => {
-        // Single component - just remove the marker, collider regen handles the rest
-        commands
-          .entity(entity)
-          .remove::<ShapeMaskModified>()
-          .remove::<NeedsColliderRegen>()
-          .insert(NeedsColliderRegen);
+        handle_single_component(&mut commands, entity);
       }
       _ => {
-        // Queue removal of original body from persistence (fragments get new IDs)
         if let Some(ref mut tasks) = persistence_tasks {
           tasks.queue_body_remove(body_id.value());
         }
-        // Multiple components - split into fragments
+
         let parent_rotation = global_transform.to_scale_rotation_translation().1;
 
         #[cfg(feature = "avian2d")]
@@ -246,75 +368,30 @@ pub fn split_pixel_bodies(
           continue;
         };
 
-        let Ok(mut world) = worlds.single_mut() else {
+        let Some(ref mut world) = world else {
           commands.entity(entity).despawn();
           continue;
         };
 
-        // Clear blitted pixels before despawning (no displacement needed)
-        super::blit::clear_single_body_no_tracking(&mut world, body, blit_transform, gizmos.get());
-
+        super::blit::clear_single_body_no_tracking(world, body, blit_transform, gizmos.get());
         commands.entity(entity).despawn();
 
-        // Spawn each fragment and blit immediately to avoid flicker
-        for component in components {
-          let Some(fragment) = create_fragment(body, &component, blit_transform, &mut id_generator)
-          else {
-            continue;
-          };
-
-          #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
-          let Some(collider) = super::generate_collider(&fragment.body) else {
-            continue;
-          };
-
-          let frag_transform = Transform::from_translation(fragment.world_pos.extend(0.0))
-            .with_rotation(parent_rotation);
-          let frag_global = GlobalTransform::from(frag_transform);
-
-          // Blit fragment immediately (no displacement needed)
-          super::blit::blit_single_body_no_displacement(
-            &mut world,
-            &fragment.body,
-            &frag_global,
-            gizmos.get(),
-          );
-
-          // Spawn fragment with base components
-          #[allow(unused_mut)]
-          let mut entity_commands = commands.spawn((
-            fragment.body,
-            LastBlitTransform {
-              transform: Some(frag_global),
-            },
-            frag_transform,
-            fragment.id,
-            Persistable,
-          ));
-
-          // Insert physics-specific components
-          #[cfg(feature = "avian2d")]
-          entity_commands.insert((
-            collider,
-            avian2d::prelude::RigidBody::Dynamic,
-            avian2d::prelude::LinearVelocity(parent_linear),
-            avian2d::prelude::AngularVelocity(parent_angular),
-            CollisionQueryPoint,
-            StreamCulled,
-          ));
-
-          #[cfg(all(feature = "rapier2d", not(feature = "avian2d")))]
-          entity_commands.insert((
-            collider,
-            bevy_rapier2d::prelude::RigidBody::Dynamic,
-            bevy_rapier2d::prelude::Velocity {
-              linvel: parent_linear,
-              angvel: parent_angular,
-            },
-            CollisionQueryPoint,
-            StreamCulled,
-          ));
-        }
+        spawn_fragment_entities(
+          FragmentSpawnContext {
+            commands: &mut commands,
+            id_generator: &mut id_generator,
+            world,
+            parent_body: body,
+            blit_transform,
+            parent_rotation,
+            #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+            parent_linear,
+            #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+            parent_angular,
+            gizmos: gizmos.get(),
+          },
+          components,
+        );
       }
     }
   }

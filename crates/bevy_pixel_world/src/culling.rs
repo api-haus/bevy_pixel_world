@@ -85,6 +85,18 @@ type CulledEntityQuery<'w, 's> = Query<
   (With<StreamCulled>, Allow<Disabled>),
 >;
 
+/// Checks if a culled entity should be re-enabled.
+///
+/// An entity is re-enabled when its collision data is ready (cached and not
+/// in-flight). This ensures physics interactions work correctly upon re-entry.
+fn should_reenable_entity(cache: &CollisionCache, x: i64, y: i64) -> bool {
+  let tile = TilePos::new(
+    (x as f32 / TILE_SIZE as f32).floor() as i64,
+    (y as f32 / TILE_SIZE as f32).floor() as i64,
+  );
+  cache.contains(tile) && !cache.is_in_flight(tile)
+}
+
 /// System that culls entities outside the streaming window.
 ///
 /// For each entity with [`StreamCulled`]:
@@ -116,22 +128,11 @@ pub(crate) fn update_entity_culling(
 
     let inside = x >= min_x && x < max_x && y >= min_y && y < max_y;
 
-    if inside && is_culled {
-      // Convert entity position to tile
-      let tile = TilePos::new(
-        (x as f32 / TILE_SIZE as f32).floor() as i64,
-        (y as f32 / TILE_SIZE as f32).floor() as i64,
-      );
-
-      // Only re-enable if collision is ready (cached and not in-flight)
-      let collision_ready = cache.contains(tile) && !cache.is_in_flight(tile);
-      if collision_ready {
-        commands
-          .entity(entity)
-          .remove::<(Disabled, CulledByWindow)>();
-      }
+    if inside && is_culled && should_reenable_entity(&cache, x, y) {
+      commands
+        .entity(entity)
+        .remove::<(Disabled, CulledByWindow)>();
     } else if !inside && !is_culled {
-      // Cull: entity is outside and not already culled
       commands.entity(entity).insert((Disabled, CulledByWindow));
     }
   }

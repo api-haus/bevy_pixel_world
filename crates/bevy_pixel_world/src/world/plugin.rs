@@ -435,7 +435,44 @@ fn spawn_chunk_entity(
   );
 }
 
-// TODO: Extract shared seeding logic (Chunk::new, seeder.seed) into helper
+/// Collects in-flight seeding task count and slot indices for a world entity.
+#[cfg(not(feature = "headless"))]
+fn collect_in_flight_tasks(
+  tasks: &[SeedingTask],
+  world_entity: Entity,
+) -> (usize, HashSet<SlotIndex>) {
+  let mut count = 0;
+  let mut slots = HashSet::new();
+  for task in tasks {
+    if task.world_entity == world_entity {
+      count += 1;
+      slots.insert(task.slot_index);
+    }
+  }
+  (count, slots)
+}
+
+/// Spawns an async seeding task for a chunk.
+#[cfg(not(feature = "headless"))]
+fn spawn_seeding_task(
+  seeding_tasks: &mut SeedingTasks,
+  task_pool: &bevy::tasks::AsyncComputeTaskPool,
+  world_entity: Entity,
+  world: &PixelWorld,
+  pos: crate::coords::ChunkPos,
+  slot_idx: SlotIndex,
+) {
+  let seeder = world.seeder().clone();
+  let task = task_pool.spawn(async move { seed_chunk(seeder.as_ref(), pos) });
+
+  seeding_tasks.tasks.push(SeedingTask {
+    world_entity,
+    slot_index: slot_idx,
+    pos,
+    task,
+  });
+}
+
 /// System: Dispatches async seeding tasks for unseeded chunks.
 #[cfg(not(feature = "headless"))]
 #[cfg_attr(feature = "tracy", tracing::instrument(skip_all))]
@@ -446,15 +483,8 @@ fn dispatch_seeding(
   let task_pool = AsyncComputeTaskPool::get();
 
   for (world_entity, world) in worlds.iter_mut() {
-    // Count existing tasks and collect in-flight slots in one pass
-    let mut in_flight = 0;
-    let mut in_flight_slots = std::collections::HashSet::new();
-    for task in seeding_tasks.tasks.iter() {
-      if task.world_entity == world_entity {
-        in_flight += 1;
-        in_flight_slots.insert(task.slot_index);
-      }
-    }
+    let (mut in_flight, in_flight_slots) =
+      collect_in_flight_tasks(&seeding_tasks.tasks, world_entity);
 
     if in_flight >= MAX_SEEDING_TASKS {
       continue;
@@ -470,18 +500,15 @@ fn dispatch_seeding(
         continue;
       }
 
-      // Spawn async seeding task
-      let seeder = world.seeder().clone();
-      let task = task_pool.spawn(async move { seed_chunk(seeder.as_ref(), pos) });
-
-      seeding_tasks.tasks.push(SeedingTask {
+      spawn_seeding_task(
+        &mut seeding_tasks,
+        task_pool,
         world_entity,
-        slot_index: slot_idx,
+        &world,
         pos,
-        task,
-      });
+        slot_idx,
+      );
 
-      // Respect concurrency limit
       in_flight += 1;
       if in_flight >= MAX_SEEDING_TASKS {
         break;
