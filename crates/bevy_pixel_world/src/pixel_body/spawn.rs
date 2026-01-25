@@ -8,7 +8,7 @@ use bevy::prelude::*;
 #[cfg(feature = "rapier2d")]
 use bevy_rapier2d::prelude::RigidBody;
 
-use super::{BlittedTransform, Persistable, PixelBodyId, PixelBodyLoader};
+use super::{BlittedTransform, DisplacementState, Persistable, PixelBodyId, PixelBodyLoader};
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 use crate::collision::CollisionQueryPoint;
 use crate::coords::MaterialId;
@@ -215,6 +215,7 @@ pub fn finalize_pending_pixel_bodies(
         CollisionQueryPoint,
         StreamCulled,
         BlittedTransform::default(),
+        DisplacementState::default(),
         Transform::from_translation(pending_body.position.extend(0.0)),
         body_id,
         Persistable,
@@ -250,6 +251,7 @@ pub fn finalize_pending_pixel_bodies(
       .insert((
         body,
         BlittedTransform::default(),
+        DisplacementState::default(),
         Transform::from_translation(pending_body.position.extend(0.0)),
         body_id,
         Persistable,

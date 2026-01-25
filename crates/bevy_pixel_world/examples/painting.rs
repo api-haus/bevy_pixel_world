@@ -33,9 +33,9 @@ use bevy_pixel_world::visual_debug::{
   SettingsPersistence, VisualDebugSettings, visual_debug_checkboxes,
 };
 use bevy_pixel_world::{
-  ColorIndex, MaterialId, MaterialSeeder, Materials, PersistenceControl, Pixel, PixelWorld,
-  PixelWorldPlugin, SpawnPixelWorld, StreamingCamera, WorldRect, collision::CollisionQueryPoint,
-  material_ids,
+  ColorIndex, MaterialId, MaterialSeeder, Materials, PersistenceControl, Pixel, PixelFlags,
+  PixelWorld, PixelWorldPlugin, SpawnPixelWorld, StreamingCamera, WorldPos, WorldRect,
+  collision::CollisionQueryPoint, material_ids,
 };
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 use bevy_pixel_world::{SpawnPixelBody, finalize_pending_pixel_bodies};
@@ -102,6 +102,7 @@ fn main() {
     .add_plugins(EguiPlugin::default())
     .insert_resource(BrushState::default())
     .init_resource::<UiState>()
+    .init_resource::<CameraZoom>()
     .add_systems(
       Startup,
       (load_camera_position, setup, apply_camera_position).chain(),
@@ -112,6 +113,7 @@ fn main() {
       (
         input_system,
         camera_input,
+        apply_camera_zoom,
         track_camera_changes,
         save_camera_position,
         paint_system,
@@ -144,15 +146,6 @@ fn main() {
 
   #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
   app.add_systems(Update, (spawn_pixel_body, finalize_pending_pixel_bodies));
-
-  // Pixel body blit/clear systems - blit early, clear late
-  // Blit writes pixels to Canvas so they're visible during rendering
-  // Clear removes them after rendering, before next frame's physics
-  #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
-  {
-    app.add_systems(First, bevy_pixel_world::blit_pixel_bodies);
-    app.add_systems(Last, bevy_pixel_world::clear_pixel_bodies);
-  }
 
   app.run();
 }
@@ -188,6 +181,46 @@ struct UiState {
   pointer_over_ui: bool,
 }
 
+/// Camera zoom/viewport settings.
+#[derive(Resource)]
+struct CameraZoom {
+  width: f32,
+  height: f32,
+}
+
+impl Default for CameraZoom {
+  fn default() -> Self {
+    Self {
+      width: 640.0,
+      height: 480.0,
+    }
+  }
+}
+
+impl CameraZoom {
+  /// Preset resolutions (width, height, label).
+  const PRESETS: &[(f32, f32, &'static str)] = &[
+    (160.0, 120.0, "160x120"),
+    (320.0, 240.0, "320x240"),
+    (640.0, 480.0, "640x480"),
+    (800.0, 600.0, "800x600"),
+    (1280.0, 720.0, "1280x720"),
+    (1920.0, 1080.0, "1920x1080"),
+  ];
+
+  /// Zoom in (smaller viewport = more zoomed in).
+  fn zoom_in(&mut self) {
+    self.width = (self.width * 0.8).max(80.0);
+    self.height = (self.height * 0.8).max(60.0);
+  }
+
+  /// Zoom out (larger viewport = more zoomed out).
+  fn zoom_out(&mut self) {
+    self.width = (self.width * 1.25).min(3840.0);
+    self.height = (self.height * 1.25).min(2160.0);
+  }
+}
+
 fn setup(mut commands: Commands) {
   // Spawn camera with StreamingCamera marker
   commands.spawn((
@@ -217,14 +250,24 @@ fn setup(mut commands: Commands) {
 fn ui_system(
   mut contexts: EguiContexts,
   mut brush: ResMut<BrushState>,
+  mut zoom: ResMut<CameraZoom>,
   materials: Res<Materials>,
   mut ui_state: ResMut<UiState>,
+  worlds: Query<&PixelWorld>,
   #[cfg(feature = "visual_debug")] mut settings: ResMut<VisualDebugSettings>,
   #[cfg(feature = "visual_debug")] mut persistence: ResMut<SettingsPersistence>,
 ) {
   let Ok(ctx) = contexts.ctx_mut() else {
     return;
   };
+
+  // Get pixel at cursor for debug display
+  let cursor_pixel = brush.world_pos.and_then(|(x, y)| {
+    worlds
+      .single()
+      .ok()
+      .and_then(|world| world.get_pixel(WorldPos::new(x, y)).copied())
+  });
 
   egui::SidePanel::left("tools_panel")
     .resizable(true)
@@ -266,6 +309,102 @@ fn ui_system(
           brush.radius = radius as u32;
         });
 
+      // Camera section
+      egui::CollapsingHeader::new("Camera")
+        .default_open(true)
+        .show(ui, |ui| {
+          // Current resolution display
+          ui.label(format!(
+            "Viewport: {}x{}",
+            zoom.width as i32, zoom.height as i32
+          ));
+
+          ui.horizontal(|ui| {
+            if ui.button("−").clicked() {
+              zoom.zoom_out();
+            }
+            ui.label("Zoom");
+            if ui.button("+").clicked() {
+              zoom.zoom_in();
+            }
+          });
+
+          ui.separator();
+          ui.label("Presets:");
+
+          // Preset buttons in rows of 2
+          for chunk in CameraZoom::PRESETS.chunks(2) {
+            ui.horizontal(|ui| {
+              for &(w, h, label) in chunk {
+                if ui.button(label).clicked() {
+                  zoom.width = w;
+                  zoom.height = h;
+                }
+              }
+            });
+          }
+        });
+
+      // Pixel Debug section
+      egui::CollapsingHeader::new("Pixel Debug")
+        .default_open(true)
+        .show(ui, |ui| {
+          if let Some((x, y)) = brush.world_pos {
+            ui.label(format!("Position: ({}, {})", x, y));
+
+            if let Some(pixel) = cursor_pixel {
+              ui.separator();
+
+              // Material
+              let mat_name = if pixel.material.0 == 0 {
+                "VOID"
+              } else {
+                materials.get(pixel.material).name
+              };
+              ui.label(format!("Material: {} ({})", mat_name, pixel.material.0));
+
+              // Color
+              ui.label(format!("Color: {}", pixel.color.0));
+
+              // Damage
+              ui.label(format!("Damage: {}", pixel.damage));
+
+              ui.separator();
+
+              // Flags with disambiguation
+              ui.label("Flags:");
+              let flags = pixel.flags;
+              ui.indent("flags_indent", |ui| {
+                flag_label(ui, flags, PixelFlags::DIRTY, "DIRTY", "needs simulation");
+                flag_label(
+                  ui,
+                  flags,
+                  PixelFlags::SOLID,
+                  "SOLID",
+                  "solid/powder material",
+                );
+                flag_label(ui, flags, PixelFlags::FALLING, "FALLING", "has momentum");
+                flag_label(ui, flags, PixelFlags::BURNING, "BURNING", "on fire");
+                flag_label(ui, flags, PixelFlags::WET, "WET", "wet");
+                flag_label(
+                  ui,
+                  flags,
+                  PixelFlags::PIXEL_BODY,
+                  "PIXEL_BODY",
+                  "belongs to body",
+                );
+              });
+
+              ui.separator();
+              ui.label(format!("Raw flags: 0b{:08b}", flags.bits()));
+            } else {
+              ui.label("(no pixel data)");
+            }
+          } else {
+            ui.label("(cursor outside window)");
+          }
+        });
+
       // Visual Debug section (feature-gated, collapsed by default)
       #[cfg(feature = "visual_debug")]
       egui::CollapsingHeader::new("Visual Debug")
@@ -278,6 +417,18 @@ fn ui_system(
     });
 
   ui_state.pointer_over_ui = ctx.is_pointer_over_area();
+}
+
+/// Helper to display a flag with its status and description.
+fn flag_label(ui: &mut egui::Ui, flags: PixelFlags, flag: PixelFlags, name: &str, desc: &str) {
+  let set = flags.contains(flag);
+  let status = if set { "[X]" } else { "[ ]" };
+  let color = if set {
+    egui::Color32::LIGHT_GREEN
+  } else {
+    egui::Color32::GRAY
+  };
+  ui.colored_label(color, format!("{} {} - {}", status, name, desc));
 }
 
 fn input_system(
@@ -355,6 +506,27 @@ fn camera_input(
   if let Ok(mut transform) = camera.single_mut() {
     transform.translation.x += direction.x * speed * time.delta_secs();
     transform.translation.y += direction.y * speed * time.delta_secs();
+  }
+}
+
+/// Applies camera zoom settings to the orthographic projection.
+fn apply_camera_zoom(
+  zoom: Res<CameraZoom>,
+  mut camera: Query<&mut Projection, With<StreamingCamera>>,
+) {
+  if !zoom.is_changed() {
+    return;
+  }
+
+  let Ok(mut projection) = camera.single_mut() else {
+    return;
+  };
+
+  if let Projection::Orthographic(ref mut ortho) = *projection {
+    ortho.scaling_mode = ScalingMode::AutoMin {
+      min_width: zoom.width,
+      min_height: zoom.height,
+    };
   }
 }
 

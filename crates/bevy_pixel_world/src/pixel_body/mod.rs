@@ -27,14 +27,18 @@
 
 mod blit;
 mod collider;
+mod displacement;
 mod loader;
 mod readback;
 mod spawn;
 mod split;
 
 use bevy::prelude::*;
-pub use blit::{BlittedTransform, blit_pixel_bodies, clear_pixel_bodies};
+#[cfg(all(feature = "buoyancy", any(feature = "avian2d", feature = "rapier2d")))]
+pub(crate) use blit::compute_world_aabb;
+pub use blit::{BlittedTransform, update_pixel_bodies};
 pub use collider::generate_collider;
+pub use displacement::DisplacementState;
 pub use loader::PixelBodyLoader;
 pub use readback::{apply_readback_changes, detect_external_erasure, readback_pixel_bodies};
 pub use spawn::{

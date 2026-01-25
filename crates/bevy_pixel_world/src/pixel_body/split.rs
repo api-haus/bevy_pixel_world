@@ -16,6 +16,7 @@ use crate::collision::CollisionQueryPoint;
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 use crate::culling::StreamCulled;
 use crate::debug_shim::GizmosParam;
+use crate::material::Materials;
 use crate::world::PixelWorld;
 
 /// A connected region of pixels within a shape mask.
@@ -178,6 +179,7 @@ pub fn split_pixel_bodies(
     ),
     With<ShapeMaskModified>,
   >,
+  materials: Res<Materials>,
   gizmos: GizmosParam,
 ) {
   for (entity, body, blitted, global_transform, lin_vel, ang_vel) in bodies.iter() {
@@ -185,10 +187,11 @@ pub fn split_pixel_bodies(
 
     match components.len() {
       0 => {
-        // Clear blitted pixels before despawning
+        // Clear blitted pixels before despawning (no displacement needed)
         if let Some(transform) = &blitted.transform {
           if let Ok(mut world) = worlds.single_mut() {
-            super::blit::clear_single_body(&mut world, body, transform, gizmos.get());
+            let mut dummy = Vec::new();
+            super::blit::clear_single_body(&mut world, body, transform, &mut dummy, gizmos.get());
           }
         }
         // Fully destroyed - despawn
@@ -219,7 +222,9 @@ pub fn split_pixel_bodies(
           commands.entity(entity).despawn();
           continue;
         };
-        super::blit::clear_single_body(&mut world, body, blit_transform, gizmos.get());
+        // No displacement needed for split cleanup
+        let mut dummy = Vec::new();
+        super::blit::clear_single_body(&mut world, body, blit_transform, &mut dummy, gizmos.get());
 
         // Despawn original
         commands.entity(entity).despawn();
@@ -236,11 +241,19 @@ pub fn split_pixel_bodies(
             continue;
           };
 
-          // Compute fragment transform and blit immediately
+          // Compute fragment transform and blit immediately (no displacement)
           let frag_transform = Transform::from_translation(fragment.world_pos.extend(0.0))
             .with_rotation(parent_rotation);
           let frag_global = GlobalTransform::from(frag_transform);
-          super::blit::blit_single_body(&mut world, &fragment.body, &frag_global, gizmos.get());
+          let mut frag_dummy = Vec::new();
+          super::blit::blit_single_body(
+            &mut world,
+            &fragment.body,
+            &frag_global,
+            &mut frag_dummy,
+            &materials,
+            gizmos.get(),
+          );
 
           commands.spawn((
             fragment.body,
@@ -280,6 +293,7 @@ pub fn split_pixel_bodies(
     ),
     With<ShapeMaskModified>,
   >,
+  materials: Res<Materials>,
   gizmos: GizmosParam,
 ) {
   for (entity, body, blitted, global_transform, velocity) in bodies.iter() {
@@ -287,10 +301,11 @@ pub fn split_pixel_bodies(
 
     match components.len() {
       0 => {
-        // Clear blitted pixels before despawning
+        // Clear blitted pixels before despawning (no displacement needed)
         if let Some(transform) = &blitted.transform {
           if let Ok(mut world) = worlds.single_mut() {
-            super::blit::clear_single_body(&mut world, body, transform, gizmos.get());
+            let mut dummy = Vec::new();
+            super::blit::clear_single_body(&mut world, body, transform, &mut dummy, gizmos.get());
           }
         }
         commands.entity(entity).despawn();
@@ -313,12 +328,13 @@ pub fn split_pixel_bodies(
           continue;
         };
 
-        // Clear blitted pixels before despawning
+        // Clear blitted pixels before despawning (no displacement needed)
         let Ok(mut world) = worlds.single_mut() else {
           commands.entity(entity).despawn();
           continue;
         };
-        super::blit::clear_single_body(&mut world, body, blit_transform, gizmos.get());
+        let mut dummy = Vec::new();
+        super::blit::clear_single_body(&mut world, body, blit_transform, &mut dummy, gizmos.get());
 
         commands.entity(entity).despawn();
 
@@ -333,11 +349,19 @@ pub fn split_pixel_bodies(
             continue;
           };
 
-          // Compute fragment transform and blit immediately
+          // Compute fragment transform and blit immediately (no displacement)
           let frag_transform = Transform::from_translation(fragment.world_pos.extend(0.0))
             .with_rotation(parent_rotation);
           let frag_global = GlobalTransform::from(frag_transform);
-          super::blit::blit_single_body(&mut world, &fragment.body, &frag_global, gizmos.get());
+          let mut frag_dummy = Vec::new();
+          super::blit::blit_single_body(
+            &mut world,
+            &fragment.body,
+            &frag_global,
+            &mut frag_dummy,
+            &materials,
+            gizmos.get(),
+          );
 
           commands.spawn((
             fragment.body,
@@ -369,6 +393,7 @@ pub fn split_pixel_bodies(
   mut id_generator: ResMut<PixelBodyIdGenerator>,
   mut worlds: Query<&mut PixelWorld>,
   bodies: Query<(Entity, &PixelBody, &BlittedTransform, &GlobalTransform), With<ShapeMaskModified>>,
+  materials: Res<Materials>,
   gizmos: GizmosParam,
 ) {
   for (entity, body, blitted, global_transform) in bodies.iter() {
@@ -376,10 +401,11 @@ pub fn split_pixel_bodies(
 
     match components.len() {
       0 => {
-        // Clear blitted pixels before despawning
+        // Clear blitted pixels before despawning (no displacement needed)
         if let Some(transform) = &blitted.transform {
           if let Ok(mut world) = worlds.single_mut() {
-            super::blit::clear_single_body(&mut world, body, transform, gizmos.get());
+            let mut dummy = Vec::new();
+            super::blit::clear_single_body(&mut world, body, transform, &mut dummy, gizmos.get());
           }
         }
         commands.entity(entity).despawn();
@@ -399,12 +425,13 @@ pub fn split_pixel_bodies(
           continue;
         };
 
-        // Clear blitted pixels before despawning
+        // Clear blitted pixels before despawning (no displacement needed)
         let Ok(mut world) = worlds.single_mut() else {
           commands.entity(entity).despawn();
           continue;
         };
-        super::blit::clear_single_body(&mut world, body, blit_transform, gizmos.get());
+        let mut dummy = Vec::new();
+        super::blit::clear_single_body(&mut world, body, blit_transform, &mut dummy, gizmos.get());
 
         commands.entity(entity).despawn();
 
@@ -415,11 +442,19 @@ pub fn split_pixel_bodies(
             continue;
           };
 
-          // Compute fragment transform and blit immediately
+          // Compute fragment transform and blit immediately (no displacement)
           let frag_transform = Transform::from_translation(fragment.world_pos.extend(0.0))
             .with_rotation(parent_rotation);
           let frag_global = GlobalTransform::from(frag_transform);
-          super::blit::blit_single_body(&mut world, &fragment.body, &frag_global, gizmos.get());
+          let mut frag_dummy = Vec::new();
+          super::blit::blit_single_body(
+            &mut world,
+            &fragment.body,
+            &frag_global,
+            &mut frag_dummy,
+            &materials,
+            gizmos.get(),
+          );
 
           commands.spawn((
             fragment.body,

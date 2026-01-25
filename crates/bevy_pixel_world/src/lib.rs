@@ -9,6 +9,8 @@ use bevy::prelude::*;
 #[cfg(not(feature = "headless"))]
 use bevy::sprite_render::Material2dPlugin;
 
+#[cfg(all(feature = "buoyancy", any(feature = "avian2d", feature = "rapier2d")))]
+pub mod buoyancy;
 pub mod collision;
 pub mod coords;
 pub mod culling;
@@ -41,9 +43,9 @@ pub use material::{Material, Materials, PhysicsState, ids as material_ids};
 pub use persistence::{PixelBodyRecord, WorldSave, WorldSaveResource};
 pub use pixel::{Pixel, PixelFlags, PixelSurface};
 pub use pixel_body::{
-  BlittedTransform, NeedsColliderRegen, PendingPixelBody, Persistable, PixelBody, PixelBodyId,
-  PixelBodyIdGenerator, PixelBodyLoader, SpawnPixelBody, SpawnPixelBodyFromImage,
-  blit_pixel_bodies, clear_pixel_bodies, finalize_pending_pixel_bodies, generate_collider,
+  BlittedTransform, DisplacementState, NeedsColliderRegen, PendingPixelBody, Persistable,
+  PixelBody, PixelBodyId, PixelBodyIdGenerator, PixelBodyLoader, SpawnPixelBody,
+  SpawnPixelBodyFromImage, finalize_pending_pixel_bodies, generate_collider, update_pixel_bodies,
 };
 pub use primitives::{Chunk, Surface};
 pub use render::{

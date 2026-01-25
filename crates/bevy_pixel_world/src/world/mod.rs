@@ -230,6 +230,25 @@ impl PixelWorld {
     }
   }
 
+  /// Marks a world position as simulation-dirty.
+  ///
+  /// This expands the tile dirty rect so the CA simulation will process
+  /// the pixel on the next tick. Use this when placing material that needs
+  /// to participate in simulation (e.g., displaced water).
+  pub fn mark_pixel_sim_dirty(&mut self, pos: WorldPos) {
+    let (chunk_pos, local_pos) = pos.to_chunk_and_local();
+    let Some(&idx) = self.active.get(&chunk_pos) else {
+      return;
+    };
+    let slot = &mut self.slots[idx.0];
+    if !slot.is_seeded() {
+      return;
+    }
+    slot
+      .chunk
+      .mark_pixel_dirty(local_pos.x as u32, local_pos.y as u32);
+  }
+
   /// Returns an iterator over active chunk positions and their slot indices.
   pub(crate) fn active_chunks(&self) -> impl Iterator<Item = (ChunkPos, SlotIndex)> + '_ {
     self.active.iter().map(|(&pos, &idx)| (pos, idx))

@@ -33,9 +33,9 @@ use crate::persistence::{
   format::StorageType,
 };
 use crate::pixel_body::{
-  BlittedTransform, Persistable, PixelBody, PixelBodyId, PixelBodyIdGenerator,
-  apply_readback_changes, blit_pixel_bodies, clear_pixel_bodies, detect_external_erasure,
-  readback_pixel_bodies, split_pixel_bodies,
+  BlittedTransform, DisplacementState, Persistable, PixelBody, PixelBodyId, PixelBodyIdGenerator,
+  apply_readback_changes, detect_external_erasure, readback_pixel_bodies, split_pixel_bodies,
+  update_pixel_bodies,
 };
 use crate::primitives::Chunk;
 #[cfg(not(feature = "headless"))]
@@ -158,8 +158,7 @@ impl Plugin for PixelWorldStreamingPlugin {
         // Simulation group
         (
           detect_external_erasure,
-          clear_pixel_bodies,
-          blit_pixel_bodies,
+          update_pixel_bodies,
           run_simulation.run_if(simulation_not_paused),
           readback_pixel_bodies,
           apply_readback_changes,
@@ -212,8 +211,7 @@ impl Plugin for PixelWorldStreamingPlugin {
         // Simulation group
         (
           detect_external_erasure,
-          clear_pixel_bodies,
-          blit_pixel_bodies,
+          update_pixel_bodies,
           run_simulation.run_if(simulation_not_paused),
           readback_pixel_bodies,
           apply_readback_changes,
@@ -998,6 +996,7 @@ fn load_pixel_bodies_on_chunk_load(
         crate::collision::CollisionQueryPoint,
         crate::culling::StreamCulled,
         BlittedTransform::default(),
+        DisplacementState::default(),
         transform,
         PixelBodyId::new(record.stable_id),
         Persistable,
@@ -1055,6 +1054,7 @@ fn load_pixel_bodies_on_chunk_load(
         crate::collision::CollisionQueryPoint,
         crate::culling::StreamCulled,
         BlittedTransform::default(),
+        DisplacementState::default(),
         transform,
         PixelBodyId::new(record.stable_id),
         Persistable,
@@ -1101,6 +1101,7 @@ fn load_pixel_bodies_on_chunk_load(
       commands.spawn((
         body,
         BlittedTransform::default(),
+        DisplacementState::default(),
         transform,
         PixelBodyId::new(record.stable_id),
         Persistable,
