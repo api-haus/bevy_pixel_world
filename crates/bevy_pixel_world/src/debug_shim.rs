@@ -21,6 +21,23 @@ pub struct DebugGizmos<'a>(
   #[cfg(not(feature = "visual_debug"))] PhantomData<&'a ()>,
 );
 
+impl DebugGizmos<'_> {
+  /// Creates a no-op gizmos handle.
+  ///
+  /// Useful in tests and contexts without visual debug infrastructure.
+  #[inline]
+  pub fn none() -> Self {
+    #[cfg(feature = "visual_debug")]
+    {
+      DebugGizmos(None)
+    }
+    #[cfg(not(feature = "visual_debug"))]
+    {
+      DebugGizmos(PhantomData)
+    }
+  }
+}
+
 /// System parameter for extracting debug gizmos resource.
 ///
 /// Provides a unified interface for systems that need gizmos.

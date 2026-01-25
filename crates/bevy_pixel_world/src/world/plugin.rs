@@ -143,7 +143,6 @@ impl Plugin for PixelWorldStreamingPlugin {
         // Pre-simulation group
         (
           clear_chunk_tracking,
-          tick_auto_save_timer,
           handle_persistence_messages,
           initialize_palette,
           tick_pixel_worlds,
@@ -198,7 +197,6 @@ impl Plugin for PixelWorldStreamingPlugin {
         // Pre-simulation group
         (
           clear_chunk_tracking,
-          tick_auto_save_timer,
           handle_persistence_messages,
           tick_pixel_worlds,
           save_pixel_bodies_on_chunk_unload,
@@ -752,10 +750,12 @@ fn upload_dirty_chunks(
 /// System: Flushes pending persistence tasks to disk.
 ///
 /// Writes queued chunk and body saves to the save file. Only runs if a
-/// WorldSaveResource is present.
+/// WorldSaveResource is present. Handles copy-on-write when saving to a
+/// different save name than the current one.
 #[cfg_attr(feature = "tracy", tracing::instrument(skip_all))]
 fn flush_persistence_queue(
   mut persistence_tasks: ResMut<PersistenceTasks>,
+  mut persistence_control: ResMut<PersistenceControl>,
   save_resource: Option<ResMut<WorldSaveResource>>,
 ) {
   let has_chunk_saves = !persistence_tasks.save_queue.is_empty();
@@ -773,6 +773,46 @@ fn flush_persistence_queue(
     persistence_tasks.body_remove_queue.clear();
     return;
   };
+
+  // Check if any pending request targets a different save (copy-on-write)
+  let target_save = persistence_control
+    .pending_requests
+    .iter()
+    .find(|req| req.target_save != persistence_control.current_save)
+    .map(|req| req.target_save.clone());
+
+  // Handle copy-on-write if saving to a different name
+  if let Some(new_save_name) = target_save {
+    let new_path = persistence_control.save_path(&new_save_name);
+
+    let mut save = match save_resource.save.write() {
+      Ok(s) => s,
+      Err(e) => {
+        eprintln!("Warning: failed to acquire save lock for copy: {}", e);
+        persistence_tasks.save_queue.clear();
+        persistence_tasks.body_save_queue.clear();
+        persistence_tasks.body_remove_queue.clear();
+        return;
+      }
+    };
+
+    match save.copy_to(&new_path) {
+      Ok(new_save) => {
+        info!(
+          "Copied save from {:?} to {:?}",
+          save.path(),
+          new_save.path()
+        );
+        // Replace with new save
+        *save = new_save;
+        persistence_control.current_save = new_save_name;
+      }
+      Err(e) => {
+        eprintln!("Warning: failed to copy save to new location: {}", e);
+        // Continue with current save file
+      }
+    }
+  }
 
   // Process all queued saves
   let mut save = match save_resource.save.write() {
@@ -1045,31 +1085,17 @@ fn simulation_not_paused(state: Res<SimulationState>) -> bool {
   state.is_running()
 }
 
-/// System: Ticks the auto-save timer and requests saves when the interval
-/// elapses.
-fn tick_auto_save_timer(time: Res<Time>, mut persistence: ResMut<PersistenceControl>) {
-  if !persistence.auto_save.enabled {
-    return;
-  }
-
-  persistence.time_since_save += time.delta();
-
-  if persistence.time_since_save >= persistence.auto_save.interval {
-    persistence.request_save();
-    persistence.reset_auto_save_timer();
-  }
-}
-
 /// System: Converts `RequestPersistence` messages into pending save requests.
 fn handle_persistence_messages(
   mut messages: MessageReader<RequestPersistence>,
   mut persistence: ResMut<PersistenceControl>,
 ) {
   for message in messages.read() {
+    let name = persistence.current_save.clone();
     if message.include_bodies {
-      persistence.request_save();
+      persistence.save(&name);
     } else {
-      persistence.request_chunk_save();
+      persistence.save_chunks(&name);
     }
   }
 }

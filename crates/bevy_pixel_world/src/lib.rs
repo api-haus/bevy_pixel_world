@@ -59,7 +59,7 @@ pub use text::{CpuFont, TextMask, TextStyle, draw_text, rasterize_text, stamp_te
 #[cfg(feature = "tracy")]
 pub use tracy_init::init_tracy;
 pub use world::control::{
-  AutoSaveConfig, PersistenceComplete, PersistenceControl, PersistenceFuture, PersistenceHandle,
+  PersistenceComplete, PersistenceControl, PersistenceFuture, PersistenceHandle,
   RequestPersistence, SimulationState,
 };
 pub use world::plugin::{LoadedChunks, StreamingCamera, UnloadingChunks};
@@ -76,6 +76,9 @@ pub struct PersistenceConfig {
   /// Explicit save file path. If None, uses default directory with
   /// "world.save".
   pub save_path: Option<PathBuf>,
+  /// Name of save to load (e.g., "world" loads "world.save").
+  /// If None, defaults to "world".
+  pub load_save: Option<String>,
   /// World seed for procedural generation fallback.
   pub world_seed: u64,
 }
@@ -86,6 +89,7 @@ impl Default for PersistenceConfig {
       enabled: true,
       app_name: persistence::DEFAULT_APP_NAME.to_string(),
       save_path: None,
+      load_save: None,
       world_seed: 42,
     }
   }
@@ -120,12 +124,37 @@ impl PersistenceConfig {
     self
   }
 
+  /// Sets the save name to load.
+  pub fn load(mut self, name: &str) -> Self {
+    self.load_save = Some(name.to_string());
+    self
+  }
+
+  /// Returns the effective save name.
+  pub fn effective_save_name(&self) -> &str {
+    self.load_save.as_deref().unwrap_or("world")
+  }
+
+  /// Returns the base directory for saves.
+  pub fn save_dir(&self) -> PathBuf {
+    self
+      .save_path
+      .as_ref()
+      .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+      .unwrap_or_else(|| persistence::default_save_dir(&self.app_name))
+  }
+
+  /// Returns the effective save path for a given save name.
+  pub fn save_path_for(&self, name: &str) -> PathBuf {
+    self.save_dir().join(format!("{}.save", name))
+  }
+
   /// Returns the effective save path.
   pub fn effective_path(&self) -> PathBuf {
     self
       .save_path
       .clone()
-      .unwrap_or_else(|| persistence::default_save_dir(&self.app_name).join("world.save"))
+      .unwrap_or_else(|| self.save_path_for(self.effective_save_name()))
   }
 }
 
@@ -172,6 +201,12 @@ impl PixelWorldPlugin {
     self.culling = config;
     self
   }
+
+  /// Sets the save name to load.
+  pub fn load(mut self, name: &str) -> Self {
+    self.persistence = self.persistence.load(name);
+    self
+  }
 }
 
 impl Plugin for PixelWorldPlugin {
@@ -197,6 +232,14 @@ impl Plugin for PixelWorldPlugin {
 
     // Store culling config
     app.insert_resource(self.culling.clone());
+
+    // Initialize persistence control with named save info
+    let base_dir = self.persistence.save_dir();
+    let current_save = self.persistence.effective_save_name().to_string();
+    app.insert_resource(world::control::PersistenceControl::new(
+      base_dir,
+      current_save,
+    ));
 
     // Initialize world save if persistence is enabled
     if self.persistence.enabled {
