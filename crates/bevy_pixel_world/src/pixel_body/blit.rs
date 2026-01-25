@@ -102,16 +102,16 @@ pub fn update_pixel_bodies(
     let mut displacement_targets = Vec::new();
 
     // Clear at old position (if we have a previous transform)
-    if let Some(ref bt) = blitted {
-      if let Some(old_transform) = &bt.transform {
-        clear_single_body(
-          &mut world,
-          body,
-          old_transform,
-          &mut displacement_targets,
-          gizmos.get(),
-        );
-      }
+    if let Some(ref bt) = blitted
+      && let Some(old_transform) = &bt.transform
+    {
+      clear_single_body(
+        &mut world,
+        body,
+        old_transform,
+        &mut displacement_targets,
+        gizmos.get(),
+      );
     }
 
     // Blit at new position, using cleared positions as displacement targets
@@ -199,10 +199,10 @@ fn try_displace_fluid(
 
   // Find a void that isn't already occupied by a body pixel
   while let Some(void_pos) = displacement_targets.pop() {
-    if let Some(void_pixel) = world.get_pixel(void_pos) {
-      if void_pixel.flags.contains(PixelFlags::PIXEL_BODY) {
-        continue; // Skip - already has a body pixel
-      }
+    if let Some(void_pixel) = world.get_pixel(void_pos)
+      && void_pixel.flags.contains(PixelFlags::PIXEL_BODY)
+    {
+      continue; // Skip - already has a body pixel
     }
     world.set_pixel(void_pos, *existing, debug_gizmos);
     // Mark displaced pixel as simulation-dirty so it participates in CA

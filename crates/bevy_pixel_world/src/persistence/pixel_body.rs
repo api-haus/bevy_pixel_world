@@ -48,68 +48,41 @@ pub struct PixelBodyRecord {
 
 impl PixelBodyRecord {
   /// Creates a record from entity components.
-  #[cfg(feature = "avian2d")]
+  ///
+  /// Physics parameters vary by backend: avian2d uses separate linear/angular
+  /// velocity components, rapier2d uses a combined Velocity component.
   pub fn from_components(
     body_id: &PixelBodyId,
     body: &PixelBody,
     transform: &Transform,
-    linear_velocity: Option<&avian2d::prelude::LinearVelocity>,
-    angular_velocity: Option<&avian2d::prelude::AngularVelocity>,
+    #[cfg(feature = "avian2d")] linear_velocity: Option<&avian2d::prelude::LinearVelocity>,
+    #[cfg(feature = "avian2d")] angular_velocity: Option<&avian2d::prelude::AngularVelocity>,
+    #[cfg(all(feature = "rapier2d", not(feature = "avian2d")))] velocity: Option<
+      &bevy_rapier2d::prelude::Velocity,
+    >,
     extension_data: Vec<u8>,
   ) -> Self {
-    Self {
-      stable_id: body_id.0,
-      position: transform.translation.truncate(),
-      rotation: transform.rotation.to_euler(EulerRot::ZYX).0,
-      linear_velocity: linear_velocity.map(|v| v.0).unwrap_or(Vec2::ZERO),
-      angular_velocity: angular_velocity.map(|v| v.0).unwrap_or(0.0),
-      width: body.width(),
-      height: body.height(),
-      origin: body.origin,
-      pixel_data: body.surface.as_slice().to_vec(),
-      shape_mask: body.shape_mask.clone(),
-      extension_data,
-    }
-  }
+    #[cfg(feature = "avian2d")]
+    let (linear_velocity, angular_velocity) = (
+      linear_velocity.map(|v| v.0).unwrap_or(Vec2::ZERO),
+      angular_velocity.map(|v| v.0).unwrap_or(0.0),
+    );
 
-  /// Creates a record from entity components (rapier2d).
-  #[cfg(all(feature = "rapier2d", not(feature = "avian2d")))]
-  pub fn from_components(
-    body_id: &PixelBodyId,
-    body: &PixelBody,
-    transform: &Transform,
-    velocity: Option<&bevy_rapier2d::prelude::Velocity>,
-    extension_data: Vec<u8>,
-  ) -> Self {
-    Self {
-      stable_id: body_id.0,
-      position: transform.translation.truncate(),
-      rotation: transform.rotation.to_euler(EulerRot::ZYX).0,
-      linear_velocity: velocity.map(|v| v.linvel).unwrap_or(Vec2::ZERO),
-      angular_velocity: velocity.map(|v| v.angvel).unwrap_or(0.0),
-      width: body.width(),
-      height: body.height(),
-      origin: body.origin,
-      pixel_data: body.surface.as_slice().to_vec(),
-      shape_mask: body.shape_mask.clone(),
-      extension_data,
-    }
-  }
+    #[cfg(all(feature = "rapier2d", not(feature = "avian2d")))]
+    let (linear_velocity, angular_velocity) = (
+      velocity.map(|v| v.linvel).unwrap_or(Vec2::ZERO),
+      velocity.map(|v| v.angvel).unwrap_or(0.0),
+    );
 
-  /// Creates a record from entity components (no physics).
-  #[cfg(not(any(feature = "avian2d", feature = "rapier2d")))]
-  pub fn from_components(
-    body_id: &PixelBodyId,
-    body: &PixelBody,
-    transform: &Transform,
-    extension_data: Vec<u8>,
-  ) -> Self {
+    #[cfg(not(any(feature = "avian2d", feature = "rapier2d")))]
+    let (linear_velocity, angular_velocity) = (Vec2::ZERO, 0.0);
+
     Self {
       stable_id: body_id.0,
       position: transform.translation.truncate(),
       rotation: transform.rotation.to_euler(EulerRot::ZYX).0,
-      linear_velocity: Vec2::ZERO,
-      angular_velocity: 0.0,
+      linear_velocity,
+      angular_velocity,
       width: body.width(),
       height: body.height(),
       origin: body.origin,
@@ -124,79 +97,41 @@ impl PixelBodyRecord {
   ///
   /// This ensures the saved position matches where pixels were actually written
   /// to chunks, preventing ghost pixels when bodies are restored.
-  #[cfg(feature = "avian2d")]
   pub fn from_components_blitted(
     body_id: &PixelBodyId,
     body: &PixelBody,
     blitted: &LastBlitTransform,
-    linear_velocity: Option<&avian2d::prelude::LinearVelocity>,
-    angular_velocity: Option<&avian2d::prelude::AngularVelocity>,
+    #[cfg(feature = "avian2d")] linear_velocity: Option<&avian2d::prelude::LinearVelocity>,
+    #[cfg(feature = "avian2d")] angular_velocity: Option<&avian2d::prelude::AngularVelocity>,
+    #[cfg(all(feature = "rapier2d", not(feature = "avian2d")))] velocity: Option<
+      &bevy_rapier2d::prelude::Velocity,
+    >,
     extension_data: Vec<u8>,
   ) -> Option<Self> {
     let transform = blitted.transform.as_ref()?;
     let (_, rotation, translation) = transform.to_scale_rotation_translation();
 
-    Some(Self {
-      stable_id: body_id.0,
-      position: translation.truncate(),
-      rotation: rotation.to_euler(EulerRot::ZYX).0,
-      linear_velocity: linear_velocity.map(|v| v.0).unwrap_or(Vec2::ZERO),
-      angular_velocity: angular_velocity.map(|v| v.0).unwrap_or(0.0),
-      width: body.width(),
-      height: body.height(),
-      origin: body.origin,
-      pixel_data: body.surface.as_slice().to_vec(),
-      shape_mask: body.shape_mask.clone(),
-      extension_data,
-    })
-  }
+    #[cfg(feature = "avian2d")]
+    let (linear_velocity, angular_velocity) = (
+      linear_velocity.map(|v| v.0).unwrap_or(Vec2::ZERO),
+      angular_velocity.map(|v| v.0).unwrap_or(0.0),
+    );
 
-  /// Creates a record using the blitted transform instead of current physics
-  /// transform.
-  #[cfg(all(feature = "rapier2d", not(feature = "avian2d")))]
-  pub fn from_components_blitted(
-    body_id: &PixelBodyId,
-    body: &PixelBody,
-    blitted: &LastBlitTransform,
-    velocity: Option<&bevy_rapier2d::prelude::Velocity>,
-    extension_data: Vec<u8>,
-  ) -> Option<Self> {
-    let transform = blitted.transform.as_ref()?;
-    let (_, rotation, translation) = transform.to_scale_rotation_translation();
+    #[cfg(all(feature = "rapier2d", not(feature = "avian2d")))]
+    let (linear_velocity, angular_velocity) = (
+      velocity.map(|v| v.linvel).unwrap_or(Vec2::ZERO),
+      velocity.map(|v| v.angvel).unwrap_or(0.0),
+    );
+
+    #[cfg(not(any(feature = "avian2d", feature = "rapier2d")))]
+    let (linear_velocity, angular_velocity) = (Vec2::ZERO, 0.0);
 
     Some(Self {
       stable_id: body_id.0,
       position: translation.truncate(),
       rotation: rotation.to_euler(EulerRot::ZYX).0,
-      linear_velocity: velocity.map(|v| v.linvel).unwrap_or(Vec2::ZERO),
-      angular_velocity: velocity.map(|v| v.angvel).unwrap_or(0.0),
-      width: body.width(),
-      height: body.height(),
-      origin: body.origin,
-      pixel_data: body.surface.as_slice().to_vec(),
-      shape_mask: body.shape_mask.clone(),
-      extension_data,
-    })
-  }
-
-  /// Creates a record using the blitted transform instead of current physics
-  /// transform.
-  #[cfg(not(any(feature = "avian2d", feature = "rapier2d")))]
-  pub fn from_components_blitted(
-    body_id: &PixelBodyId,
-    body: &PixelBody,
-    blitted: &LastBlitTransform,
-    extension_data: Vec<u8>,
-  ) -> Option<Self> {
-    let transform = blitted.transform.as_ref()?;
-    let (_, rotation, translation) = transform.to_scale_rotation_translation();
-
-    Some(Self {
-      stable_id: body_id.0,
-      position: translation.truncate(),
-      rotation: rotation.to_euler(EulerRot::ZYX).0,
-      linear_velocity: Vec2::ZERO,
-      angular_velocity: 0.0,
+      linear_velocity,
+      angular_velocity,
       width: body.width(),
       height: body.height(),
       origin: body.origin,

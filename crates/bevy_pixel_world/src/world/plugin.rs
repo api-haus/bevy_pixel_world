@@ -803,6 +803,44 @@ fn clear_chunk_tracking(mut unloading: ResMut<UnloadingChunks>, mut loaded: ResM
   loaded.positions.clear();
 }
 
+/// Creates a PixelBodyRecord from entity components with blitted transform.
+///
+/// Shared helper for save systems to avoid duplicating cfg-conditional velocity
+/// extraction logic.
+#[allow(unused_variables)]
+fn create_body_record_blitted(
+  entity: Entity,
+  body_id: &PixelBodyId,
+  body: &PixelBody,
+  blitted: &LastBlitTransform,
+  #[cfg(feature = "avian2d")] velocities: &Query<(
+    Option<&avian2d::prelude::LinearVelocity>,
+    Option<&avian2d::prelude::AngularVelocity>,
+  )>,
+  #[cfg(all(feature = "rapier2d", not(feature = "avian2d")))] velocities: &Query<
+    Option<&bevy_rapier2d::prelude::Velocity>,
+  >,
+) -> Option<PixelBodyRecord> {
+  #[cfg(feature = "avian2d")]
+  let (lin_vel, ang_vel) = velocities.get(entity).unwrap_or((None, None));
+
+  #[cfg(all(feature = "rapier2d", not(feature = "avian2d")))]
+  let velocity = velocities.get(entity).ok().flatten();
+
+  PixelBodyRecord::from_components_blitted(
+    body_id,
+    body,
+    blitted,
+    #[cfg(feature = "avian2d")]
+    lin_vel,
+    #[cfg(feature = "avian2d")]
+    ang_vel,
+    #[cfg(all(feature = "rapier2d", not(feature = "avian2d")))]
+    velocity,
+    Vec::new(),
+  )
+}
+
 /// System: Saves pixel bodies when their chunk unloads.
 ///
 /// Uses the blitted transform to ensure saved position matches where pixels
@@ -845,22 +883,17 @@ fn save_pixel_bodies_on_chunk_unload(
       continue;
     }
 
-    #[cfg(feature = "avian2d")]
-    let record = {
-      let (lin_vel, ang_vel) = velocities.get(entity).unwrap_or((None, None));
-      PixelBodyRecord::from_components_blitted(body_id, body, blitted, lin_vel, ang_vel, Vec::new())
-    };
-
-    #[cfg(all(feature = "rapier2d", not(feature = "avian2d")))]
-    let record = {
-      let velocity = velocities.get(entity).ok().flatten();
-      PixelBodyRecord::from_components_blitted(body_id, body, blitted, velocity, Vec::new())
-    };
-
-    #[cfg(not(any(feature = "avian2d", feature = "rapier2d")))]
-    let record = PixelBodyRecord::from_components_blitted(body_id, body, blitted, Vec::new());
-
-    let Some(record) = record else {
+    let Some(record) = create_body_record_blitted(
+      entity,
+      body_id,
+      body,
+      blitted,
+      #[cfg(any(
+        feature = "avian2d",
+        all(feature = "rapier2d", not(feature = "avian2d"))
+      ))]
+      &velocities,
+    ) else {
       continue;
     };
 
@@ -1075,22 +1108,17 @@ fn save_pixel_bodies_on_request(
 
   let mut count = 0;
   for (entity, body_id, body, _, blitted) in bodies.iter() {
-    #[cfg(feature = "avian2d")]
-    let record = {
-      let (lin_vel, ang_vel) = velocities.get(entity).unwrap_or((None, None));
-      PixelBodyRecord::from_components_blitted(body_id, body, blitted, lin_vel, ang_vel, Vec::new())
-    };
-
-    #[cfg(all(feature = "rapier2d", not(feature = "avian2d")))]
-    let record = {
-      let velocity = velocities.get(entity).ok().flatten();
-      PixelBodyRecord::from_components_blitted(body_id, body, blitted, velocity, Vec::new())
-    };
-
-    #[cfg(not(any(feature = "avian2d", feature = "rapier2d")))]
-    let record = PixelBodyRecord::from_components_blitted(body_id, body, blitted, Vec::new());
-
-    let Some(record) = record else {
+    let Some(record) = create_body_record_blitted(
+      entity,
+      body_id,
+      body,
+      blitted,
+      #[cfg(any(
+        feature = "avian2d",
+        all(feature = "rapier2d", not(feature = "avian2d"))
+      ))]
+      &velocities,
+    ) else {
       continue;
     };
 

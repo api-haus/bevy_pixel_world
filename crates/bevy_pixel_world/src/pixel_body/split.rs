@@ -187,10 +187,10 @@ pub fn split_pixel_bodies(
     match components.len() {
       0 => {
         // Clear blitted pixels before despawning (no displacement needed)
-        if let Some(transform) = &blitted.transform {
-          if let Ok(mut world) = worlds.single_mut() {
-            super::blit::clear_single_body_no_tracking(&mut world, body, transform, gizmos.get());
-          }
+        if let Some(transform) = &blitted.transform
+          && let Ok(mut world) = worlds.single_mut()
+        {
+          super::blit::clear_single_body_no_tracking(&mut world, body, transform, gizmos.get());
         }
         commands.entity(entity).despawn();
       }
@@ -264,15 +264,10 @@ pub fn split_pixel_bodies(
             gizmos.get(),
           );
 
-          #[cfg(feature = "avian2d")]
-          commands.spawn((
+          // Spawn fragment with base components
+          #[allow(unused_mut)]
+          let mut entity_commands = commands.spawn((
             fragment.body,
-            collider,
-            avian2d::prelude::RigidBody::Dynamic,
-            avian2d::prelude::LinearVelocity(parent_linear),
-            avian2d::prelude::AngularVelocity(parent_angular),
-            CollisionQueryPoint,
-            StreamCulled,
             LastBlitTransform {
               transform: Some(frag_global),
             },
@@ -281,9 +276,19 @@ pub fn split_pixel_bodies(
             Persistable,
           ));
 
+          // Insert physics-specific components
+          #[cfg(feature = "avian2d")]
+          entity_commands.insert((
+            collider,
+            avian2d::prelude::RigidBody::Dynamic,
+            avian2d::prelude::LinearVelocity(parent_linear),
+            avian2d::prelude::AngularVelocity(parent_angular),
+            CollisionQueryPoint,
+            StreamCulled,
+          ));
+
           #[cfg(all(feature = "rapier2d", not(feature = "avian2d")))]
-          commands.spawn((
-            fragment.body,
+          entity_commands.insert((
             collider,
             bevy_rapier2d::prelude::RigidBody::Dynamic,
             bevy_rapier2d::prelude::Velocity {
@@ -292,23 +297,6 @@ pub fn split_pixel_bodies(
             },
             CollisionQueryPoint,
             StreamCulled,
-            LastBlitTransform {
-              transform: Some(frag_global),
-            },
-            frag_transform,
-            fragment.id,
-            Persistable,
-          ));
-
-          #[cfg(not(any(feature = "avian2d", feature = "rapier2d")))]
-          commands.spawn((
-            fragment.body,
-            LastBlitTransform {
-              transform: Some(frag_global),
-            },
-            frag_transform,
-            fragment.id,
-            Persistable,
           ));
         }
       }
