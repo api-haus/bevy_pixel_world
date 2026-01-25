@@ -49,18 +49,20 @@ Before starting work, determine task locality from the user's prompt:
 ### Creating a Worktree
 
 ```bash
-# Create worktree with descriptive branch name
-git worktree add ../sim2d-<task-type> -b <branch-name>
+# Create worktree with descriptive name matching the task
+git worktree add ../sim2d-<descriptive-name> -b <type>/<description>
 
 # Examples:
-git worktree add ../sim2d-docs -b docs/architecture-reorg
-git worktree add ../sim2d-refactor -b refactor/split-complexity
+git worktree add ../sim2d-arch-docs -b docs/architecture-reorg
+git worktree add ../sim2d-plugin-helpers -b refactor/plugin-helpers
+git worktree add ../sim2d-physics-desync -b fix/physics-desync-on-load
 ```
 
 ### Worktree Conventions
 
 - **Location**: Sibling directories (`../sim2d-<suffix>`)
-- **Branch naming**: `<type>/<description>` (e.g., `docs/buoyancy`, `refactor/plugin-helpers`)
+- **Descriptive names**: Use specific names, not generic ones. `../sim2d-physics-desync-fix` not `../sim2d-fix`
+- **Branch naming**: `<type>/<description>` (e.g., `docs/buoyancy`, `refactor/plugin-helpers`, `fix/physics-desync-on-load`)
 - **Cleanup**: Remove worktree when task complete and merged: `git worktree remove ../sim2d-<suffix>`
 
 ### Why This Matters
@@ -72,6 +74,17 @@ git worktree add ../sim2d-refactor -b refactor/split-complexity
 ### Single-Agent Exception
 
 If you are certain no other agents are running, you may work directly in the main worktree. When in doubt, use a worktree.
+
+### Plans Must Include Worktree Context
+
+When writing implementation plans, always include the working directory at the top:
+
+```markdown
+## Working Directory
+`/home/midori/_dev/sim2d-fix` (branch: `fix/physics-desync-on-load`)
+```
+
+This ensures agents implementing the plan across context boundaries know which worktree to use.
 
 ## References
 
