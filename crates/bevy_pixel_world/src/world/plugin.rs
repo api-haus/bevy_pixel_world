@@ -4,6 +4,7 @@
 
 use std::collections::HashSet;
 
+use bevy::ecs::schedule::ApplyDeferred;
 use bevy::prelude::*;
 #[cfg(not(feature = "headless"))]
 use bevy::tasks::{AsyncComputeTaskPool, Task};
@@ -37,8 +38,8 @@ use crate::debug_shim;
 use crate::material::Materials;
 use crate::persistence::{PersistenceTasks, compression::compress_lz4, format::StorageType};
 use crate::pixel_body::{
-  PixelBodyIdGenerator, apply_readback_changes, detect_external_erasure, readback_pixel_bodies,
-  split_pixel_bodies, update_pixel_bodies,
+  PixelBodyIdGenerator, apply_readback_changes, detect_external_erasure,
+  finalize_pending_pixel_bodies, readback_pixel_bodies, split_pixel_bodies, update_pixel_bodies,
 };
 use crate::primitives::Chunk;
 #[cfg(not(feature = "headless"))]
@@ -158,8 +159,12 @@ impl Plugin for PixelWorldStreamingPlugin {
           poll_seeding_tasks,
           queue_pixel_bodies_on_chunk_seed,
           update_simulation_bounds,
+          // Finalize pending pixel bodies from SpawnPixelBody commands
+          finalize_pending_pixel_bodies,
         )
           .chain(),
+        // Apply deferred commands so new bodies are visible to simulation
+        ApplyDeferred,
         // Simulation group
         (
           detect_external_erasure,
@@ -211,8 +216,12 @@ impl Plugin for PixelWorldStreamingPlugin {
           dispatch_seeding,
           queue_pixel_bodies_on_chunk_seed,
           update_simulation_bounds,
+          // Finalize pending pixel bodies from SpawnPixelBody commands
+          finalize_pending_pixel_bodies,
         )
           .chain(),
+        // Apply deferred commands so new bodies are visible to simulation
+        ApplyDeferred,
         // Simulation group
         (
           detect_external_erasure,

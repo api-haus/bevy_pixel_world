@@ -173,9 +173,10 @@ pub struct PendingPixelBody {
 pub fn finalize_pending_pixel_bodies(
   mut commands: Commands,
   pending: Query<(Entity, &PendingPixelBody)>,
-  images: Res<Assets<Image>>,
+  images: Option<Res<Assets<Image>>>,
   mut id_generator: ResMut<PixelBodyIdGenerator>,
 ) {
+  let Some(images) = images else { return };
   for (entity, pending_body) in pending.iter() {
     let Some(image) = images.get(&pending_body.image) else {
       // Image not loaded yet, skip
@@ -199,11 +200,17 @@ pub fn finalize_pending_pixel_bodies(
 
     // Replace pending entity with full pixel body
     let mut entity_commands = commands.entity(entity);
+    let translation = pending_body.position.extend(0.0);
     entity_commands.remove::<PendingPixelBody>().insert((
       body,
       LastBlitTransform::default(),
       DisplacementState::default(),
-      Transform::from_translation(pending_body.position.extend(0.0)),
+      Transform::from_translation(translation),
+      // Explicit GlobalTransform ensures correct position on first frame.
+      // Without this, GlobalTransform defaults to identity and Bevy's
+      // transform propagation doesn't run until PostUpdate - after our
+      // blit system, causing bodies to appear at (0,0) initially.
+      GlobalTransform::from_translation(translation),
       body_id,
       Persistable,
     ));

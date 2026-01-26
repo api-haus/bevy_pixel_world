@@ -300,6 +300,9 @@ fn spawn_fragment_entities(
         written_positions,
       },
       frag_transform,
+      // Explicit GlobalTransform ensures correct position on first frame.
+      // Without this, GlobalTransform defaults to identity until PostUpdate.
+      frag_global,
       fragment.id,
       Persistable,
       Stabilizing::default(),

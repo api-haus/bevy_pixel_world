@@ -27,6 +27,8 @@
 use bevy::camera::ScalingMode;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
+#[cfg(feature = "avian2d")]
+use bevy_pixel_world::SpawnPixelBody;
 #[cfg(feature = "diagnostics")]
 use bevy_pixel_world::diagnostics::DiagnosticsPlugin;
 use bevy_pixel_world::pixel_body::{LastBlitTransform, PixelBody};
@@ -34,8 +36,6 @@ use bevy_pixel_world::{
   ColorIndex, MaterialSeeder, PersistenceConfig, Pixel, PixelFlags, PixelWorld, PixelWorldPlugin,
   SpawnPixelWorld, StreamingCamera, WorldPos, WorldRect, material_ids,
 };
-#[cfg(feature = "avian2d")]
-use bevy_pixel_world::{SpawnPixelBody, finalize_pending_pixel_bodies};
 use rand::Rng;
 
 const CAMERA_SPEED: f32 = 300.0;
@@ -139,7 +139,6 @@ fn main() {
   {
     app.add_plugins(avian2d::prelude::PhysicsPlugins::default());
     app.insert_resource(avian2d::prelude::Gravity(Vec2::new(0.0, -500.0)));
-    app.add_systems(Update, finalize_pending_pixel_bodies);
   }
 
   app.run();

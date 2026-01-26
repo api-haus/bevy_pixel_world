@@ -45,6 +45,10 @@ required-features = ["headless"]
 name = "named_saves_e2e"
 required-features = ["headless"]
 
+[[test]]
+name = "spawn_pixel_body_e2e"
+required-features = ["headless"]
+
 [features]
 default = ["dev"]
 dev = ["bevy/dynamic_linking", "visual_debug", "diagnostics"]

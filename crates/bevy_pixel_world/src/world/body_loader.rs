@@ -169,15 +169,19 @@ pub(crate) fn spawn_pending_pixel_bodies(
     // Initialize LastBlitTransform with actual transform so erasure detection
     // doesn't skip this body on its first frame (detect_external_erasure skips
     // bodies with None transform).
+    let global_transform = GlobalTransform::from(transform);
     #[allow(unused_mut, unused_variables)]
     let mut entity_commands = commands.spawn((
       body,
       LastBlitTransform {
-        transform: Some(GlobalTransform::from(transform)),
+        transform: Some(global_transform),
         written_positions: Vec::new(),
       },
       DisplacementState::default(),
       transform,
+      // Explicit GlobalTransform ensures correct position on first frame.
+      // Without this, GlobalTransform defaults to identity until PostUpdate.
+      global_transform,
       PixelBodyId::new(record.stable_id),
       Persistable,
     ));

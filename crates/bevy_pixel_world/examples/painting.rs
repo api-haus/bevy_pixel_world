@@ -27,6 +27,8 @@ use bevy::prelude::*;
 use bevy::time::{Timer, TimerMode};
 use bevy::window::PrimaryWindow;
 use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
+#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+use bevy_pixel_world::SpawnPixelBody;
 #[cfg(feature = "diagnostics")]
 use bevy_pixel_world::diagnostics::DiagnosticsPlugin;
 #[cfg(feature = "visual_debug")]
@@ -38,8 +40,6 @@ use bevy_pixel_world::{
   PixelWorld, PixelWorldPlugin, SpawnPixelWorld, StreamingCamera, WorldPos, WorldRect,
   collision::CollisionQueryPoint, material_ids,
 };
-#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
-use bevy_pixel_world::{SpawnPixelBody, finalize_pending_pixel_bodies};
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -147,7 +147,7 @@ fn main() {
   }
 
   #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
-  app.add_systems(Update, (spawn_pixel_body, finalize_pending_pixel_bodies));
+  app.add_systems(Update, spawn_pixel_body.after(input_system));
 
   app.run();
 }
