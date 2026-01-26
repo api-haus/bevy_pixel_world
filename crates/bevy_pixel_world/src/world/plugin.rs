@@ -22,15 +22,13 @@ use super::persistence_systems::{
   save_pixel_bodies_on_request,
 };
 use super::{PixelWorld, SlotIndex};
+#[cfg(feature = "visual_debug")]
+use crate::collision::draw_collision_gizmos;
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 use crate::collision::physics::{PhysicsColliderRegistry, sync_physics_colliders};
 use crate::collision::{
   CollisionCache, CollisionConfig, CollisionTasks, dispatch_collision_tasks,
   invalidate_dirty_tiles, poll_collision_tasks,
-};
-#[cfg(feature = "visual_debug")]
-use crate::collision::{
-  SampleMesh, draw_collision_gizmos, draw_sample_mesh_gizmos, update_sample_mesh,
 };
 use crate::coords::{CHUNK_SIZE, ChunkPos, WorldPos, WorldRect};
 use crate::culling::{CullingConfig, update_entity_culling};
@@ -134,9 +132,6 @@ impl Plugin for PixelWorldStreamingPlugin {
     #[cfg(not(feature = "headless"))]
     app.add_systems(PreStartup, setup_shared_resources);
 
-    #[cfg(feature = "visual_debug")]
-    app.init_resource::<SampleMesh>();
-
     #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
     {
       app.init_resource::<PhysicsColliderRegistry>();
@@ -193,14 +188,7 @@ impl Plugin for PixelWorldStreamingPlugin {
     );
 
     #[cfg(all(not(feature = "headless"), feature = "visual_debug"))]
-    app.add_systems(
-      PostUpdate,
-      (
-        update_sample_mesh,
-        draw_collision_gizmos,
-        draw_sample_mesh_gizmos,
-      ),
-    );
+    app.add_systems(PostUpdate, draw_collision_gizmos);
 
     #[cfg(feature = "headless")]
     app.add_systems(

@@ -32,8 +32,6 @@
 
 mod cache;
 mod contour;
-#[cfg(feature = "visual_debug")]
-mod debug;
 mod marching;
 mod mesh;
 mod simplify;
@@ -46,8 +44,6 @@ pub mod physics;
 use bevy::prelude::*;
 pub use cache::{CollisionCache, CollisionTask, CollisionTasks};
 pub use contour::{EDGE_TABLE, connect_segments, extract_marching_segments, grid_key};
-#[cfg(feature = "visual_debug")]
-pub use debug::{SampleMesh, draw_sample_mesh_gizmos, update_sample_mesh};
 pub use marching::{GRID_SIZE, marching_squares};
 pub use mesh::{PolygonMesh, TileCollisionMesh};
 pub use simplify::{douglas_peucker, simplify_polylines};
