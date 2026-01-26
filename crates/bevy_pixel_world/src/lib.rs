@@ -26,6 +26,8 @@ pub mod render;
 pub mod scheduling;
 pub mod seeding;
 pub mod simulation;
+#[cfg(feature = "submergence")]
+pub mod submergence;
 pub mod text;
 #[cfg(feature = "tracy")]
 mod tracy_init;

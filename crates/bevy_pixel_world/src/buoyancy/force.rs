@@ -5,8 +5,12 @@
 
 use bevy::prelude::*;
 
-use super::{BuoyancyConfig, BuoyancyState};
+use super::BuoyancyConfig;
+#[cfg(not(feature = "submergence"))]
+use super::BuoyancyState;
 use crate::pixel_body::PixelBody;
+#[cfg(feature = "submergence")]
+use crate::submergence::SubmersionState;
 
 /// Default gravity magnitude (matches typical physics engine defaults).
 const GRAVITY: f32 = 9.81 * 10.0; // Scaled for pixel world
@@ -19,17 +23,40 @@ const GRAVITY: f32 = 9.81 * 10.0; // Scaled for pixel world
 #[allow(clippy::type_complexity)]
 pub fn compute_buoyancy_forces(
   config: Res<BuoyancyConfig>,
-  #[cfg(feature = "avian2d")] mut bodies: Query<(
+  #[cfg(all(feature = "avian2d", not(feature = "submergence")))] mut bodies: Query<(
     &PixelBody,
     &GlobalTransform,
     &BuoyancyState,
     &mut avian2d::dynamics::rigid_body::forces::ConstantForce,
     Option<&mut avian2d::dynamics::rigid_body::forces::ConstantTorque>,
   )>,
-  #[cfg(all(feature = "rapier2d", not(feature = "avian2d")))] mut bodies: Query<(
+  #[cfg(all(feature = "avian2d", feature = "submergence"))] mut bodies: Query<(
+    &PixelBody,
+    &GlobalTransform,
+    &SubmersionState,
+    &mut avian2d::dynamics::rigid_body::forces::ConstantForce,
+    Option<&mut avian2d::dynamics::rigid_body::forces::ConstantTorque>,
+  )>,
+  #[cfg(all(
+    feature = "rapier2d",
+    not(feature = "avian2d"),
+    not(feature = "submergence")
+  ))]
+  mut bodies: Query<(
     &PixelBody,
     &GlobalTransform,
     &BuoyancyState,
+    &mut bevy_rapier2d::prelude::ExternalForce,
+  )>,
+  #[cfg(all(
+    feature = "rapier2d",
+    not(feature = "avian2d"),
+    feature = "submergence"
+  ))]
+  mut bodies: Query<(
+    &PixelBody,
+    &GlobalTransform,
+    &SubmersionState,
     &mut bevy_rapier2d::prelude::ExternalForce,
   )>,
 ) {
