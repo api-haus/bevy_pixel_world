@@ -8,6 +8,7 @@
 
 mod bundle;
 pub mod control;
+pub(crate) mod persistence;
 pub mod plugin;
 pub(crate) mod slot;
 mod streaming;
