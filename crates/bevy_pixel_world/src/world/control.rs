@@ -3,11 +3,12 @@
 //! Provides public APIs for:
 //! - Pausing/resuming world simulation and physics
 //! - Triggering on-demand persistence with completion notification
-//! - Configuring periodic auto-save
+//! - Managing named saves
 
+use std::io;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
 
 use bevy::prelude::*;
 
@@ -77,49 +78,13 @@ impl SimulationState {
   }
 }
 
-/// Configuration for periodic auto-save.
-#[derive(Clone, Debug)]
-pub struct AutoSaveConfig {
-  /// Whether auto-save is enabled.
-  pub enabled: bool,
-  /// Interval between auto-saves.
-  pub interval: Duration,
-}
-
-impl Default for AutoSaveConfig {
-  fn default() -> Self {
-    Self {
-      enabled: true,
-      interval: Duration::from_secs(5), // Auto-save every 5 seconds
-    }
-  }
-}
-
-impl AutoSaveConfig {
-  /// Creates a new auto-save config with the given interval.
-  pub fn with_interval(interval: Duration) -> Self {
-    Self {
-      enabled: true,
-      interval,
-    }
-  }
-
-  /// Disables auto-save.
-  pub fn disabled() -> Self {
-    Self {
-      enabled: false,
-      ..Default::default()
-    }
-  }
-}
-
-/// Resource for persistence control and timing.
+/// Resource for persistence control and named save management.
 #[derive(Resource)]
 pub struct PersistenceControl {
-  /// Auto-save configuration.
-  pub auto_save: AutoSaveConfig,
-  /// Time since last auto-save.
-  pub(crate) time_since_save: Duration,
+  /// Base directory for saves.
+  pub(crate) base_dir: PathBuf,
+  /// Currently loaded save name.
+  pub(crate) current_save: String,
   /// Counter for generating unique request IDs.
   next_request_id: u64,
   /// Pending persistence requests.
@@ -129,8 +94,8 @@ pub struct PersistenceControl {
 impl Default for PersistenceControl {
   fn default() -> Self {
     Self {
-      auto_save: AutoSaveConfig::default(),
-      time_since_save: Duration::ZERO,
+      base_dir: crate::persistence::default_save_dir(crate::persistence::DEFAULT_APP_NAME),
+      current_save: "world".to_string(),
       next_request_id: 1,
       pending_requests: Vec::new(),
     }
@@ -138,15 +103,31 @@ impl Default for PersistenceControl {
 }
 
 impl PersistenceControl {
-  /// Creates a new persistence control with the given auto-save config.
-  pub fn new(auto_save: AutoSaveConfig) -> Self {
+  /// Creates a new persistence control with the given base directory and save
+  /// name.
+  pub fn new(base_dir: PathBuf, current_save: String) -> Self {
     Self {
-      auto_save,
-      ..Default::default()
+      base_dir,
+      current_save,
+      next_request_id: 1,
+      pending_requests: Vec::new(),
     }
   }
 
-  /// Requests an on-demand save operation.
+  /// Returns the currently loaded save name.
+  pub fn current_save(&self) -> &str {
+    &self.current_save
+  }
+
+  /// Returns the base directory for saves.
+  pub fn base_dir(&self) -> &PathBuf {
+    &self.base_dir
+  }
+
+  /// Saves to a named save file.
+  ///
+  /// If `name` differs from `current_save`, performs a copy-on-write:
+  /// the current save file is copied to the new name before writing.
   ///
   /// Returns a handle that can be polled or awaited to check completion.
   ///
@@ -156,32 +137,26 @@ impl PersistenceControl {
   ///     mut persistence: ResMut<PersistenceControl>,
   ///     mut exit: EventWriter<AppExit>,
   /// ) {
-  ///     // Request save and store handle
-  ///     let save_handle = persistence.request_save();
+  ///     // Save to the current save name
+  ///     let handle = persistence.save("world");
   ///
-  ///     // In a real app, you'd poll this in another system
-  ///     // and exit when complete
+  ///     // Or save to a new slot
+  ///     let handle = persistence.save("backup");
   /// }
   /// ```
-  pub fn request_save(&mut self) -> PersistenceHandle {
-    let id = self.next_request_id;
-    self.next_request_id += 1;
-
-    let completed = Arc::new(AtomicBool::new(false));
-    let request = PersistenceRequestInner {
-      id,
-      completed: completed.clone(),
-      include_bodies: true,
-    };
-    self.pending_requests.push(request);
-
-    PersistenceHandle { id, completed }
+  pub fn save(&mut self, name: &str) -> PersistenceHandle {
+    self.save_internal(name, true)
   }
 
-  /// Requests a save of only chunk data (no pixel bodies).
+  /// Saves only chunk data to a named save file (no pixel bodies).
   ///
   /// Faster than full save when pixel bodies haven't changed.
-  pub fn request_chunk_save(&mut self) -> PersistenceHandle {
+  pub fn save_chunks(&mut self, name: &str) -> PersistenceHandle {
+    self.save_internal(name, false)
+  }
+
+  /// Internal helper for save operations.
+  fn save_internal(&mut self, name: &str, include_bodies: bool) -> PersistenceHandle {
     let id = self.next_request_id;
     self.next_request_id += 1;
 
@@ -189,18 +164,43 @@ impl PersistenceControl {
     let request = PersistenceRequestInner {
       id,
       completed: completed.clone(),
-      include_bodies: false,
+      include_bodies,
+      target_save: name.to_string(),
     };
     self.pending_requests.push(request);
 
     PersistenceHandle { id, completed }
   }
 
-  /// Resets the auto-save timer.
-  ///
-  /// Call this after completing a save to restart the countdown.
-  pub fn reset_auto_save_timer(&mut self) {
-    self.time_since_save = Duration::ZERO;
+  /// Returns the path for a named save file.
+  pub fn save_path(&self, name: &str) -> PathBuf {
+    self.base_dir.join(format!("{}.save", name))
+  }
+
+  /// Lists all save files in the base directory.
+  pub fn list_saves(&self) -> io::Result<Vec<String>> {
+    let mut saves = Vec::new();
+
+    for entry in std::fs::read_dir(&self.base_dir)? {
+      let entry = entry?;
+      let path = entry.path();
+
+      if path.extension().is_some_and(|ext| ext == "save")
+        && let Some(stem) = path.file_stem()
+        && let Some(name) = stem.to_str()
+      {
+        saves.push(name.to_string());
+      }
+    }
+
+    saves.sort();
+    Ok(saves)
+  }
+
+  /// Deletes a save file.
+  pub fn delete_save(&self, name: &str) -> io::Result<()> {
+    let path = self.save_path(name);
+    std::fs::remove_file(path)
   }
 }
 
@@ -209,6 +209,8 @@ pub(crate) struct PersistenceRequestInner {
   pub id: u64,
   pub completed: Arc<AtomicBool>,
   pub include_bodies: bool,
+  /// Target save name for this request.
+  pub target_save: String,
 }
 
 /// Handle to track completion of an on-demand save operation.

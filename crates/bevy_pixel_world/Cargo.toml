@@ -41,6 +41,10 @@ required-features = ["headless"]
 name = "body_reload_stress"
 required-features = ["headless"]
 
+[[test]]
+name = "named_saves_e2e"
+required-features = ["headless"]
+
 [features]
 default = ["dev"]
 dev = ["bevy/dynamic_linking", "visual_debug", "diagnostics"]
