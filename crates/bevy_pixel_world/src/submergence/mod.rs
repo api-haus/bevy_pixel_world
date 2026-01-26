@@ -145,6 +145,8 @@ impl PixelSubmergencePlugin {
 impl Plugin for PixelSubmergencePlugin {
   fn build(&self, app: &mut App) {
     app.insert_resource(self.config.clone());
+    app.add_message::<Submerged>();
+    app.add_message::<Surfaced>();
     app.add_systems(Update, (sample_submersion, emit_submersion_events).chain());
 
     #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
