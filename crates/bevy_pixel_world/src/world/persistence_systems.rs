@@ -178,10 +178,10 @@ fn flush_body_removes(
 
 /// Attempts to flush the save file to disk if dirty.
 fn try_flush_to_disk(save: &mut crate::persistence::WorldSave) {
-  if save.dirty {
-    if let Err(e) = save.flush() {
-      warn!("Failed to flush save: {}", e);
-    }
+  if save.dirty
+    && let Err(e) = save.flush()
+  {
+    warn!("Failed to flush save: {}", e);
   }
 }
 
