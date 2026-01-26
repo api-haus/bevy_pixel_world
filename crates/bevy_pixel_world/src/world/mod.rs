@@ -14,6 +14,7 @@ pub mod plugin;
 mod pool;
 pub(crate) mod slot;
 mod streaming;
+pub(crate) mod systems;
 
 use std::collections::HashMap;
 use std::sync::Arc;
