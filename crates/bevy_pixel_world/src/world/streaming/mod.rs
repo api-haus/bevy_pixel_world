@@ -1,11 +1,55 @@
-//! Streaming window logic for chunk visibility.
+//! Unified streaming module for chunk lifecycle management.
+//!
+//! This module consolidates all Pre-Simulation phase systems that handle
+//! chunk streaming, seeding, culling, and pixel body loading.
+
+mod body_loading;
+pub mod culling;
+mod frame_reset;
+mod seeding;
+mod window;
 
 use std::collections::HashSet;
 
 use bevy::prelude::*;
+// Re-export public types
+pub use body_loading::PendingPixelBodies;
+// Re-export internal items for crate use
+pub(crate) use body_loading::queue_pixel_bodies_on_chunk_seed;
+pub(crate) use culling::update_entity_culling;
+pub use culling::{CullingConfig, StreamCulled};
+pub(crate) use frame_reset::clear_chunk_tracking;
+#[cfg(not(feature = "headless"))]
+pub(crate) use seeding::poll_seeding_tasks;
+pub(crate) use seeding::{SeedingTasks, dispatch_seeding};
+pub use window::StreamingCamera;
+pub(crate) use window::{
+  SharedChunkMesh, SharedPaletteTexture, update_simulation_bounds, update_streaming_windows,
+};
 
 use super::slot::SlotIndex;
 use crate::coords::{ChunkPos, WINDOW_HEIGHT, WINDOW_WIDTH};
+
+/// Tracks chunks unloading this frame.
+///
+/// Populated by `update_streaming_windows` before pixel body save systems run.
+/// Cleared at the start of each frame.
+#[derive(Resource, Default)]
+pub struct UnloadingChunks {
+  /// Positions of chunks being unloaded.
+  pub positions: Vec<ChunkPos>,
+}
+
+/// Tracks chunks that finished seeding this frame.
+///
+/// Populated by `poll_seeding_tasks` when seeding completes.
+/// A chunk is "seeded" when it has valid pixel data (from disk or procedural
+/// generation). Cleared at the start of each frame.
+#[derive(Resource, Default)]
+pub struct SeededChunks {
+  /// Positions of chunks that just finished seeding.
+  pub positions: Vec<ChunkPos>,
+}
 
 /// Changes from updating the streaming window center.
 pub(crate) struct StreamingDelta {
@@ -29,6 +73,14 @@ impl StreamingDelta {
   }
 }
 
+/// Data needed to save a chunk that's leaving the streaming window.
+pub struct ChunkSaveData {
+  /// Chunk position.
+  pub pos: ChunkPos,
+  /// Raw pixel bytes (will be compressed by persistence system).
+  pub pixels: Vec<u8>,
+}
+
 /// Computes which chunk positions are leaving and entering the streaming
 /// window.
 ///
@@ -44,14 +96,6 @@ pub(crate) fn compute_position_changes(
   let entering: Vec<_> = new_set.difference(&old_set).copied().collect();
 
   (leaving, entering)
-}
-
-/// Data needed to save a chunk that's leaving the streaming window.
-pub struct ChunkSaveData {
-  /// Chunk position.
-  pub pos: ChunkPos,
-  /// Raw pixel bytes (will be compressed by persistence system).
-  pub pixels: Vec<u8>,
 }
 
 /// Returns iterator over visible chunk positions for a given center.

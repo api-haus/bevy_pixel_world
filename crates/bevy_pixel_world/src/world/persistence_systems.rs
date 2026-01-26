@@ -3,8 +3,10 @@
 //! This module handles saving and loading pixel bodies and chunks:
 //! - Named save files with copy-on-write semantics
 //! - Saving pixel bodies when chunks unload
-//! - Loading pixel bodies when chunks load
 //! - Flushing pending saves to disk
+//!
+//! For chunk tracking resources (UnloadingChunks, SeededChunks) and their
+//! frame reset, see the streaming module.
 
 use std::collections::HashSet;
 use std::sync::atomic::Ordering;
@@ -14,42 +16,13 @@ use bevy::prelude::*;
 
 use super::PixelWorld;
 use super::control::{PersistenceComplete, PersistenceControl, RequestPersistence};
-use crate::coords::{ChunkPos, WorldPos};
+use super::streaming::UnloadingChunks;
+use crate::coords::WorldPos;
 use crate::persistence::{
   PersistenceTasks, PixelBodyRecord, WorldSaveResource, compression::compress_lz4,
   format::StorageType,
 };
 use crate::pixel_body::{LastBlitTransform, Persistable, PixelBody, PixelBodyId};
-
-/// Tracks chunks unloading this frame.
-///
-/// Populated by `update_streaming_windows` before pixel body save systems run.
-/// Cleared at the start of each frame.
-#[derive(Resource, Default)]
-pub struct UnloadingChunks {
-  /// Positions of chunks being unloaded.
-  pub positions: Vec<ChunkPos>,
-}
-
-/// Tracks chunks that finished seeding this frame.
-///
-/// Populated by `poll_seeding_tasks` when seeding completes.
-/// A chunk is "seeded" when it has valid pixel data (from disk or procedural
-/// generation). Cleared at the start of each frame.
-#[derive(Resource, Default)]
-pub struct SeededChunks {
-  /// Positions of chunks that just finished seeding.
-  pub positions: Vec<ChunkPos>,
-}
-
-/// System: Clears chunk tracking resources at the start of each frame.
-pub(crate) fn clear_chunk_tracking(
-  mut unloading: ResMut<UnloadingChunks>,
-  mut seeded: ResMut<SeededChunks>,
-) {
-  unloading.positions.clear();
-  seeded.positions.clear();
-}
 
 /// System: Converts `RequestPersistence` messages into pending save requests.
 pub(crate) fn handle_persistence_messages(

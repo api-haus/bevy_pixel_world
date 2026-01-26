@@ -13,7 +13,7 @@ pub(crate) mod persistence_systems;
 pub mod plugin;
 mod pool;
 pub(crate) mod slot;
-mod streaming;
+pub(crate) mod streaming;
 pub(crate) mod systems;
 
 use std::collections::HashMap;

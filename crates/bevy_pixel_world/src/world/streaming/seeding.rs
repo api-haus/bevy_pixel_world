@@ -9,14 +9,14 @@ use bevy::prelude::*;
 #[cfg(not(feature = "headless"))]
 use bevy::tasks::{AsyncComputeTaskPool, Task};
 
-use super::super::PixelWorld;
-#[cfg(not(feature = "headless"))]
-use super::super::SlotIndex;
-use super::super::persistence_systems::SeededChunks;
-use super::super::slot::ChunkLifecycle;
+use super::SeededChunks;
 use crate::coords::{CHUNK_SIZE, ChunkPos};
 use crate::debug_shim;
 use crate::primitives::Chunk;
+use crate::world::PixelWorld;
+#[cfg(not(feature = "headless"))]
+use crate::world::SlotIndex;
+use crate::world::slot::ChunkLifecycle;
 
 /// Resource holding async seeding tasks.
 #[derive(Resource, Default)]

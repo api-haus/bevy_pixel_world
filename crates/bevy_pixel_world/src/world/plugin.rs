@@ -6,25 +6,25 @@ use bevy::ecs::schedule::ApplyDeferred;
 use bevy::prelude::*;
 
 use super::PixelWorld;
-use super::body_loader::{
-  PendingPixelBodies, queue_pixel_bodies_on_chunk_seed, spawn_pending_pixel_bodies,
-};
+use super::body_loader::spawn_pending_pixel_bodies;
 use super::control::{
   PersistenceComplete, PersistenceControl, RequestPersistence, SimulationState,
 };
-pub use super::persistence_systems::{SeededChunks, UnloadingChunks};
 use super::persistence_systems::{
-  clear_chunk_tracking, flush_persistence_queue, handle_persistence_messages,
-  notify_persistence_complete, process_pending_save_requests, save_pixel_bodies_on_chunk_unload,
-  save_pixel_bodies_on_request,
+  flush_persistence_queue, handle_persistence_messages, notify_persistence_complete,
+  process_pending_save_requests, save_pixel_bodies_on_chunk_unload, save_pixel_bodies_on_request,
 };
-pub use super::systems::StreamingCamera;
-use super::systems::{
-  SeedingTasks, dispatch_seeding, update_simulation_bounds, update_streaming_windows,
-};
-pub(crate) use super::systems::{SharedChunkMesh, SharedPaletteTexture};
 #[cfg(not(feature = "headless"))]
-use super::systems::{poll_seeding_tasks, upload_dirty_chunks};
+use super::streaming::poll_seeding_tasks;
+use super::streaming::{
+  CullingConfig, PendingPixelBodies, SeedingTasks, clear_chunk_tracking, dispatch_seeding,
+  queue_pixel_bodies_on_chunk_seed, update_entity_culling, update_simulation_bounds,
+  update_streaming_windows,
+};
+pub use super::streaming::{SeededChunks, StreamingCamera, UnloadingChunks};
+pub(crate) use super::streaming::{SharedChunkMesh, SharedPaletteTexture};
+#[cfg(not(feature = "headless"))]
+use super::systems::upload_dirty_chunks;
 #[cfg(feature = "visual_debug")]
 use crate::collision::draw_collision_gizmos;
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
@@ -34,7 +34,6 @@ use crate::collision::{
   invalidate_dirty_tiles, poll_collision_tasks,
 };
 use crate::coords::CHUNK_SIZE;
-use crate::culling::{CullingConfig, update_entity_culling};
 use crate::debug_shim;
 use crate::material::Materials;
 use crate::persistence::PersistenceTasks;

@@ -1,18 +1,33 @@
-//! Chunk streaming systems.
+//! Streaming window update systems.
 //!
-//! Handles streaming window updates and chunk entity lifecycle.
+//! Handles camera-based streaming window updates and simulation bounds.
 
 use bevy::prelude::*;
 
-use super::super::persistence_systems::UnloadingChunks;
-use super::super::{PixelWorld, SlotIndex};
-use super::StreamingCamera;
+use super::UnloadingChunks;
 use crate::coords::{CHUNK_SIZE, ChunkPos, WorldPos, WorldRect};
 use crate::persistence::PersistenceTasks;
 use crate::persistence::compression::compress_lz4;
 use crate::persistence::format::StorageType;
 #[cfg(not(feature = "headless"))]
 use crate::render::{ChunkMaterial, create_pixel_texture};
+use crate::world::{PixelWorld, SlotIndex};
+
+/// Marker component for the main camera that controls streaming.
+#[derive(Component)]
+pub struct StreamingCamera;
+
+/// Shared mesh resource for chunk quads.
+#[derive(Resource)]
+pub(crate) struct SharedChunkMesh(pub Handle<Mesh>);
+
+/// Shared palette texture for GPU-side color lookup.
+#[derive(Resource)]
+pub(crate) struct SharedPaletteTexture {
+  pub handle: Handle<Image>,
+  /// Whether the palette has been populated from Materials.
+  pub initialized: bool,
+}
 
 /// System: Updates streaming windows based on camera position.
 ///
@@ -26,7 +41,7 @@ pub(crate) fn update_streaming_windows(
   mut worlds: Query<(Entity, &mut PixelWorld)>,
   #[cfg(not(feature = "headless"))] mut images: ResMut<Assets<Image>>,
   #[cfg(not(feature = "headless"))] mut materials: ResMut<Assets<ChunkMaterial>>,
-  #[cfg(not(feature = "headless"))] palette: Option<Res<super::SharedPaletteTexture>>,
+  #[cfg(not(feature = "headless"))] palette: Option<Res<SharedPaletteTexture>>,
   mut persistence_tasks: ResMut<PersistenceTasks>,
   mut unloading_chunks: ResMut<UnloadingChunks>,
 ) {

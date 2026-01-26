@@ -13,7 +13,6 @@ use bevy::sprite_render::Material2dPlugin;
 pub mod buoyancy;
 pub mod collision;
 pub mod coords;
-pub mod culling;
 pub mod debug_shim;
 #[cfg(feature = "diagnostics")]
 pub mod diagnostics;
@@ -40,7 +39,6 @@ pub use coords::{
   CHUNK_SIZE, ChunkPos, ColorIndex, LocalPos, MaterialId, TILE_SIZE, TilePos, WorldFragment,
   WorldPos, WorldRect,
 };
-pub use culling::{CullingConfig, StreamCulled};
 pub use material::{Material, Materials, PhysicsState, ids as material_ids};
 pub use persistence::{PixelBodyRecord, WorldSave, WorldSaveResource};
 pub use pixel::{Pixel, PixelFlags, PixelSurface};
@@ -65,6 +63,8 @@ pub use world::control::{
   RequestPersistence, SimulationState,
 };
 pub use world::plugin::{SeededChunks, StreamingCamera, UnloadingChunks};
+// Re-export culling types from streaming module for backward compatibility
+pub use world::streaming::{CullingConfig, StreamCulled};
 pub use world::{PixelWorld, PixelWorldBundle, PixelWorldConfig, SpawnPixelWorld};
 
 /// Configuration for chunk persistence.
@@ -179,7 +179,7 @@ pub struct PixelWorldPlugin {
   /// Persistence configuration.
   pub persistence: PersistenceConfig,
   /// Culling configuration.
-  pub culling: culling::CullingConfig,
+  pub culling: CullingConfig,
 }
 
 impl PixelWorldPlugin {
@@ -188,7 +188,7 @@ impl PixelWorldPlugin {
     Self {
       config: PixelWorldConfig::default(),
       persistence: PersistenceConfig::new(app_name),
-      culling: culling::CullingConfig::default(),
+      culling: CullingConfig::default(),
     }
   }
 
@@ -199,7 +199,7 @@ impl PixelWorldPlugin {
   }
 
   /// Sets the culling configuration.
-  pub fn culling(mut self, config: culling::CullingConfig) -> Self {
+  pub fn culling(mut self, config: CullingConfig) -> Self {
     self.culling = config;
     self
   }
