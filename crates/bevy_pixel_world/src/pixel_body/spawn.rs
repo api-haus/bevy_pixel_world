@@ -2,7 +2,11 @@
 //!
 //! Provides a simple API for spawning pixel bodies from image assets.
 
+#[cfg(feature = "avian2d")]
+use avian2d::prelude::Collider;
 use bevy::prelude::*;
+#[cfg(all(feature = "rapier2d", not(feature = "avian2d")))]
+use bevy_rapier2d::prelude::Collider;
 
 use super::{DisplacementState, LastBlitTransform, Persistable, PixelBodyId, PixelBodyLoader};
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
@@ -10,6 +14,56 @@ use crate::collision::CollisionQueryPoint;
 use crate::coords::MaterialId;
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 use crate::culling::StreamCulled;
+
+/// Returns the physics bundle for a pixel body (collider + rigid body +
+/// markers).
+#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+fn physics_bundle(collider: Collider) -> impl Bundle {
+  #[cfg(feature = "avian2d")]
+  {
+    (
+      collider,
+      avian2d::prelude::RigidBody::Dynamic,
+      CollisionQueryPoint,
+      StreamCulled,
+    )
+  }
+  #[cfg(all(feature = "rapier2d", not(feature = "avian2d")))]
+  {
+    (
+      collider,
+      bevy_rapier2d::prelude::RigidBody::Dynamic,
+      CollisionQueryPoint,
+      StreamCulled,
+    )
+  }
+}
+
+/// Returns the damping bundle for submergence physics effects.
+#[cfg(all(
+  feature = "submergence",
+  any(feature = "avian2d", feature = "rapier2d")
+))]
+fn submergence_damping_bundle() -> impl Bundle {
+  #[cfg(feature = "avian2d")]
+  {
+    (
+      avian2d::prelude::GravityScale(1.0),
+      avian2d::prelude::LinearDamping(0.0),
+      avian2d::prelude::AngularDamping(0.0),
+    )
+  }
+  #[cfg(all(feature = "rapier2d", not(feature = "avian2d")))]
+  {
+    (
+      bevy_rapier2d::prelude::GravityScale(1.0),
+      bevy_rapier2d::prelude::Damping {
+        linear_damping: 0.0,
+        angular_damping: 0.0,
+      },
+    )
+  }
+}
 
 /// Resource that generates unique IDs for pixel bodies.
 ///
@@ -215,44 +269,16 @@ pub fn finalize_pending_pixel_bodies(
       Persistable,
     ));
 
-    #[cfg(feature = "avian2d")]
-    entity_commands.insert((
-      collider,
-      avian2d::prelude::RigidBody::Dynamic,
-      CollisionQueryPoint,
-      StreamCulled,
-    ));
-
-    #[cfg(all(feature = "rapier2d", not(feature = "avian2d")))]
-    entity_commands.insert((
-      collider,
-      bevy_rapier2d::prelude::RigidBody::Dynamic,
-      CollisionQueryPoint,
-      StreamCulled,
-    ));
+    #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+    entity_commands.insert(physics_bundle(collider));
 
     #[cfg(feature = "submergence")]
     entity_commands.insert(crate::submergence::Submergent);
 
-    // Add damping components for submersion physics effects
-    #[cfg(all(feature = "submergence", feature = "avian2d"))]
-    entity_commands.insert((
-      avian2d::prelude::GravityScale(1.0),
-      avian2d::prelude::LinearDamping(0.0),
-      avian2d::prelude::AngularDamping(0.0),
-    ));
-
     #[cfg(all(
       feature = "submergence",
-      feature = "rapier2d",
-      not(feature = "avian2d")
+      any(feature = "avian2d", feature = "rapier2d")
     ))]
-    entity_commands.insert((
-      bevy_rapier2d::prelude::GravityScale(1.0),
-      bevy_rapier2d::prelude::Damping {
-        linear_damping: 0.0,
-        angular_damping: 0.0,
-      },
-    ));
+    entity_commands.insert(submergence_damping_bundle());
   }
 }

@@ -229,7 +229,7 @@ fn handle_empty_body(
     // The shape_mask has already been set to all-false by apply_readback_changes,
     // so for_each_body_pixel would skip all pixels. But update_pixel_bodies may
     // have re-blitted pixels before shape_mask was updated, leaving ghost pixels.
-    super::blit::clear_by_written_positions(w, &blitted.written_positions, &mut Vec::new(), gizmos);
+    super::blit::clear_body_pixels(w, &blitted.written_positions, None, gizmos);
   }
   commands.entity(entity).despawn();
 }
@@ -250,6 +250,7 @@ struct FragmentSpawnContext<'a, 'w, 's> {
   commands: &'a mut Commands<'w, 's>,
   id_generator: &'a mut PixelBodyIdGenerator,
   world: &'a mut PixelWorld,
+  materials: &'a Materials,
   parent_body: &'a PixelBody,
   blit_transform: &'a GlobalTransform,
   parent_rotation: Quat,
@@ -285,10 +286,12 @@ fn spawn_fragment_entities(
     let frag_global = GlobalTransform::from(frag_transform);
 
     // Blit fragment and track written positions for erasure detection
-    let written_positions = super::blit::blit_single_body_no_displacement_tracked(
+    let written_positions = super::blit::blit_single_body(
       ctx.world,
       &fragment.body,
       &frag_global,
+      None, // No displacement for fragments
+      ctx.materials,
       ctx.gizmos,
     );
 
@@ -406,6 +409,7 @@ pub fn split_pixel_bodies(
             commands: &mut commands,
             id_generator: &mut id_generator,
             world,
+            materials: &materials,
             parent_body: body,
             blit_transform,
             parent_rotation,

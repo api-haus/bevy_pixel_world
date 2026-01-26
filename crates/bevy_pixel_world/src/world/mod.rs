@@ -22,8 +22,8 @@ use bevy::prelude::*;
 pub use bundle::{PixelWorldBundle, SpawnPixelWorld};
 use pool::ChunkPool;
 pub(crate) use slot::{ChunkSlot, SlotIndex};
-use streaming::visible_positions;
 pub(crate) use streaming::{ChunkSaveData, StreamingDelta};
+use streaming::{compute_position_changes, visible_positions};
 
 use crate::coords::{ChunkPos, TilePos, WorldFragment, WorldPos, WorldRect};
 use crate::debug_shim::{self, DebugGizmos};
@@ -293,48 +293,42 @@ impl PixelWorld {
   /// - Marking new chunks as unseeded
   pub(crate) fn update_center(&mut self, new_center: ChunkPos) -> StreamingDelta {
     if new_center == self.center {
-      return StreamingDelta {
-        to_despawn: vec![],
-        to_spawn: vec![],
-        to_save: vec![],
-      };
+      return StreamingDelta::empty();
     }
 
-    // Compute old and new visible sets
-    let old_set: std::collections::HashSet<_> = self.visible_positions().collect();
+    let (leaving, entering) = compute_position_changes(self.center, new_center);
     self.center = new_center;
-    let new_set: std::collections::HashSet<_> = self.visible_positions().collect();
 
-    // Find chunks to release (in old but not new)
+    // Release chunks that are leaving the window
     let mut to_despawn = Vec::new();
     let mut to_save = Vec::new();
-    for pos in old_set.difference(&new_set) {
-      if let Some(idx) = self.pool.deactivate(pos) {
+    for pos in leaving {
+      if let Some(idx) = self.pool.deactivate(&pos) {
         let slot = self.pool.get_mut(idx);
         let entity = slot.entity;
 
         // Clone pixel data for saving before release
         if slot.needs_save() {
           to_save.push(ChunkSaveData {
-            pos: *pos,
+            pos,
             pixels: slot.chunk.pixels.as_bytes().to_vec(),
           });
         }
 
         slot.release();
         if let Some(entity) = entity {
-          to_despawn.push((*pos, entity));
+          to_despawn.push((pos, entity));
         }
       }
     }
 
-    // Find chunks to spawn (in new but not old)
+    // Acquire slots for chunks entering the window
     let mut to_spawn = Vec::new();
-    for pos in new_set.difference(&old_set) {
+    for pos in entering {
       if let Some(idx) = self.pool.acquire() {
-        self.pool.get_mut(idx).initialize(*pos);
-        self.pool.activate(*pos, idx);
-        to_spawn.push((*pos, idx));
+        self.pool.get_mut(idx).initialize(pos);
+        self.pool.activate(pos, idx);
+        to_spawn.push((pos, idx));
       } else {
         eprintln!("Pool exhausted at {:?}", pos);
       }

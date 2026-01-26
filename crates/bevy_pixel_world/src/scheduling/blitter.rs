@@ -141,6 +141,17 @@ struct TileContext<'a> {
   dirty_tiles: Option<&'a Mutex<HashSet<TilePos>>>,
 }
 
+/// Context for tile-based simulation operations.
+///
+/// Bundles parameters needed by simulate_tile to reduce function signature
+/// complexity.
+struct SimulationContext<'a> {
+  dirty_chunks: &'a Mutex<HashSet<ChunkPos>>,
+  debug_gizmos: DebugGizmos<'a>,
+  tick: u64,
+  jitter: (i64, i64),
+}
+
 /// Collects dirty state during tile processing.
 ///
 /// Groups the three dirty tracking mechanisms:
@@ -248,6 +259,13 @@ pub fn parallel_simulate<F>(
   #[cfg(feature = "tracy")]
   let _span = tracing::info_span!("parallel_simulate").entered();
 
+  let ctx = SimulationContext {
+    dirty_chunks,
+    debug_gizmos,
+    tick,
+    jitter,
+  };
+
   #[cfg(feature = "tracy")]
   let mut _phase_idx = 0usize;
 
@@ -256,15 +274,7 @@ pub fn parallel_simulate<F>(
     let _phase_span = tracing::info_span!("phase", phase = _phase_idx).entered();
 
     phase_tiles.par_iter().for_each(|&tile| {
-      simulate_tile(
-        chunks,
-        tile,
-        &compute_swap,
-        dirty_chunks,
-        debug_gizmos,
-        tick,
-        jitter,
-      );
+      simulate_tile(chunks, tile, &compute_swap, &ctx);
     });
     // Implicit barrier between phases due to sequential for loop
 
@@ -372,27 +382,27 @@ fn simulate_tile<F>(
   chunks: &Canvas<'_>,
   tile: TilePos,
   compute_swap: &F,
-  dirty_chunks: &Mutex<HashSet<ChunkPos>>,
-  debug_gizmos: DebugGizmos<'_>,
-  tick: u64,
-  jitter: (i64, i64),
+  ctx: &SimulationContext<'_>,
 ) where
   F: Fn(WorldPos, &Canvas<'_>) -> Option<WorldPos> + Sync,
 {
   let tile_size = TILE_SIZE as i64;
-  let base = (tile.x * tile_size + jitter.0, tile.y * tile_size + jitter.1);
+  let base = (
+    tile.x * tile_size + ctx.jitter.0,
+    tile.y * tile_size + ctx.jitter.1,
+  );
 
   tick_owned_tile(chunks, tile);
 
-  let Some(bounds) = union_dirty_bounds(chunks, tile, jitter) else {
+  let Some(bounds) = union_dirty_bounds(chunks, tile, ctx.jitter) else {
     return;
   };
 
-  debug_shim::emit_dirty_rect(debug_gizmos, tile, bounds);
+  debug_shim::emit_dirty_rect(ctx.debug_gizmos, tile, bounds);
 
-  let mut collector = DirtyCollector::new(dirty_chunks);
+  let mut collector = DirtyCollector::new(ctx.dirty_chunks);
 
-  for_each_pixel_in_bounds(bounds, base, tick, |pos| {
+  for_each_pixel_in_bounds(bounds, base, ctx.tick, |pos| {
     if let Some(target) = compute_swap(pos, chunks)
       && let Some(dirty) = swap_pixels(chunks, pos, target)
     {
@@ -729,8 +739,7 @@ where
   let tile_x_start = tile.x * tile_size;
   let tile_y_start = tile.y * tile_size;
 
-  let mut local_dirty: HashSet<ChunkPos> = HashSet::new();
-  let mut dirty_pixels: Vec<(ChunkPos, LocalPos)> = Vec::new();
+  let mut collector = DirtyCollector::new(ctx.dirty_chunks);
 
   for dy in min_dy..=max_dy {
     let world_y = tile_y_start + dy as i64;
@@ -753,24 +762,20 @@ where
           chunks,
           WorldPos::new(world_x, world_y),
           new_pixel,
-          &mut local_dirty,
-          &mut dirty_pixels,
+          &mut collector.local_chunks,
+          &mut collector.pixels,
         );
       }
     }
   }
 
-  mark_pixels_dirty(chunks, &dirty_pixels);
-
-  if !local_dirty.is_empty() {
-    if let Ok(mut global_dirty) = ctx.dirty_chunks.lock() {
-      global_dirty.extend(local_dirty);
-    }
-
-    if let Some(tiles_mutex) = ctx.dirty_tiles
-      && let Ok(mut tiles) = tiles_mutex.lock()
-    {
-      tiles.insert(tile);
-    }
+  // Track dirty tiles separately (blit-specific, not in DirtyCollector)
+  if !collector.local_chunks.is_empty()
+    && let Some(tiles_mutex) = ctx.dirty_tiles
+    && let Ok(mut tiles) = tiles_mutex.lock()
+  {
+    tiles.insert(tile);
   }
+
+  collector.flush(chunks);
 }

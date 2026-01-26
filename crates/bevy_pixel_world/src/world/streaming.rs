@@ -1,5 +1,7 @@
 //! Streaming window logic for chunk visibility.
 
+use std::collections::HashSet;
+
 use bevy::prelude::*;
 
 use super::slot::SlotIndex;
@@ -14,6 +16,34 @@ pub(crate) struct StreamingDelta {
   /// Chunks that need saving before being released (position, raw pixel data).
   /// The pixel data is cloned before the slot is released.
   pub to_save: Vec<ChunkSaveData>,
+}
+
+impl StreamingDelta {
+  /// Returns an empty delta (no changes).
+  pub fn empty() -> Self {
+    Self {
+      to_despawn: Vec::new(),
+      to_spawn: Vec::new(),
+      to_save: Vec::new(),
+    }
+  }
+}
+
+/// Computes which chunk positions are leaving and entering the streaming
+/// window.
+///
+/// Returns (positions_leaving, positions_entering).
+pub(crate) fn compute_position_changes(
+  old_center: ChunkPos,
+  new_center: ChunkPos,
+) -> (Vec<ChunkPos>, Vec<ChunkPos>) {
+  let old_set: HashSet<_> = visible_positions(old_center).collect();
+  let new_set: HashSet<_> = visible_positions(new_center).collect();
+
+  let leaving: Vec<_> = old_set.difference(&new_set).copied().collect();
+  let entering: Vec<_> = new_set.difference(&old_set).copied().collect();
+
+  (leaving, entering)
 }
 
 /// Data needed to save a chunk that's leaving the streaming window.

@@ -113,20 +113,20 @@ pub fn update_pixel_bodies(
 
     // Clear at old position using tracked written positions
     if let Some(ref bt) = blitted {
-      clear_by_written_positions(
+      clear_body_pixels(
         &mut world,
         &bt.written_positions,
-        &mut displacement_targets,
+        Some(&mut displacement_targets),
         gizmos.get(),
       );
     }
 
     // Blit at new position, tracking which positions were actually written
-    let written_positions = blit_single_body_tracked(
+    let written_positions = blit_single_body(
       &mut world,
       body,
       transform,
-      &mut displacement_targets,
+      Some(&mut displacement_targets),
       &materials,
       gizmos.get(),
     );
@@ -224,14 +224,18 @@ fn try_displace_fluid(
 
 /// Writes a single pixel body and returns the positions that were written.
 ///
-/// This tracked variant is used by update_pixel_bodies to know exactly which
-/// positions to clear on the next frame, preventing same-material bodies from
-/// accidentally clearing each other's pixels.
-fn blit_single_body_tracked(
+/// If `displacement_targets` is Some, fluid pixels will be displaced into
+/// available void positions collected during the clear phase. If None,
+/// no displacement occurs (useful for fragment spawning).
+///
+/// This is used by update_pixel_bodies to know exactly which positions to
+/// clear on the next frame, preventing same-material bodies from accidentally
+/// clearing each other's pixels.
+pub(super) fn blit_single_body(
   world: &mut PixelWorld,
   body: &PixelBody,
   transform: &GlobalTransform,
-  displacement_targets: &mut Vec<WorldPos>,
+  mut displacement_targets: Option<&mut Vec<WorldPos>>,
   materials: &Materials,
   debug_gizmos: crate::debug_shim::DebugGizmos<'_>,
 ) -> Vec<(WorldPos, u32, u32)> {
@@ -252,7 +256,9 @@ fn blit_single_body_tracked(
       continue;
     }
 
-    try_displace_fluid(world, pos, displacement_targets, materials, debug_gizmos);
+    if let Some(ref mut targets) = displacement_targets {
+      try_displace_fluid(world, pos, targets, materials, debug_gizmos);
+    }
 
     let mut pixel_with_flag = pixel;
     pixel_with_flag.flags.insert(PixelFlags::PIXEL_BODY);
@@ -265,12 +271,15 @@ fn blit_single_body_tracked(
 
 /// Clears pixels at the exact positions that were written during the last blit.
 ///
+/// If `cleared_positions` is Some, the cleared positions are collected for
+/// displacement during the next blit. If None, positions are not tracked.
+///
 /// This ensures bodies only clear their own pixels, preventing same-material
 /// bodies from clearing each other's pixels.
-pub(super) fn clear_by_written_positions(
+pub(super) fn clear_body_pixels(
   world: &mut PixelWorld,
   written_positions: &[(WorldPos, u32, u32)],
-  cleared_positions: &mut Vec<WorldPos>,
+  mut cleared_positions: Option<&mut Vec<WorldPos>>,
   debug_gizmos: crate::debug_shim::DebugGizmos<'_>,
 ) {
   let void = Pixel::new(material_ids::VOID, crate::coords::ColorIndex(0));
@@ -285,7 +294,9 @@ pub(super) fn clear_by_written_positions(
       continue;
     }
 
-    cleared_positions.push(pos);
+    if let Some(ref mut cleared) = cleared_positions {
+      cleared.push(pos);
+    }
     world.set_pixel(pos, void, debug_gizmos);
   }
 }
@@ -312,40 +323,6 @@ pub fn detect_destroyed_from_written(
   }
 
   destroyed
-}
-
-/// Writes a single pixel body without displacement and returns written
-/// positions.
-///
-/// Use this variant when you need to track where pixels were written but don't
-/// need displacement (e.g., fragment spawning).
-pub(super) fn blit_single_body_no_displacement_tracked(
-  world: &mut PixelWorld,
-  body: &PixelBody,
-  transform: &GlobalTransform,
-  debug_gizmos: crate::debug_shim::DebugGizmos<'_>,
-) -> Vec<(WorldPos, u32, u32)> {
-  let mut written_positions = Vec::new();
-
-  for_each_body_pixel(body, transform, |mapping| {
-    // Don't overwrite another body's pixel.
-    if let Some(existing) = world.get_pixel(mapping.world_pos)
-      && existing.flags.contains(PixelFlags::PIXEL_BODY)
-    {
-      return;
-    }
-
-    let Some(pixel) = body.get_pixel(mapping.local_x, mapping.local_y) else {
-      return;
-    };
-
-    let mut pixel_with_flag = *pixel;
-    pixel_with_flag.flags.insert(PixelFlags::PIXEL_BODY);
-    world.set_pixel(mapping.world_pos, pixel_with_flag, debug_gizmos);
-    written_positions.push((mapping.world_pos, mapping.local_x, mapping.local_y));
-  });
-
-  written_positions
 }
 
 /// Clears a single pixel body without tracking cleared positions.
