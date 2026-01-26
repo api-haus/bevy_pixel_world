@@ -150,6 +150,50 @@ The streaming window requests chunks ahead of the camera, hiding generation/load
 | Persistence | Dedicated I/O       | Disk-bound, avoid head contention      |
 | Hybrid      | I/O with CPU assist | Check disk, then parallel generate     |
 
+## Pixel Body Preservation
+
+When async seeding completes, existing pixel body data in the chunk must not be overwritten. The `merge_seeded_pixels()`
+function handles this by preserving pixels flagged as belonging to a body.
+
+### The Problem
+
+Seeding is asynchronous—a chunk may be requested, and while seeding runs on a background thread:
+1. A pixel body loads and blits into the chunk slot
+2. Seeding completes with fresh terrain data
+3. **Bug if naive merge**: terrain overwrites body pixels, body appears destroyed
+
+### The Solution
+
+Check the `PIXEL_BODY` flag before overwriting:
+
+```mermaid
+flowchart TD
+    subgraph Merge["merge_seeded_pixels()"]
+        direction TB
+        ForEach["For each pixel position"]
+        Check{Existing pixel has PIXEL_BODY flag?}
+        Keep["Keep existing pixel"]
+        Overwrite["Write seeded pixel"]
+
+        ForEach --> Check
+        Check -->|"yes"| Keep
+        Check -->|"no"| Overwrite
+        Keep --> ForEach
+        Overwrite --> ForEach
+    end
+```
+
+### Behavior
+
+| Existing Pixel | Seeded Pixel | Result |
+|----------------|--------------|--------|
+| Has `PIXEL_BODY` flag | Any | Keep existing (body pixel preserved) |
+| No `PIXEL_BODY` flag | Any | Write seeded pixel |
+| Void | Any | Write seeded pixel |
+
+This ensures pixel bodies remain intact even when their chunks are being seeded asynchronously. The body's pixels take
+priority over procedural terrain.
+
 ## Surface Distance Coloring
 
 A technique for assigning materials based on distance to air:

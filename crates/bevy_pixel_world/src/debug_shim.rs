@@ -15,24 +15,11 @@ use crate::coords::{ChunkPos, TilePos, WorldRect};
 ///
 /// When `visual_debug` is enabled, wraps `Option<&PendingDebugGizmos>`.
 /// When disabled, this is a ZST and all emit functions are no-ops.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub struct DebugGizmos<'a>(
   #[cfg(feature = "visual_debug")] Option<&'a crate::visual_debug::PendingDebugGizmos>,
   #[cfg(not(feature = "visual_debug"))] PhantomData<&'a ()>,
 );
-
-impl Default for DebugGizmos<'_> {
-  fn default() -> Self {
-    #[cfg(feature = "visual_debug")]
-    {
-      Self(None)
-    }
-    #[cfg(not(feature = "visual_debug"))]
-    {
-      Self(PhantomData)
-    }
-  }
-}
 
 /// System parameter for extracting debug gizmos resource.
 ///

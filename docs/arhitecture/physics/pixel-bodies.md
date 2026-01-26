@@ -35,13 +35,16 @@ The core component storing pixel data:
 The `shape_mask` is the source of truth for collision and physics. When pixels are destroyed, only the mask is updated
 (surface data may remain but is ignored).
 
-### BlittedTransform Component
+### LastBlitTransform Component
 
 Stores the exact `GlobalTransform` used during the last blit operation:
 
 - Allows clear system to remove pixels at correct positions even if physics moved the body
 - Used by readback to detect destruction at the actual blitted location
 - Used by persistence to save position where pixels actually are
+- **written_positions**: Vec of `(WorldPos, local_x, local_y)` tuples recording exact positions written during last blit
+- Used by clear to remove only positions this body actually wrote
+- Prevents same-material overlapping bodies from clearing each other's pixels
 
 ### State Markers
 
@@ -52,6 +55,8 @@ Stores the exact `GlobalTransform` used during the last blit operation:
 | `DestroyedPixels` | Temporary batch of destroyed pixel coordinates |
 | `PendingPixelBody` | Waiting for image asset to load |
 | `Persistable` | Body should be saved when chunk unloads |
+| `AwaitingCollision` | Loaded body waiting for terrain collision tiles to cache |
+| `Stabilizing` | Grace period (10 frames) after activation, skips CA readback |
 
 ### PixelBodyId
 
@@ -70,11 +75,11 @@ flowchart TD
         (brush changes before clear)"]
 
         CL["2. Clear Pixel Bodies
-        (remove at BlittedTransform position)"]
+        (remove at LastBlitTransform position)"]
 
         BL["3. Blit Pixel Bodies
         (write at current Transform,
-        store BlittedTransform)"]
+        store LastBlitTransform)"]
 
         CA["4. CA Simulation
         (pixels may be destroyed)"]
@@ -104,10 +109,11 @@ Before clearing, check if external tools (brush, etc.) destroyed any blitted pix
 
 ### Phase 2: Clear
 
-Remove pixels from the canvas using the stored `BlittedTransform`:
+Remove pixels from the canvas using tracked positions from `LastBlitTransform`:
 
-- Uses transform from last blit, not current physics position
-- For each solid pixel: set world pixel to void
+- Uses `written_positions` from `LastBlitTransform`, not full body bounds
+- Only clears positions this specific body wrote
+- Prevents same-material bodies from erasing each other
 - Ensures no "ghost" pixels remain at old positions
 
 ### Phase 3: Blit
@@ -117,7 +123,8 @@ Write pixel body content to the canvas at current position:
 - Compute world-space AABB of rotated body
 - Use inverse transform to map world pixels back to local space
 - Write solid pixels with `PIXEL_BODY` flag set
-- Store current `GlobalTransform` in `BlittedTransform`
+- Tracked blit returns list of actually written positions
+- Store current `GlobalTransform` and written positions in `LastBlitTransform`
 
 ### Phase 4: CA Simulation
 
@@ -132,8 +139,9 @@ Object pixels are indistinguishable from world pixels during simulation.
 
 Detect pixels destroyed by CA simulation:
 
-- Use `BlittedTransform` to find where pixels were written
+- Use `LastBlitTransform` to find where pixels were written
 - For each solid pixel: check if now void or missing `PIXEL_BODY` flag
+- Bodies with `Stabilizing` marker skip CA readback detection (but external erasure detection still runs on all bodies)
 - Merge with externally destroyed pixels
 - Store in `DestroyedPixels` component
 
@@ -181,12 +189,12 @@ Split procedure for N > 1 components:
 
 ## Transform Integration
 
-The separation of `GlobalTransform` (current) and `BlittedTransform` (last write) is critical:
+The separation of `GlobalTransform` (current) and `LastBlitTransform` (last write) is critical:
 
 ```mermaid
 sequenceDiagram
     participant P as Physics
-    participant BT as BlittedTransform
+    participant BT as LastBlitTransform
     participant GT as GlobalTransform
     participant W as PixelWorld
 
@@ -258,7 +266,7 @@ Separate from pixel body colliders, terrain uses tile-based static colliders:
 
 When a chunk leaves the streaming window:
 
-- Use `BlittedTransform` for position (where pixels actually are)
+- Use `LastBlitTransform` for position (where pixels actually are)
 - Create `PixelBodyRecord` with shape, pixels, velocity
 - Queue for disk write
 - Despawn entity
@@ -271,7 +279,7 @@ When a chunk enters the streaming window:
 - Reconstruct `PixelBody` from record
 - Generate collider
 - Ensure ID generator won't reuse loaded ID
-- Spawn entity with `BlittedTransform::default()`
+- Spawn entity with `LastBlitTransform::default()`
 
 ```mermaid
 flowchart LR
@@ -289,6 +297,77 @@ flowchart LR
     D1 -.->|"persistence"| D2
 ```
 
+## Staged Loading
+
+Bodies loaded from persistence can fall through terrain if spawned before collision tiles are ready. A two-phase loading
+system prevents this.
+
+### The Problem
+
+When a chunk loads:
+1. Pixel body record is read from disk
+2. Entity spawns immediately
+3. Physics applies gravity
+4. **But**: terrain collision tiles may not be cached yet
+5. Body falls through "solid" terrain until tiles ready
+
+### The Solution
+
+Queue bodies until their collision environment is ready:
+
+```mermaid
+flowchart TD
+    subgraph Load["Chunk Load"]
+        direction TB
+        Read["Read PixelBodyRecord"]
+        Queue["Add to PendingPixelBodies queue"]
+        Read --> Queue
+    end
+
+    subgraph Poll["Post-Simulation"]
+        direction TB
+        Check{Collision tiles ready?}
+        Spawn["Spawn entity with AwaitingCollision"]
+        Wait["Keep in queue"]
+        Check -->|"yes"| Spawn
+        Check -->|"no"| Wait
+    end
+
+    subgraph Activate["Activation"]
+        direction TB
+        Cached["Collision tiles cached"]
+        Remove["Remove AwaitingCollision"]
+        AddStab["Add Stabilizing (10 frames)"]
+        Cached --> Remove --> AddStab
+    end
+
+    subgraph Stabilize["Stabilization"]
+        direction TB
+        Count["Decrement frame counter"]
+        Done{Counter = 0?}
+        RemoveStab["Remove Stabilizing"]
+        Count --> Done
+        Done -->|"yes"| RemoveStab
+        Done -->|"no"| Count
+    end
+
+    Queue --> Check
+    Spawn --> Cached
+    AddStab --> Count
+```
+
+### Marker Lifecycle
+
+| Marker | Added When | Removed When | Effect |
+|--------|------------|--------------|--------|
+| `AwaitingCollision` | Body spawns from queue | Collision tiles cached for body's area | Body exists but CA interaction limited |
+| `Stabilizing` | `AwaitingCollision` removed | 10 frames elapsed | Skips CA readback (prevents false destruction detection) |
+
+### Why Stabilizing?
+
+After collision tiles activate, the body may settle slightly. The CA readback could misinterpret this movement as pixel
+destruction. The 10-frame grace period allows physics to stabilize before destruction detection resumes.
+
 ## System Ordering
 
 All systems run in the Update schedule across three groups:
@@ -297,7 +376,7 @@ All systems run in the Update schedule across three groups:
 ```
 tick_pixel_worlds
   → save_pixel_bodies_on_chunk_unload
-  → load_pixel_bodies_on_chunk_load
+  → queue_pixel_bodies_on_chunk_load
   → update_simulation_bounds
 ```
 
@@ -317,13 +396,14 @@ detect_external_erasure
 ```
 dispatch_collision_tasks
   → poll_collision_tasks
+  → spawn_pending_pixel_bodies
   → sync_physics_colliders
   → flush_persistence_queue
 ```
 
 ## Key Invariants
 
-- `BlittedTransform` always reflects the last successful blit position
+- `LastBlitTransform` always reflects the last successful blit position
 - `shape_mask` is the source of truth for solid pixels
 - Fragments are blitted immediately on split (no visual gap)
 - Connected components use 4-connectivity (orthogonal only)
