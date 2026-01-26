@@ -223,5 +223,8 @@ pub fn finalize_pending_pixel_bodies(
       CollisionQueryPoint,
       StreamCulled,
     ));
+
+    #[cfg(feature = "submergence")]
+    entity_commands.insert(crate::submergence::Submergent);
   }
 }

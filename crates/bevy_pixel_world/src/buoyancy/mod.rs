@@ -21,10 +21,12 @@
 //! enabled.
 
 mod force;
+#[cfg(not(feature = "submergence"))]
 mod sample;
 
 use bevy::prelude::*;
 pub use force::compute_buoyancy_forces;
+#[cfg(not(feature = "submergence"))]
 pub use sample::sample_submersion;
 
 /// Configuration for buoyancy simulation.
@@ -106,6 +108,10 @@ impl Plugin for PixelBuoyancyPlugin {
   fn build(&self, app: &mut App) {
     app.insert_resource(self.config.clone());
 
+    #[cfg(not(feature = "submergence"))]
     app.add_systems(Update, (sample_submersion, compute_buoyancy_forces).chain());
+
+    #[cfg(feature = "submergence")]
+    app.add_systems(Update, compute_buoyancy_forces);
   }
 }
