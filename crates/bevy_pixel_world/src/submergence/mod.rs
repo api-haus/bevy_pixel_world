@@ -15,10 +15,14 @@
 //! All pixel bodies automatically gain the [`Submergent`] marker on spawn.
 
 mod events;
+#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+mod physics;
 mod sample;
 
 use bevy::prelude::*;
 pub use events::emit_submersion_events;
+#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+pub use physics::{SubmersionPhysicsConfig, apply_submersion_physics};
 pub use sample::sample_submersion;
 
 /// Configuration for submersion detection.
@@ -95,7 +99,8 @@ pub struct Surfaced {
 /// Plugin for submergence detection.
 ///
 /// Adds systems that sample submersion state and emit threshold-crossing
-/// events.
+/// events. When physics features are enabled, also modifies gravity and
+/// damping based on submersion.
 ///
 /// # Configuration
 ///
@@ -107,18 +112,33 @@ pub struct Surfaced {
 ///         sample_grid_size: 8,
 ///         submersion_threshold: 0.5,
 ///     },
+///     ..default()
 /// });
 /// ```
 #[derive(Default)]
 pub struct PixelSubmergencePlugin {
   /// Configuration for submersion detection.
   pub config: SubmersionConfig,
+  /// Configuration for physics effects (gravity, damping).
+  #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+  pub physics: SubmersionPhysicsConfig,
 }
 
 impl PixelSubmergencePlugin {
   /// Creates a new plugin with the given configuration.
   pub fn new(config: SubmersionConfig) -> Self {
-    Self { config }
+    Self {
+      config,
+      #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+      physics: SubmersionPhysicsConfig::default(),
+    }
+  }
+
+  /// Sets the physics configuration.
+  #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+  pub fn with_physics(mut self, physics: SubmersionPhysicsConfig) -> Self {
+    self.physics = physics;
+    self
   }
 }
 
@@ -126,5 +146,11 @@ impl Plugin for PixelSubmergencePlugin {
   fn build(&self, app: &mut App) {
     app.insert_resource(self.config.clone());
     app.add_systems(Update, (sample_submersion, emit_submersion_events).chain());
+
+    #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+    {
+      app.insert_resource(self.physics.clone());
+      app.add_systems(Update, apply_submersion_physics.after(sample_submersion));
+    }
   }
 }

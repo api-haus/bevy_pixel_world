@@ -226,5 +226,26 @@ pub fn finalize_pending_pixel_bodies(
 
     #[cfg(feature = "submergence")]
     entity_commands.insert(crate::submergence::Submergent);
+
+    // Add damping components for submersion physics effects
+    #[cfg(all(feature = "submergence", feature = "avian2d"))]
+    entity_commands.insert((
+      avian2d::prelude::GravityScale(1.0),
+      avian2d::prelude::LinearDamping(0.0),
+      avian2d::prelude::AngularDamping(0.0),
+    ));
+
+    #[cfg(all(
+      feature = "submergence",
+      feature = "rapier2d",
+      not(feature = "avian2d")
+    ))]
+    entity_commands.insert((
+      bevy_rapier2d::prelude::GravityScale(1.0),
+      bevy_rapier2d::prelude::Damping {
+        linear_damping: 0.0,
+        angular_damping: 0.0,
+      },
+    ));
   }
 }
