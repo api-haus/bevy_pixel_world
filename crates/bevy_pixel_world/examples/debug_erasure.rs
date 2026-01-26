@@ -41,10 +41,10 @@ use rand::Rng;
 const CAMERA_SPEED: f32 = 300.0;
 const SPAWN_AREA: (f32, f32, f32, f32) = (60.0, 80.0, 140.0, 160.0); // x_min, y_min, x_max, y_max
 const BRUSH_RADIUS: i64 = 30; // Brush size for erasure
-const PLATFORM_Y: i64 = 50; // Y position of the stone platform
-const PLATFORM_WIDTH: i64 = 300; // Width of platform (wide)
+const PLATFORM_Y: i64 = 20; // Y position of the stone platform
+const PLATFORM_WIDTH: i64 = 400; // Width of platform (wide)
 const PLATFORM_HEIGHT: i64 = 40; // Height/thickness of platform (4x normal)
-const CLEAR_MARGIN: i64 = 50; // Extra margin around visible area to clear
+const CLEAR_MARGIN: i64 = 100; // Extra margin around visible area to clear
 
 const SPAWN_COUNT: usize = 15; // Number of bodies to spawn
 const SETTLE_FRAMES: usize = 120; // Frames to wait for bodies to settle (2 seconds at 60fps)
