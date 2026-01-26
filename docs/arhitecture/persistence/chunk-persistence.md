@@ -485,6 +485,18 @@ This prevents ID collisions when:
 - Multiple play sessions create bodies that later coexist in the same save
 - Bodies split (fragments get new IDs from the same generator)
 
+### Empty Body Handling
+
+Fully-destroyed pixel bodies are not persisted to avoid ghost records:
+
+- Save systems check `body.is_empty()` before serialization
+- Empty bodies queue for removal via `body_remove_queue` instead of save
+- `flush_persistence_queue()` processes both saves and removes
+- Prevents ghost body records that would spawn empty entities on load
+
+This ensures that when a pixel body is completely destroyed (all pixels gone via CA simulation or external tools), no
+record remains in the save file. Without this check, loading the save would spawn invisible entities with no pixels.
+
 ## Configuration
 
 | Parameter                  | Default | Description                                 |

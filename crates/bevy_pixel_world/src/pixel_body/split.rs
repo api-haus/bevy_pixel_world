@@ -13,12 +13,54 @@ use super::{
 };
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 use crate::collision::CollisionQueryPoint;
+use crate::collision::Stabilizing;
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 use crate::culling::StreamCulled;
 use crate::debug_shim::GizmosParam;
 use crate::material::Materials;
 use crate::persistence::PersistenceTasks;
 use crate::world::PixelWorld;
+
+/// Type alias for velocity query - varies by physics backend.
+#[cfg(feature = "avian2d")]
+type VelocityQuery<'w, 's> = Query<
+  'w,
+  's,
+  (
+    Option<&'static avian2d::prelude::LinearVelocity>,
+    Option<&'static avian2d::prelude::AngularVelocity>,
+  ),
+>;
+
+#[cfg(all(feature = "rapier2d", not(feature = "avian2d")))]
+type VelocityQuery<'w, 's> = Query<'w, 's, Option<&'static bevy_rapier2d::prelude::Velocity>>;
+
+/// Extracts linear and angular velocity for fragment spawning.
+#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+fn extract_parent_velocity(entity: Entity, velocities: &VelocityQuery) -> (Vec2, f32) {
+  #[cfg(feature = "avian2d")]
+  {
+    velocities
+      .get(entity)
+      .map(|(lin, ang)| {
+        (
+          lin.map(|v| v.0).unwrap_or(Vec2::ZERO),
+          ang.map(|v| v.0).unwrap_or(0.0),
+        )
+      })
+      .unwrap_or((Vec2::ZERO, 0.0))
+  }
+
+  #[cfg(all(feature = "rapier2d", not(feature = "avian2d")))]
+  {
+    velocities
+      .get(entity)
+      .ok()
+      .flatten()
+      .map(|v| (v.linvel, v.angvel))
+      .unwrap_or((Vec2::ZERO, 0.0))
+  }
+}
 
 /// A connected region of pixels within a shape mask.
 pub struct ConnectedComponent {
@@ -170,13 +212,11 @@ pub fn find_connected_components(
 ///
 /// Clears blitted pixels, queues removal from persistence, and despawns the
 /// entity.
-#[allow(clippy::too_many_arguments)]
 fn handle_empty_body(
   commands: &mut Commands,
   persistence_tasks: &mut Option<ResMut<PersistenceTasks>>,
   world: &mut Option<Mut<PixelWorld>>,
   entity: Entity,
-  body: &PixelBody,
   body_id: &PixelBodyId,
   blitted: &LastBlitTransform,
   gizmos: crate::debug_shim::DebugGizmos<'_>,
@@ -184,10 +224,12 @@ fn handle_empty_body(
   if let Some(tasks) = persistence_tasks {
     tasks.queue_body_remove(body_id.value());
   }
-  if let Some(transform) = &blitted.transform
-    && let Some(w) = world
-  {
-    super::blit::clear_single_body_no_tracking(w, body, transform, gizmos);
+  if let Some(w) = world {
+    // Clear using written_positions, NOT for_each_body_pixel.
+    // The shape_mask has already been set to all-false by apply_readback_changes,
+    // so for_each_body_pixel would skip all pixels. But update_pixel_bodies may
+    // have re-blitted pixels before shape_mask was updated, leaving ghost pixels.
+    super::blit::clear_by_written_positions(w, &blitted.written_positions, &mut Vec::new(), gizmos);
   }
   commands.entity(entity).despawn();
 }
@@ -242,22 +284,25 @@ fn spawn_fragment_entities(
       .with_rotation(ctx.parent_rotation);
     let frag_global = GlobalTransform::from(frag_transform);
 
-    super::blit::blit_single_body_no_displacement(
+    // Blit fragment and track written positions for erasure detection
+    let written_positions = super::blit::blit_single_body_no_displacement_tracked(
       ctx.world,
       &fragment.body,
       &frag_global,
       ctx.gizmos,
     );
 
-    #[allow(unused_mut)]
+    #[allow(unused_mut, unused_variables)]
     let mut entity_commands = ctx.commands.spawn((
       fragment.body,
       LastBlitTransform {
         transform: Some(frag_global),
+        written_positions,
       },
       frag_transform,
       fragment.id,
       Persistable,
+      Stabilizing::default(),
     ));
 
     #[cfg(feature = "avian2d")]
@@ -306,13 +351,7 @@ pub fn split_pixel_bodies(
     ),
     With<ShapeMaskModified>,
   >,
-  #[cfg(feature = "avian2d")] velocities: Query<(
-    Option<&avian2d::prelude::LinearVelocity>,
-    Option<&avian2d::prelude::AngularVelocity>,
-  )>,
-  #[cfg(all(feature = "rapier2d", not(feature = "avian2d")))] velocities: Query<
-    Option<&bevy_rapier2d::prelude::Velocity>,
-  >,
+  #[cfg(any(feature = "avian2d", feature = "rapier2d"))] velocities: VelocityQuery,
   materials: Res<Materials>,
   gizmos: GizmosParam,
 ) {
@@ -328,7 +367,6 @@ pub fn split_pixel_bodies(
           &mut persistence_tasks,
           &mut world,
           entity,
-          body,
           body_id,
           blitted,
           gizmos.get(),
@@ -344,24 +382,8 @@ pub fn split_pixel_bodies(
 
         let parent_rotation = global_transform.to_scale_rotation_translation().1;
 
-        #[cfg(feature = "avian2d")]
-        let (parent_linear, parent_angular) = velocities
-          .get(entity)
-          .map(|(lin, ang)| {
-            (
-              lin.map(|v| v.0).unwrap_or(Vec2::ZERO),
-              ang.map(|v| v.0).unwrap_or(0.0),
-            )
-          })
-          .unwrap_or((Vec2::ZERO, 0.0));
-
-        #[cfg(all(feature = "rapier2d", not(feature = "avian2d")))]
-        let (parent_linear, parent_angular) = velocities
-          .get(entity)
-          .ok()
-          .flatten()
-          .map(|v| (v.linvel, v.angvel))
-          .unwrap_or((Vec2::ZERO, 0.0));
+        #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+        let (parent_linear, parent_angular) = extract_parent_velocity(entity, &velocities);
 
         let Some(blit_transform) = &blitted.transform else {
           commands.entity(entity).despawn();

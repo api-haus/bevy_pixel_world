@@ -54,6 +54,37 @@ pub use systems::{
 pub use systems::{SampleMesh, draw_collision_gizmos, draw_sample_mesh_gizmos, update_sample_mesh};
 pub use triangulate::{Triangle, point_in_polygon, triangulate_polygon, triangulate_polygons};
 
+use crate::coords::TilePos;
+
+/// Marker for loaded pixel bodies waiting for terrain collision.
+///
+/// Bodies with this component remain static until all required
+/// collision tiles are cached, then upgrade to dynamic.
+#[derive(Component)]
+pub struct AwaitingCollision {
+  /// Tiles that must be in CollisionCache before enabling dynamics.
+  pub required_tiles: Vec<TilePos>,
+}
+
+/// Marker for bodies in stabilization period after activation.
+///
+/// Bodies with this component skip external erasure and readback detection,
+/// giving physics time to separate overlapping bodies before checking for
+/// pixel destruction.
+#[derive(Component)]
+pub struct Stabilizing {
+  /// Frames remaining in stabilization period.
+  pub frames_remaining: u32,
+}
+
+impl Default for Stabilizing {
+  fn default() -> Self {
+    Self {
+      frames_remaining: 10, // ~0.17 sec at 60fps
+    }
+  }
+}
+
 /// Configuration for collision mesh generation.
 #[derive(Resource, Clone, Debug)]
 pub struct CollisionConfig {
