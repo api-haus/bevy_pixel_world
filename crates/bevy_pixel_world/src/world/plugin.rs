@@ -24,7 +24,7 @@ use crate::collision::{
 use crate::collision::{
   SampleMesh, draw_collision_gizmos, draw_sample_mesh_gizmos, update_sample_mesh,
 };
-use crate::coords::{CHUNK_SIZE, ChunkPos, WorldPos, WorldRect};
+use crate::coords::{CHUNK_SIZE, ChunkPos, TilePos, WorldPos, WorldRect};
 use crate::culling::{CullingConfig, update_entity_culling};
 use crate::debug_shim;
 use crate::material::Materials;
@@ -81,6 +81,28 @@ fn seed_chunk(seeder: &(dyn crate::seeding::ChunkSeeder + Send + Sync), pos: Chu
   chunk
 }
 
+/// Merges seeded pixels into existing chunk, preserving PIXEL_BODY pixels.
+///
+/// When seeding completes asynchronously, pixel bodies may have already
+/// blitted to the chunk. We must not overwrite those pixels or they'll
+/// be detected as destroyed.
+fn merge_seeded_pixels(
+  existing: &mut crate::pixel::PixelSurface,
+  seeded: &crate::pixel::PixelSurface,
+) {
+  use crate::pixel::PixelFlags;
+
+  let existing_slice = existing.as_slice_mut();
+  let seeded_slice = seeded.as_slice();
+
+  for (existing_pixel, seeded_pixel) in existing_slice.iter_mut().zip(seeded_slice.iter()) {
+    // Only overwrite if existing pixel doesn't have PIXEL_BODY flag
+    if !existing_pixel.flags.contains(PixelFlags::PIXEL_BODY) {
+      *existing_pixel = *seeded_pixel;
+    }
+  }
+}
+
 /// Tracks chunks unloading this frame.
 ///
 /// Populated by `tick_pixel_worlds` before pixel body save systems run.
@@ -101,6 +123,18 @@ pub struct LoadedChunks {
   pub positions: Vec<ChunkPos>,
 }
 
+/// Entry for a body waiting to spawn.
+struct PendingBodyEntry {
+  record: PixelBodyRecord,
+  required_tiles: Vec<TilePos>,
+}
+
+/// Bodies waiting for collision tiles before spawning.
+#[derive(Resource, Default)]
+pub struct PendingPixelBodies {
+  entries: Vec<PendingBodyEntry>,
+}
+
 /// Internal plugin for PixelWorld streaming systems.
 ///
 /// This is automatically added by the main `PixelWorldPlugin`.
@@ -118,6 +152,7 @@ impl Plugin for PixelWorldStreamingPlugin {
       .init_resource::<CullingConfig>()
       .init_resource::<UnloadingChunks>()
       .init_resource::<LoadedChunks>()
+      .init_resource::<PendingPixelBodies>()
       .init_resource::<PixelBodyIdGenerator>()
       .init_resource::<SimulationState>()
       .init_resource::<PersistenceControl>()
@@ -151,7 +186,7 @@ impl Plugin for PixelWorldStreamingPlugin {
           update_entity_culling,
           dispatch_seeding,
           poll_seeding_tasks,
-          load_pixel_bodies_on_chunk_load,
+          queue_pixel_bodies_on_chunk_load,
           update_simulation_bounds,
         )
           .chain(),
@@ -170,6 +205,7 @@ impl Plugin for PixelWorldStreamingPlugin {
         (
           dispatch_collision_tasks,
           poll_collision_tasks,
+          spawn_pending_pixel_bodies,
           upload_dirty_chunks,
           process_pending_save_requests,
           save_pixel_bodies_on_request,
@@ -204,7 +240,7 @@ impl Plugin for PixelWorldStreamingPlugin {
           save_pixel_bodies_on_chunk_unload,
           update_entity_culling,
           dispatch_seeding,
-          load_pixel_bodies_on_chunk_load,
+          queue_pixel_bodies_on_chunk_load,
           update_simulation_bounds,
         )
           .chain(),
@@ -223,6 +259,7 @@ impl Plugin for PixelWorldStreamingPlugin {
         (
           dispatch_collision_tasks,
           poll_collision_tasks,
+          spawn_pending_pixel_bodies,
           process_pending_save_requests,
           save_pixel_bodies_on_request,
           flush_persistence_queue,
@@ -539,17 +576,17 @@ fn dispatch_seeding(
 
     for (pos, slot_idx) in unseeded {
       // Seed synchronously
-      let chunk = seed_chunk(world.seeder().as_ref(), pos);
+      let seeded_chunk = seed_chunk(world.seeder().as_ref(), pos);
 
-      // Copy seeded data into slot
+      // Merge seeded data into slot, preserving PIXEL_BODY pixels
       let slot = world.slot_mut(slot_idx);
-      slot.chunk.pixels = chunk.pixels;
+      merge_seeded_pixels(&mut slot.chunk.pixels, &seeded_chunk.pixels);
       slot.chunk.set_all_dirty_rects_full();
       slot.lifecycle = super::slot::ChunkLifecycle::Active;
       slot.dirty = true;
 
       // If loaded from disk, mark as persisted
-      if chunk.from_persistence {
+      if seeded_chunk.from_persistence {
         slot.persisted = true;
       }
 
@@ -586,7 +623,9 @@ fn poll_seeding_tasks(
     && current_idx == task.slot_index
     {
       let slot = world.slot_mut(task.slot_index);
-      slot.chunk.pixels = seeded_chunk.pixels;
+      // Merge seeded pixels, preserving any PIXEL_BODY pixels that were
+      // blitted before seeding completed.
+      merge_seeded_pixels(&mut slot.chunk.pixels, &seeded_chunk.pixels);
       slot.chunk.set_all_dirty_rects_full();
       slot.lifecycle = super::slot::ChunkLifecycle::Active;
       slot.dirty = true;
@@ -944,11 +983,51 @@ fn save_pixel_bodies_on_chunk_unload(
   }
 }
 
-/// System: Loads pixel bodies when their chunk loads.
-fn load_pixel_bodies_on_chunk_load(
-  mut commands: Commands,
+/// Computes which collision tiles a body overlaps based on its rotated AABB.
+fn compute_required_tiles(record: &PixelBodyRecord) -> Vec<TilePos> {
+  let half_w = record.width as f32 / 2.0;
+  let half_h = record.height as f32 / 2.0;
+  let (cos_r, sin_r) = (record.rotation.cos(), record.rotation.sin());
+
+  let corners = [
+    Vec2::new(-half_w, -half_h),
+    Vec2::new(half_w, -half_h),
+    Vec2::new(-half_w, half_h),
+    Vec2::new(half_w, half_h),
+  ];
+
+  let (mut min_x, mut max_x) = (f32::INFINITY, f32::NEG_INFINITY);
+  let (mut min_y, mut max_y) = (f32::INFINITY, f32::NEG_INFINITY);
+
+  for c in corners {
+    let rotated = Vec2::new(
+      c.x * cos_r - c.y * sin_r + record.position.x,
+      c.x * sin_r + c.y * cos_r + record.position.y,
+    );
+    min_x = min_x.min(rotated.x);
+    max_x = max_x.max(rotated.x);
+    min_y = min_y.min(rotated.y);
+    max_y = max_y.max(rotated.y);
+  }
+
+  WorldRect::new(
+    min_x.floor() as i64,
+    min_y.floor() as i64,
+    (max_x.ceil() - min_x.floor()) as u32 + 1,
+    (max_y.ceil() - min_y.floor()) as u32 + 1,
+  )
+  .to_tile_range()
+  .collect()
+}
+
+/// System: Queues pixel bodies when their chunk loads.
+///
+/// Bodies are not spawned immediately - they wait in `PendingPixelBodies` until
+/// their required collision tiles are cached.
+fn queue_pixel_bodies_on_chunk_load(
   loaded_chunks: Res<LoadedChunks>,
   save_resource: Option<Res<WorldSaveResource>>,
+  mut pending: ResMut<PendingPixelBodies>,
   mut id_generator: ResMut<PixelBodyIdGenerator>,
   mut persistence_tasks: ResMut<PersistenceTasks>,
 ) {
@@ -971,58 +1050,120 @@ fn load_pixel_bodies_on_chunk_load(
     for record in records {
       id_generator.ensure_above(record.stable_id);
 
-      let body = record.to_pixel_body();
+      // Skip if already pending (prevents duplicate spawning)
+      if pending
+        .entries
+        .iter()
+        .any(|e| e.record.stable_id == record.stable_id)
+      {
+        continue;
+      }
 
-      // Skip empty bodies (stale records) and queue removal
+      // Check if body is empty (stale record) before queueing
+      let body = record.to_pixel_body();
       if body.is_empty() {
         persistence_tasks.queue_body_remove(record.stable_id);
         continue;
       }
 
-      #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
-      let Some(collider) = crate::pixel_body::generate_collider(&body) else {
-        continue;
-      };
+      // Compute which collision tiles this body needs
+      let required_tiles = compute_required_tiles(&record);
 
-      let transform = Transform {
-        translation: record.position.extend(0.0),
-        rotation: Quat::from_rotation_z(record.rotation),
-        scale: Vec3::ONE,
-      };
-
-      #[allow(unused_mut, unused_variables)]
-      let mut entity_commands = commands.spawn((
-        body,
-        LastBlitTransform::default(),
-        DisplacementState::default(),
-        transform,
-        PixelBodyId::new(record.stable_id),
-        Persistable,
-      ));
-
-      #[cfg(feature = "avian2d")]
-      entity_commands.insert((
-        collider,
-        avian2d::prelude::RigidBody::Dynamic,
-        avian2d::prelude::LinearVelocity(record.linear_velocity),
-        avian2d::prelude::AngularVelocity(record.angular_velocity),
-        crate::collision::CollisionQueryPoint,
-        crate::culling::StreamCulled,
-      ));
-
-      #[cfg(all(feature = "rapier2d", not(feature = "avian2d")))]
-      entity_commands.insert((
-        collider,
-        bevy_rapier2d::prelude::RigidBody::Dynamic,
-        bevy_rapier2d::prelude::Velocity {
-          linvel: record.linear_velocity,
-          angvel: record.angular_velocity,
-        },
-        crate::collision::CollisionQueryPoint,
-        crate::culling::StreamCulled,
-      ));
+      pending.entries.push(PendingBodyEntry {
+        record,
+        required_tiles,
+      });
     }
   }
+}
+
+/// System: Spawns pending pixel bodies when their collision tiles are ready.
+///
+/// Bodies wait in `PendingPixelBodies` until all required collision tiles are
+/// cached, ensuring they don't fall through terrain on load.
+fn spawn_pending_pixel_bodies(
+  mut commands: Commands,
+  mut pending: ResMut<PendingPixelBodies>,
+  cache: Res<CollisionCache>,
+  mut persistence_tasks: ResMut<PersistenceTasks>,
+  existing_bodies: Query<&PixelBodyId>,
+) {
+  pending.entries.retain(|entry| {
+    // Check if all required tiles are cached
+    let ready = entry.required_tiles.iter().all(|t| cache.contains(*t));
+    if !ready {
+      return true; // Keep waiting
+    }
+
+    let record = &entry.record;
+
+    // Wait for old entity with same ID to be despawned (deferred despawn)
+    // This prevents duplicate bodies when a chunk unloads and reloads in
+    // the same frame - the old entity's despawn is applied after this runs.
+    if existing_bodies.iter().any(|id| id.0 == record.stable_id) {
+      return true; // Keep waiting until old entity is gone
+    }
+
+    // All tiles ready and no duplicate - spawn the body
+    let body = record.to_pixel_body();
+
+    if body.is_empty() {
+      persistence_tasks.queue_body_remove(record.stable_id);
+      return false;
+    }
+
+    #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+    let Some(collider) = crate::pixel_body::generate_collider(&body) else {
+      return false;
+    };
+
+    let transform = Transform {
+      translation: record.position.extend(0.0),
+      rotation: Quat::from_rotation_z(record.rotation),
+      scale: Vec3::ONE,
+    };
+
+    // Spawn with Dynamic - collision is guaranteed ready
+    // Initialize LastBlitTransform with actual transform so erasure detection
+    // doesn't skip this body on its first frame (detect_external_erasure skips
+    // bodies with None transform).
+    #[allow(unused_mut, unused_variables)]
+    let mut entity_commands = commands.spawn((
+      body,
+      LastBlitTransform {
+        transform: Some(GlobalTransform::from(transform)),
+        written_positions: Vec::new(),
+      },
+      DisplacementState::default(),
+      transform,
+      PixelBodyId::new(record.stable_id),
+      Persistable,
+    ));
+
+    #[cfg(feature = "avian2d")]
+    entity_commands.insert((
+      collider,
+      avian2d::prelude::RigidBody::Dynamic,
+      avian2d::prelude::LinearVelocity(record.linear_velocity),
+      avian2d::prelude::AngularVelocity(record.angular_velocity),
+      crate::collision::CollisionQueryPoint,
+      crate::culling::StreamCulled,
+    ));
+
+    #[cfg(all(feature = "rapier2d", not(feature = "avian2d")))]
+    entity_commands.insert((
+      collider,
+      bevy_rapier2d::prelude::RigidBody::Dynamic,
+      bevy_rapier2d::prelude::Velocity {
+        linvel: record.linear_velocity,
+        angvel: record.angular_velocity,
+      },
+      crate::collision::CollisionQueryPoint,
+      crate::culling::StreamCulled,
+    ));
+
+    false // Remove from pending
+  });
 }
 
 /// Writes chunk data to the save file at the given offset.

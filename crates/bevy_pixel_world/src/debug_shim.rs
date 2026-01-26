@@ -21,6 +21,19 @@ pub struct DebugGizmos<'a>(
   #[cfg(not(feature = "visual_debug"))] PhantomData<&'a ()>,
 );
 
+impl Default for DebugGizmos<'_> {
+  fn default() -> Self {
+    #[cfg(feature = "visual_debug")]
+    {
+      Self(None)
+    }
+    #[cfg(not(feature = "visual_debug"))]
+    {
+      Self(PhantomData)
+    }
+  }
+}
+
 /// System parameter for extracting debug gizmos resource.
 ///
 /// Provides a unified interface for systems that need gizmos.

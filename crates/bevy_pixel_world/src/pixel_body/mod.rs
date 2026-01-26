@@ -34,7 +34,7 @@ mod spawn;
 mod split;
 
 use bevy::prelude::*;
-#[cfg(all(feature = "buoyancy", any(feature = "avian2d", feature = "rapier2d")))]
+#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 pub(crate) use blit::compute_world_aabb;
 pub use blit::{LastBlitTransform, update_pixel_bodies};
 pub use collider::generate_collider;

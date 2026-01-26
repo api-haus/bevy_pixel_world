@@ -13,6 +13,7 @@ use super::{
 };
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 use crate::collision::CollisionQueryPoint;
+use crate::collision::Stabilizing;
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 use crate::culling::StreamCulled;
 use crate::debug_shim::GizmosParam;
@@ -170,13 +171,11 @@ pub fn find_connected_components(
 ///
 /// Clears blitted pixels, queues removal from persistence, and despawns the
 /// entity.
-#[allow(clippy::too_many_arguments)]
 fn handle_empty_body(
   commands: &mut Commands,
   persistence_tasks: &mut Option<ResMut<PersistenceTasks>>,
   world: &mut Option<Mut<PixelWorld>>,
   entity: Entity,
-  body: &PixelBody,
   body_id: &PixelBodyId,
   blitted: &LastBlitTransform,
   gizmos: crate::debug_shim::DebugGizmos<'_>,
@@ -184,12 +183,42 @@ fn handle_empty_body(
   if let Some(tasks) = persistence_tasks {
     tasks.queue_body_remove(body_id.value());
   }
-  if let Some(transform) = &blitted.transform
-    && let Some(w) = world
-  {
-    super::blit::clear_single_body_no_tracking(w, body, transform, gizmos);
+  if let Some(w) = world {
+    // Clear using written_positions, NOT for_each_body_pixel.
+    // The shape_mask has already been set to all-false by apply_readback_changes,
+    // so for_each_body_pixel would skip all pixels. But update_pixel_bodies may
+    // have re-blitted pixels before shape_mask was updated, leaving ghost pixels.
+    clear_written_positions(w, &blitted.written_positions, gizmos);
   }
   commands.entity(entity).despawn();
+}
+
+/// Clears pixels at the exact positions tracked in written_positions.
+///
+/// Only clears positions that still have the PIXEL_BODY flag, leaving other
+/// material undisturbed.
+fn clear_written_positions(
+  world: &mut PixelWorld,
+  written_positions: &[(crate::coords::WorldPos, u32, u32)],
+  debug_gizmos: crate::debug_shim::DebugGizmos<'_>,
+) {
+  use crate::material::ids as material_ids;
+  use crate::pixel::{Pixel, PixelFlags};
+
+  let void = Pixel::new(material_ids::VOID, crate::coords::ColorIndex(0));
+
+  for &(pos, _, _) in written_positions {
+    let Some(existing) = world.get_pixel(pos) else {
+      continue;
+    };
+
+    // Only clear if still marked as body pixel
+    if !existing.flags.contains(PixelFlags::PIXEL_BODY) {
+      continue;
+    }
+
+    world.set_pixel(pos, void, debug_gizmos);
+  }
 }
 
 /// Handles the case where a pixel body has a single connected component.
@@ -242,7 +271,8 @@ fn spawn_fragment_entities(
       .with_rotation(ctx.parent_rotation);
     let frag_global = GlobalTransform::from(frag_transform);
 
-    super::blit::blit_single_body_no_displacement(
+    // Blit fragment and track written positions for erasure detection
+    let written_positions = super::blit::blit_single_body_no_displacement_tracked(
       ctx.world,
       &fragment.body,
       &frag_global,
@@ -254,10 +284,12 @@ fn spawn_fragment_entities(
       fragment.body,
       LastBlitTransform {
         transform: Some(frag_global),
+        written_positions,
       },
       frag_transform,
       fragment.id,
       Persistable,
+      Stabilizing::default(),
     ));
 
     #[cfg(feature = "avian2d")]
@@ -328,7 +360,6 @@ pub fn split_pixel_bodies(
           &mut persistence_tasks,
           &mut world,
           entity,
-          body,
           body_id,
           blitted,
           gizmos.get(),

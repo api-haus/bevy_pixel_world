@@ -7,6 +7,7 @@
 use bevy::prelude::*;
 
 use super::PixelBody;
+use crate::collision::AwaitingCollision;
 use crate::coords::{WorldPos, WorldRect};
 
 /// Maps a solid body pixel to its world position and local coordinates.
@@ -63,14 +64,20 @@ use crate::material::{Materials, PhysicsState, ids as material_ids};
 use crate::pixel::{Pixel, PixelFlags};
 use crate::world::PixelWorld;
 
-/// Stores the transform used during the last blit operation.
+/// Stores the transform and positions from the last blit operation.
 ///
 /// This allows the clear system to remove pixels from the correct positions
-/// even after physics has moved the body.
+/// even after physics has moved the body. The written_positions list ensures
+/// bodies only clear pixels they actually wrote, preventing same-material
+/// bodies from clearing each other's pixels.
 #[derive(Component, Default)]
 pub struct LastBlitTransform {
   /// The affine transform used during the last blit.
   pub transform: Option<GlobalTransform>,
+  /// Positions that were successfully written during the last blit.
+  /// Each entry is (world_pos, local_x, local_y) to allow mapping back to
+  /// the body's shape mask during readback.
+  pub written_positions: Vec<(WorldPos, u32, u32)>,
 }
 
 /// Clears and blits all pixel bodies with proper per-body displacement.
@@ -84,12 +91,15 @@ pub struct LastBlitTransform {
 pub fn update_pixel_bodies(
   mut commands: Commands,
   mut worlds: Query<&mut PixelWorld>,
-  mut bodies: Query<(
-    Entity,
-    &PixelBody,
-    &GlobalTransform,
-    Option<&mut LastBlitTransform>,
-  )>,
+  mut bodies: Query<
+    (
+      Entity,
+      &PixelBody,
+      &GlobalTransform,
+      Option<&mut LastBlitTransform>,
+    ),
+    Without<AwaitingCollision>,
+  >,
   materials: Res<Materials>,
   gizmos: GizmosParam,
 ) {
@@ -101,21 +111,18 @@ pub fn update_pixel_bodies(
     // Per-body displacement tracking: cleared positions become displacement targets
     let mut displacement_targets = Vec::new();
 
-    // Clear at old position (if we have a previous transform)
-    if let Some(ref bt) = blitted
-      && let Some(old_transform) = &bt.transform
-    {
-      clear_single_body(
+    // Clear at old position using tracked written positions
+    if let Some(ref bt) = blitted {
+      clear_by_written_positions(
         &mut world,
-        body,
-        old_transform,
+        &bt.written_positions,
         &mut displacement_targets,
         gizmos.get(),
       );
     }
 
-    // Blit at new position, using cleared positions as displacement targets
-    blit_single_body(
+    // Blit at new position, tracking which positions were actually written
+    let written_positions = blit_single_body_tracked(
       &mut world,
       body,
       transform,
@@ -124,14 +131,16 @@ pub fn update_pixel_bodies(
       gizmos.get(),
     );
 
-    // Update LastBlitTransform
+    // Update LastBlitTransform with new positions
     match blitted {
       Some(mut bt) => {
         bt.transform = Some(*transform);
+        bt.written_positions = written_positions;
       }
       None => {
         commands.entity(entity).insert(LastBlitTransform {
           transform: Some(*transform),
+          written_positions,
         });
       }
     }
@@ -239,12 +248,112 @@ pub(super) fn blit_single_body(
 
   // Apply displacement and blit
   for (pos, pixel) in pixels_to_blit {
+    // Don't overwrite another body's pixel - this prevents overlapping bodies
+    // from erasing each other's pixels during the blit phase.
+    if let Some(existing) = world.get_pixel(pos)
+      && existing.flags.contains(PixelFlags::PIXEL_BODY)
+    {
+      continue;
+    }
+
     try_displace_fluid(world, pos, displacement_targets, materials, debug_gizmos);
 
     let mut pixel_with_flag = pixel;
     pixel_with_flag.flags.insert(PixelFlags::PIXEL_BODY);
     world.set_pixel(pos, pixel_with_flag, debug_gizmos);
   }
+}
+
+/// Writes a single pixel body and returns the positions that were written.
+///
+/// This tracked variant is used by update_pixel_bodies to know exactly which
+/// positions to clear on the next frame, preventing same-material bodies from
+/// accidentally clearing each other's pixels.
+fn blit_single_body_tracked(
+  world: &mut PixelWorld,
+  body: &PixelBody,
+  transform: &GlobalTransform,
+  displacement_targets: &mut Vec<WorldPos>,
+  materials: &Materials,
+  debug_gizmos: crate::debug_shim::DebugGizmos<'_>,
+) -> Vec<(WorldPos, u32, u32)> {
+  let mut written_positions = Vec::new();
+  let mut pixels_to_blit = Vec::new();
+
+  for_each_body_pixel(body, transform, |mapping| {
+    if let Some(pixel) = body.get_pixel(mapping.local_x, mapping.local_y) {
+      pixels_to_blit.push((mapping.world_pos, mapping.local_x, mapping.local_y, *pixel));
+    }
+  });
+
+  for (pos, lx, ly, pixel) in pixels_to_blit {
+    // Don't overwrite another body's pixel
+    if let Some(existing) = world.get_pixel(pos)
+      && existing.flags.contains(PixelFlags::PIXEL_BODY)
+    {
+      continue;
+    }
+
+    try_displace_fluid(world, pos, displacement_targets, materials, debug_gizmos);
+
+    let mut pixel_with_flag = pixel;
+    pixel_with_flag.flags.insert(PixelFlags::PIXEL_BODY);
+    world.set_pixel(pos, pixel_with_flag, debug_gizmos);
+    written_positions.push((pos, lx, ly));
+  }
+
+  written_positions
+}
+
+/// Clears pixels at the exact positions that were written during the last blit.
+///
+/// This ensures bodies only clear their own pixels, preventing same-material
+/// bodies from clearing each other's pixels.
+fn clear_by_written_positions(
+  world: &mut PixelWorld,
+  written_positions: &[(WorldPos, u32, u32)],
+  cleared_positions: &mut Vec<WorldPos>,
+  debug_gizmos: crate::debug_shim::DebugGizmos<'_>,
+) {
+  let void = Pixel::new(material_ids::VOID, crate::coords::ColorIndex(0));
+
+  for &(pos, _, _) in written_positions {
+    let Some(existing) = world.get_pixel(pos) else {
+      continue;
+    };
+
+    // Only clear if still marked as body pixel
+    if !existing.flags.contains(PixelFlags::PIXEL_BODY) {
+      continue;
+    }
+
+    cleared_positions.push(pos);
+    world.set_pixel(pos, void, debug_gizmos);
+  }
+}
+
+/// Detects destroyed pixels using the tracked written positions.
+///
+/// Only checks positions that were actually written by this body, returning
+/// local coordinates for shape mask updates.
+pub fn detect_destroyed_from_written(
+  world: &PixelWorld,
+  written_positions: &[(WorldPos, u32, u32)],
+) -> Vec<(u32, u32)> {
+  let mut destroyed = Vec::new();
+
+  for &(pos, lx, ly) in written_positions {
+    let is_destroyed = match world.get_pixel(pos) {
+      Some(pixel) => pixel.is_void() || !pixel.flags.contains(PixelFlags::PIXEL_BODY),
+      None => true,
+    };
+
+    if is_destroyed {
+      destroyed.push((lx, ly));
+    }
+  }
+
+  destroyed
 }
 
 /// Writes a single pixel body without displacement.
@@ -257,6 +366,13 @@ pub(super) fn blit_single_body_no_displacement(
   debug_gizmos: crate::debug_shim::DebugGizmos<'_>,
 ) {
   for_each_body_pixel(body, transform, |mapping| {
+    // Don't overwrite another body's pixel.
+    if let Some(existing) = world.get_pixel(mapping.world_pos)
+      && existing.flags.contains(PixelFlags::PIXEL_BODY)
+    {
+      return;
+    }
+
     let Some(pixel) = body.get_pixel(mapping.local_x, mapping.local_y) else {
       return;
     };
@@ -265,6 +381,40 @@ pub(super) fn blit_single_body_no_displacement(
     pixel_with_flag.flags.insert(PixelFlags::PIXEL_BODY);
     world.set_pixel(mapping.world_pos, pixel_with_flag, debug_gizmos);
   });
+}
+
+/// Writes a single pixel body without displacement and returns written
+/// positions.
+///
+/// Use this variant when you need to track where pixels were written but don't
+/// need displacement (e.g., fragment spawning).
+pub(super) fn blit_single_body_no_displacement_tracked(
+  world: &mut PixelWorld,
+  body: &PixelBody,
+  transform: &GlobalTransform,
+  debug_gizmos: crate::debug_shim::DebugGizmos<'_>,
+) -> Vec<(WorldPos, u32, u32)> {
+  let mut written_positions = Vec::new();
+
+  for_each_body_pixel(body, transform, |mapping| {
+    // Don't overwrite another body's pixel.
+    if let Some(existing) = world.get_pixel(mapping.world_pos)
+      && existing.flags.contains(PixelFlags::PIXEL_BODY)
+    {
+      return;
+    }
+
+    let Some(pixel) = body.get_pixel(mapping.local_x, mapping.local_y) else {
+      return;
+    };
+
+    let mut pixel_with_flag = *pixel;
+    pixel_with_flag.flags.insert(PixelFlags::PIXEL_BODY);
+    world.set_pixel(mapping.world_pos, pixel_with_flag, debug_gizmos);
+    written_positions.push((mapping.world_pos, mapping.local_x, mapping.local_y));
+  });
+
+  written_positions
 }
 
 /// Clears a single pixel body from the world canvas using inverse transform.
@@ -293,6 +443,16 @@ pub(super) fn clear_single_body(
       return;
     }
 
+    // Verify this pixel belongs to THIS body by checking material matches.
+    // This prevents accidentally clearing another body's pixel when bodies
+    // overlap.
+    let Some(body_pixel) = body.get_pixel(mapping.local_x, mapping.local_y) else {
+      return;
+    };
+    if existing.material != body_pixel.material {
+      return;
+    }
+
     cleared_positions.push(mapping.world_pos);
     world.set_pixel(mapping.world_pos, void, debug_gizmos);
   });
@@ -314,6 +474,14 @@ pub(super) fn clear_single_body_no_tracking(
       return;
     };
     if !existing.flags.contains(PixelFlags::PIXEL_BODY) {
+      return;
+    }
+
+    // Verify this pixel belongs to THIS body by checking material matches.
+    let Some(body_pixel) = body.get_pixel(mapping.local_x, mapping.local_y) else {
+      return;
+    };
+    if existing.material != body_pixel.material {
       return;
     }
 

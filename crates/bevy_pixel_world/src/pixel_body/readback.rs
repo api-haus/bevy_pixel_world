@@ -6,9 +6,9 @@
 
 use bevy::prelude::*;
 
-use super::blit::for_each_body_pixel;
+use super::blit::detect_destroyed_from_written;
 use super::{LastBlitTransform, NeedsColliderRegen, PixelBody, ShapeMaskModified};
-use crate::pixel::PixelFlags;
+use crate::collision::Stabilizing;
 use crate::world::PixelWorld;
 
 /// Stores pixels detected as destroyed.
@@ -22,36 +22,42 @@ pub struct DestroyedPixels(pub Vec<(u32, u32)>);
 ///
 /// Runs at the start of the pixel body cycle, checking if any blitted pixels
 /// from the previous frame have been modified (void or missing PIXEL_BODY
-/// flag). This must run BEFORE clear_pixel_bodies overwrites the evidence.
+/// flag). This must run BEFORE update_pixel_bodies to prevent re-blitting
+/// destroyed pixels.
+///
+/// IMPORTANT: This system immediately updates the shape_mask for destroyed
+/// pixels. This prevents `update_pixel_bodies` from re-blitting pixels that
+/// were just erased by the brush, which would create ghost pixels.
+///
+/// NOTE: Unlike readback_pixel_bodies, this system processes ALL bodies
+/// including those with Stabilizing marker. External erasure (brush) should
+/// work on any body regardless of its physics settling state.
 pub fn detect_external_erasure(
   mut commands: Commands,
   worlds: Query<&PixelWorld>,
-  bodies: Query<(
-    Entity,
-    &PixelBody,
-    &LastBlitTransform,
-    Option<&DestroyedPixels>,
-  )>,
+  mut bodies: Query<(Entity, &mut PixelBody, &LastBlitTransform)>,
 ) {
   let Ok(world) = worlds.single() else {
     return;
   };
 
-  for (entity, body, blitted, existing_destroyed) in bodies.iter() {
-    let Some(transform) = &blitted.transform else {
+  for (entity, mut body, blitted) in bodies.iter_mut() {
+    if blitted.written_positions.is_empty() {
       continue;
-    };
+    }
 
-    let destroyed_pixels = detect_destroyed_pixels(body, transform, world);
+    let destroyed_pixels = detect_destroyed_from_written(world, &blitted.written_positions);
 
     if !destroyed_pixels.is_empty() {
-      // Merge with any existing destroyed pixels
-      let mut all_destroyed = existing_destroyed.map(|d| d.0.clone()).unwrap_or_default();
-      all_destroyed.extend(destroyed_pixels);
+      // Immediately update shape_mask to prevent re-blitting in update_pixel_bodies
+      for &(lx, ly) in &destroyed_pixels {
+        body.set_solid(lx, ly, false);
+      }
 
+      // Mark for collider regen and potential splitting
       commands
         .entity(entity)
-        .insert(DestroyedPixels(all_destroyed));
+        .insert((ShapeMaskModified, NeedsColliderRegen));
     }
   }
 }
@@ -64,23 +70,18 @@ pub fn detect_external_erasure(
 pub fn readback_pixel_bodies(
   mut commands: Commands,
   worlds: Query<&PixelWorld>,
-  bodies: Query<(
-    Entity,
-    &PixelBody,
-    &LastBlitTransform,
-    Option<&DestroyedPixels>,
-  )>,
+  bodies: Query<(Entity, &LastBlitTransform, Option<&DestroyedPixels>), Without<Stabilizing>>,
 ) {
   let Ok(world) = worlds.single() else {
     return;
   };
 
-  for (entity, body, blitted, existing_destroyed) in bodies.iter() {
-    let Some(transform) = &blitted.transform else {
+  for (entity, blitted, existing_destroyed) in bodies.iter() {
+    if blitted.written_positions.is_empty() {
       continue;
-    };
+    }
 
-    let destroyed_pixels = detect_destroyed_pixels(body, transform, world);
+    let destroyed_pixels = detect_destroyed_from_written(world, &blitted.written_positions);
 
     if !destroyed_pixels.is_empty() {
       // Merge with any existing destroyed pixels (from external erasure)
@@ -98,28 +99,6 @@ pub fn readback_pixel_bodies(
         .insert(DestroyedPixels(all_destroyed));
     }
   }
-}
-
-/// Core detection logic shared by external erasure and CA readback.
-fn detect_destroyed_pixels(
-  body: &PixelBody,
-  transform: &GlobalTransform,
-  world: &PixelWorld,
-) -> Vec<(u32, u32)> {
-  let mut destroyed = Vec::new();
-
-  for_each_body_pixel(body, transform, |mapping| {
-    let is_destroyed = match world.get_pixel(mapping.world_pos) {
-      Some(pixel) => pixel.is_void() || !pixel.flags.contains(PixelFlags::PIXEL_BODY),
-      None => true,
-    };
-
-    if is_destroyed {
-      destroyed.push((mapping.local_x, mapping.local_y));
-    }
-  });
-
-  destroyed
 }
 
 /// Applies destroyed pixel changes to shape masks.
