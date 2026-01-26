@@ -143,7 +143,7 @@ fn flush_chunk_saves(
     );
 
     if let Err(e) = write_chunk_data(&save.path, save.data_write_pos, &task.data) {
-      eprintln!("Warning: failed to save chunk {:?}: {}", task.pos, e);
+      warn!("Failed to save chunk {:?}: {}", task.pos, e);
       continue;
     }
 
@@ -161,10 +161,7 @@ fn flush_body_saves(
 ) {
   for task in queue.drain(..) {
     if let Err(e) = save.save_body(&task.record) {
-      eprintln!(
-        "Warning: failed to save pixel body {}: {}",
-        task.record.stable_id, e
-      );
+      warn!("Failed to save pixel body {}: {}", task.record.stable_id, e);
     }
   }
 }
@@ -183,7 +180,7 @@ fn flush_body_removes(
 fn try_flush_to_disk(save: &mut crate::persistence::WorldSave) {
   if save.dirty {
     if let Err(e) = save.flush() {
-      eprintln!("Warning: failed to flush save: {}", e);
+      warn!("Failed to flush save: {}", e);
     }
   }
 }
@@ -219,7 +216,7 @@ pub(crate) fn flush_persistence_queue(
     let new_path = persistence_control.save_path(&new_save_name);
 
     let Ok(mut save) = save_resource.save.write() else {
-      eprintln!("Warning: failed to acquire save lock for copy");
+      warn!("Failed to acquire save lock for copy");
       discard_queued_operations(&mut persistence_tasks);
       return;
     };
@@ -235,14 +232,14 @@ pub(crate) fn flush_persistence_queue(
         persistence_control.current_save = new_save_name;
       }
       Err(e) => {
-        eprintln!("Warning: failed to copy save to new location: {}", e);
+        warn!("Failed to copy save to new location: {}", e);
       }
     }
   }
 
   // Acquire lock and flush all queued operations
   let Ok(mut save) = save_resource.save.write() else {
-    eprintln!("Warning: failed to acquire save lock");
+    warn!("Failed to acquire save lock");
     discard_queued_operations(&mut persistence_tasks);
     return;
   };

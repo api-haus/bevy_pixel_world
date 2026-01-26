@@ -272,7 +272,7 @@ impl PixelWorld {
         self.pool.activate(pos, idx);
         to_spawn.push((pos, idx));
       } else {
-        eprintln!("Pool exhausted at {:?}", pos);
+        warn!("Pool exhausted at {:?}", pos);
       }
     }
 
@@ -330,7 +330,7 @@ impl PixelWorld {
         self.pool.activate(pos, idx);
         to_spawn.push((pos, idx));
       } else {
-        eprintln!("Pool exhausted at {:?}", pos);
+        warn!("Pool exhausted at {:?}", pos);
       }
     }
 

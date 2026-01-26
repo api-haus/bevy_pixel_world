@@ -180,10 +180,7 @@ impl WorldSave {
       match self.load_body_record(entry) {
         Ok(record) => records.push(record),
         Err(e) => {
-          eprintln!(
-            "Warning: failed to load pixel body {}: {}",
-            entry.stable_id, e
-          );
+          warn!("Failed to load pixel body {}: {}", entry.stable_id, e);
         }
       }
     }
@@ -261,23 +258,20 @@ impl WorldSave {
     let mut file = match File::open(&self.path) {
       Ok(f) => BufReader::new(f),
       Err(e) => {
-        eprintln!(
-          "Warning: failed to open save file for chunk {:?}: {}",
-          pos, e
-        );
+        warn!("Failed to open save file for chunk {:?}: {}", pos, e);
         return None;
       }
     };
 
     if let Err(e) = file.seek(SeekFrom::Start(entry.data_offset)) {
-      eprintln!("Warning: failed to seek to chunk {:?}: {}", pos, e);
+      warn!("Failed to seek to chunk {:?}: {}", pos, e);
       return None;
     }
 
     // Read compressed data
     let mut data = vec![0u8; entry.data_size as usize];
     if let Err(e) = file.read_exact(&mut data) {
-      eprintln!("Warning: failed to read chunk {:?}: {}", pos, e);
+      warn!("Failed to read chunk {:?}: {}", pos, e);
       return None;
     }
 

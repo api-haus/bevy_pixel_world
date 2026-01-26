@@ -46,6 +46,7 @@ Documentation is organized into thematic sections:
 
 | Document | Purpose |
 |----------|---------|
+| [Systems Flow](systems-flow.md) | Complete frame update loop, system ordering, and data flow |
 | [Glossary](glossary.md) | Canonical definitions of technical terms |
 
 ### Foundational

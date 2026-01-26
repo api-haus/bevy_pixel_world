@@ -10,6 +10,7 @@ pub(crate) mod sdf;
 
 use std::sync::Arc;
 
+use bevy::log::warn;
 pub use noise::{MaterialSeeder, NoiseSeeder};
 
 use crate::persistence::WorldSave;
@@ -76,8 +77,8 @@ impl<S: ChunkSeeder> ChunkSeeder for PersistenceSeeder<S> {
         }
 
         if let Err(e) = loaded_chunk.apply_to(chunk) {
-          eprintln!(
-            "Warning: failed to apply saved chunk at {:?}: {}. Regenerating.",
+          warn!(
+            "Failed to apply saved chunk at {:?}: {}. Regenerating.",
             pos, e
           );
           self.inner.seed(pos, chunk);

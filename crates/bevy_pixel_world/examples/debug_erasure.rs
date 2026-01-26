@@ -850,7 +850,7 @@ fn diagnostic_ui(
     &GlobalTransform,
     Option<&LastBlitTransform>,
   )>,
-  worlds: Query<&PixelWorld>,
+  worlds: Query<&mut PixelWorld>,
 ) {
   let Ok(ctx) = contexts.ctx_mut() else {
     return;
@@ -859,7 +859,7 @@ fn diagnostic_ui(
   // Collect body diagnostics
   let body_count = bodies.iter().count();
   let total_solid: usize = bodies.iter().map(|(_, b, _, _)| b.solid_count()).sum();
-  let world_body_pixels = count_body_pixels_readonly(&worlds);
+  let world_body_pixels = count_body_pixels(&worlds);
 
   egui::SidePanel::left("debug_panel")
     .resizable(true)
@@ -970,23 +970,4 @@ fn diagnostic_ui(
           }
         });
     });
-}
-
-/// Read-only version for UI
-fn count_body_pixels_readonly(worlds: &Query<&PixelWorld>) -> usize {
-  let Ok(world) = worlds.single() else {
-    return 0;
-  };
-
-  let mut count = 0;
-  for y in (PLATFORM_Y - 10)..(SPAWN_AREA.3 as i64 + CLEAR_MARGIN) {
-    for x in (SPAWN_AREA.0 as i64 - CLEAR_MARGIN)..(SPAWN_AREA.2 as i64 + CLEAR_MARGIN) {
-      if let Some(pixel) = world.get_pixel(WorldPos::new(x, y)) {
-        if pixel.flags.contains(PixelFlags::PIXEL_BODY) {
-          count += 1;
-        }
-      }
-    }
-  }
-  count
 }

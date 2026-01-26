@@ -6,6 +6,8 @@
 use std::collections::HashMap;
 use std::io::{self, Read, Write};
 
+use bevy::log::warn;
+
 use super::format::PageTableEntry;
 use crate::coords::ChunkPos;
 
@@ -95,8 +97,8 @@ impl ChunkIndex {
 
       // Validate checksum, skip corrupted entries
       if !entry.validate_checksum() {
-        eprintln!(
-          "Warning: skipping corrupted page table entry at ({}, {})",
+        warn!(
+          "Skipping corrupted page table entry at ({}, {})",
           entry.chunk_x, entry.chunk_y
         );
         continue;
