@@ -49,8 +49,12 @@ required-features = ["headless"]
 name = "spawn_pixel_body_e2e"
 required-features = ["headless"]
 
+[[test]]
+name = "submergence_e2e"
+required-features = ["headless", "submergence", "avian2d"]
+
 [features]
-default = ["dev"]
+default = ["dev", "submergence", "buoyancy"]
 dev = ["bevy/dynamic_linking", "visual_debug", "diagnostics"]
 headless = []
 visual_debug = []

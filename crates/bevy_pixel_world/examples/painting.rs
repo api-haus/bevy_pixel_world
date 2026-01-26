@@ -38,8 +38,8 @@ use bevy_pixel_world::visual_debug::{
   SettingsPersistence, VisualDebugSettings, visual_debug_checkboxes,
 };
 use bevy_pixel_world::{
-  ColorIndex, MaterialId, MaterialSeeder, Materials, PersistenceControl, Pixel, PixelFlags,
-  PixelWorld, PixelWorldPlugin, SpawnPixelWorld, StreamingCamera, WorldPos, WorldRect,
+  ColorIndex, MaterialId, MaterialSeeder, Materials, PersistenceControl, Pixel, PixelBody,
+  PixelFlags, PixelWorld, PixelWorldPlugin, SpawnPixelWorld, StreamingCamera, WorldPos, WorldRect,
   collision::CollisionQueryPoint, material_ids,
 };
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
@@ -263,9 +263,10 @@ fn ui_system(
   materials: Res<Materials>,
   mut ui_state: ResMut<UiState>,
   worlds: Query<&PixelWorld>,
+  body_query: Query<Entity, With<PixelBody>>,
+  #[cfg(feature = "submergence")] submersion_query: Query<&SubmersionState>,
   #[cfg(feature = "visual_debug")] mut settings: ResMut<VisualDebugSettings>,
   #[cfg(feature = "visual_debug")] mut persistence: ResMut<SettingsPersistence>,
-  #[cfg(feature = "submergence")] submersion_query: Query<(Entity, &SubmersionState)>,
 ) {
   let Ok(ctx) = contexts.ctx_mut() else {
     return;
@@ -425,39 +426,33 @@ fn ui_system(
           }
         });
 
-      // Submergence section (feature-gated)
-      #[cfg(feature = "submergence")]
-      egui::CollapsingHeader::new("Submergence")
+      // Bodies debug section
+      egui::CollapsingHeader::new("Bodies")
         .default_open(true)
         .show(ui, |ui| {
-          let mut bodies: Vec<_> = submersion_query.iter().collect();
+          let mut bodies: Vec<_> = body_query.iter().collect();
           if bodies.is_empty() {
             ui.label("No pixel bodies");
           } else {
-            bodies.sort_by_key(|(e, _)| e.index());
-            for (entity, state) in bodies.iter().take(5) {
-              let status = if state.is_submerged {
-                "SUBMERGED"
-              } else {
-                "surface"
-              };
-              let color = if state.is_submerged {
-                egui::Color32::LIGHT_BLUE
-              } else {
-                egui::Color32::GRAY
-              };
-              ui.colored_label(
-                color,
-                format!(
-                  "Body {}: {} ({:.0}%)",
-                  entity.index(),
-                  status,
-                  state.submerged_fraction * 100.0
-                ),
-              );
-            }
-            if bodies.len() > 5 {
-              ui.label(format!("... and {} more", bodies.len() - 5));
+            bodies.sort_by_key(|e| e.index());
+            for entity in &bodies {
+              #[cfg(feature = "submergence")]
+              {
+                let (status, color) = if let Ok(state) = submersion_query.get(*entity) {
+                  if state.is_submerged {
+                    ("submerged", egui::Color32::LIGHT_BLUE)
+                  } else {
+                    ("not submerged", egui::Color32::GRAY)
+                  }
+                } else {
+                  ("no state", egui::Color32::DARK_GRAY)
+                };
+                ui.colored_label(color, format!("Body {}: {}", entity.index(), status));
+              }
+              #[cfg(not(feature = "submergence"))]
+              {
+                ui.label(format!("Body {}", entity.index()));
+              }
             }
           }
         });

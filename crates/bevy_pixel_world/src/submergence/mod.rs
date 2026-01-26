@@ -66,6 +66,10 @@ pub struct SubmersionState {
   pub submerged_center: Vec2,
   /// Previous frame's submerged state, for edge detection.
   previous_submerged: bool,
+  /// Debug: number of sample points that hit liquid.
+  pub debug_liquid_samples: u32,
+  /// Debug: total number of sample points that hit solid body pixels.
+  pub debug_total_samples: u32,
 }
 
 impl SubmersionState {

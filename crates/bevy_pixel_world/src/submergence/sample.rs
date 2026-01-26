@@ -8,6 +8,7 @@ use bevy::prelude::*;
 use super::{Submergent, SubmersionConfig, SubmersionState};
 use crate::coords::{WorldPos, WorldRect};
 use crate::material::{Materials, PhysicsState};
+use crate::pixel::{Pixel, PixelFlags};
 use crate::pixel_body::{PixelBody, compute_world_aabb};
 use crate::world::PixelWorld;
 
@@ -18,7 +19,21 @@ struct GridSampleResult {
   liquid_center_sum: Vec2,
 }
 
+/// Checks if a pixel is liquid (not a body pixel and has liquid physics state).
+fn is_liquid_pixel(pixel: &Pixel, materials: &Materials) -> bool {
+  // Body pixels can't be liquid for submersion purposes
+  if pixel.flags.contains(PixelFlags::PIXEL_BODY) {
+    return false;
+  }
+  let material = materials.get(pixel.material);
+  material.state == PhysicsState::Liquid
+}
+
 /// Samples a body's AABB grid for liquid pixels.
+///
+/// For each sample point inside the body, checks adjacent pixels (below and
+/// to the sides) for liquid. This handles the case where body pixels have
+/// replaced the underlying terrain.
 fn sample_body_grid(
   world: &PixelWorld,
   materials: &Materials,
@@ -61,15 +76,19 @@ fn sample_body_grid(
 
       result.total_samples += 1;
 
-      // Query world pixel at this position
-      let sample_pos = WorldPos::new(sample_x as i64, sample_y as i64);
-      let Some(pixel) = world.get_pixel(sample_pos) else {
-        continue;
-      };
+      // Check adjacent pixels for liquid (the body pixel itself won't be liquid)
+      let sx = sample_x as i64;
+      let sy = sample_y as i64;
+      let adjacent_offsets = [(0, -1), (0, 1), (-1, 0), (1, 0)]; // below, above, left, right
 
-      // Check if it's a liquid
-      let material = materials.get(pixel.material);
-      if material.state == PhysicsState::Liquid {
+      let is_adjacent_liquid = adjacent_offsets.iter().any(|(dx, dy)| {
+        let pos = WorldPos::new(sx + dx, sy + dy);
+        world
+          .get_pixel(pos)
+          .is_some_and(|p| is_liquid_pixel(p, materials))
+      });
+
+      if is_adjacent_liquid {
         result.liquid_samples += 1;
         result.liquid_center_sum += Vec2::new(sample_x, sample_y);
       }
@@ -127,6 +146,8 @@ pub fn sample_submersion(
         s.submerged_fraction = submerged_fraction;
         s.submerged_center = submerged_center;
         s.is_submerged = is_submerged;
+        s.debug_liquid_samples = result.liquid_samples;
+        s.debug_total_samples = result.total_samples;
       }
       None => {
         commands.entity(entity).insert(SubmersionState {
@@ -134,6 +155,8 @@ pub fn sample_submersion(
           submerged_fraction,
           submerged_center,
           previous_submerged: false,
+          debug_liquid_samples: result.liquid_samples,
+          debug_total_samples: result.total_samples,
         });
       }
     }
