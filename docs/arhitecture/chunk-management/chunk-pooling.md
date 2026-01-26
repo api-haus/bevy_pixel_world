@@ -65,8 +65,12 @@ stateDiagram-v2
 
 - Camera has moved, chunk is no longer in active region
 - If modified, optionally persisted to disk
-- Buffer contents cleared (zeroed or marked invalid)
+- **Buffer contents cleared** - All pixels filled with `Pixel::VOID`
 - Returns to pool for reuse
+
+**Critical**: Pixel data must be explicitly cleared, not just metadata. Stale pixel flags (especially `PIXEL_BODY`)
+persisting from previous chunk positions cause data corruption when slots are reused—pixels appear duplicated across
+unrelated world positions. The `ChunkSlot::release()` method fills all pixels with `Pixel::VOID` to prevent this.
 
 ## Buffer Reuse Pattern
 
@@ -84,9 +88,12 @@ flowchart LR
 
 The buffer is never deallocated. Instead:
 
-1. **Clear** - Zero the pixel buffer or mark as uninitialized
+1. **Clear** - Fill the pixel buffer with `Pixel::VOID` (not just metadata reset)
 2. **Reassign** - Update the chunk's world position
 3. **Refill** - Chunk seeder writes new data into the same buffer
+
+Note: Even though seeding overwrites pixel data, clearing is still required because seeding may not overwrite all pixels
+immediately (e.g., async loading), and flags like `PIXEL_BODY` from the previous chunk position could cause corruption.
 
 ## Benefits
 

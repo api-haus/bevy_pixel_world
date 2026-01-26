@@ -328,6 +328,8 @@ dispatch_collision_tasks
 - Fragments are blitted immediately on split (no visual gap)
 - Connected components use 4-connectivity (orthogonal only)
 - Collider generation may return `None` for empty/tiny shapes
+- `PIXEL_BODY` flags exist only where an active entity has blitted pixels
+- Chunk slots are cleared to `Pixel::VOID` on release (no stale flags)
 
 ## Edge Cases
 
@@ -338,6 +340,20 @@ dispatch_collision_tasks
 | Fragment too small | Skip if `generate_collider()` returns `None` |
 | Fast-moving body | Clear removes old position, blit writes new |
 | Cross-chunk pixels | `PixelWorld` handles cross-chunk reads transparently |
+| Chunk repositioning | Chunk slots cleared to `Pixel::VOID` on release (see below) |
+
+### Chunk Repositioning and PIXEL_BODY Flags
+
+When chunks are recycled (camera moves away and back), the chunk slot's pixel data must be fully cleared. The
+`PIXEL_BODY` flag marks pixels as belonging to a pixel body entity. If stale flags persist in recycled chunk slots:
+
+1. Camera moves away → chunk released to pool (body saved, entity despawned)
+2. Camera moves back → slot reused for same world position
+3. Seeding loads fresh pixel data for terrain
+4. **Bug if not cleared**: Old `PIXEL_BODY` flags could persist, appearing as "ghost" pixels
+
+The fix: `ChunkSlot::release()` fills all pixels with `Pixel::VOID` before returning to the pool, ensuring no stale
+flags survive repositioning. See [Chunk Pooling](../chunk-management/chunk-pooling.md) for details.
 
 ## Related Documentation
 
