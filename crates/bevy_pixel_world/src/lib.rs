@@ -62,7 +62,7 @@ pub use world::control::{
   PersistenceComplete, PersistenceControl, PersistenceFuture, PersistenceHandle,
   RequestPersistence, SimulationState,
 };
-pub use world::plugin::{LoadedChunks, StreamingCamera, UnloadingChunks};
+pub use world::plugin::{SeededChunks, StreamingCamera, UnloadingChunks};
 pub use world::{PixelWorld, PixelWorldBundle, PixelWorldConfig, SpawnPixelWorld};
 
 /// Configuration for chunk persistence.

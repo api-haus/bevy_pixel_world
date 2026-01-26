@@ -6,10 +6,12 @@
 //! - Provides world-coordinate pixel modification API
 //! - Uses async background seeding with proper state tracking
 
+mod body_loader;
 mod bundle;
 pub mod control;
-pub(crate) mod persistence;
+pub(crate) mod persistence_systems;
 pub mod plugin;
+mod pool;
 pub(crate) mod slot;
 mod streaming;
 
@@ -18,11 +20,12 @@ use std::sync::Arc;
 
 use bevy::prelude::*;
 pub use bundle::{PixelWorldBundle, SpawnPixelWorld};
+use pool::ChunkPool;
 pub(crate) use slot::{ChunkSlot, SlotIndex};
 use streaming::visible_positions;
 pub(crate) use streaming::{ChunkSaveData, StreamingDelta};
 
-use crate::coords::{ChunkPos, POOL_SIZE, TilePos, WorldFragment, WorldPos, WorldRect};
+use crate::coords::{ChunkPos, TilePos, WorldFragment, WorldPos, WorldRect};
 use crate::debug_shim::{self, DebugGizmos};
 use crate::pixel::Pixel;
 use crate::primitives::Chunk;
@@ -54,10 +57,8 @@ impl Default for PixelWorldConfig {
 pub struct PixelWorld {
   /// Current center of the streaming window in chunk coordinates.
   center: ChunkPos,
-  /// Fixed array of chunk slots (pre-allocated memory).
-  slots: Vec<ChunkSlot>,
-  /// Maps active chunk positions to slot indices.
-  active: HashMap<ChunkPos, SlotIndex>,
+  /// Pool of chunk slots with position-to-index mapping.
+  pool: ChunkPool,
   /// Chunk seeder for generating initial data.
   seeder: Arc<dyn ChunkSeeder + Send + Sync>,
   /// Shared mesh for all chunk entities.
@@ -106,12 +107,9 @@ impl PixelWorld {
     config: PixelWorldConfig,
     seed: u64,
   ) -> Self {
-    let slots = (0..POOL_SIZE).map(|_| ChunkSlot::new()).collect();
-
     Self {
       center: ChunkPos::new(0, 0),
-      slots,
-      active: HashMap::new(),
+      pool: ChunkPool::new(),
       seeder,
       mesh,
       seed,
@@ -189,45 +187,33 @@ impl PixelWorld {
     visible_positions(self.center)
   }
 
-  /// Acquires a free slot from the pool.
-  ///
-  /// Returns None if all slots are in use.
-  fn acquire_slot(&mut self) -> Option<SlotIndex> {
-    for (i, slot) in self.slots.iter_mut().enumerate() {
-      if slot.is_free() {
-        return Some(SlotIndex(i));
-      }
-    }
-    None
-  }
-
   /// Gets a reference to a slot by index.
   pub(crate) fn slot(&self, index: SlotIndex) -> &ChunkSlot {
-    &self.slots[index.0]
+    self.pool.get(index)
   }
 
   /// Gets a mutable reference to a slot by index.
   pub(crate) fn slot_mut(&mut self, index: SlotIndex) -> &mut ChunkSlot {
-    &mut self.slots[index.0]
+    self.pool.get_mut(index)
   }
 
   /// Gets the slot index for an active chunk position.
   pub(crate) fn get_slot_index(&self, pos: ChunkPos) -> Option<SlotIndex> {
-    self.active.get(&pos).copied()
+    self.pool.index_for(pos)
   }
 
   /// Returns a mutable reference to chunk data at the given position.
   pub fn get_chunk_mut(&mut self, pos: ChunkPos) -> Option<&mut Chunk> {
     self
-      .active
-      .get(&pos)
-      .map(|&idx| &mut self.slots[idx.0].chunk)
+      .pool
+      .index_for(pos)
+      .map(|idx| &mut self.pool.get_mut(idx).chunk)
   }
 
   /// Marks a chunk as needing GPU upload.
   pub fn mark_dirty(&mut self, pos: ChunkPos) {
-    if let Some(&idx) = self.active.get(&pos) {
-      self.slots[idx.0].dirty = true;
+    if let Some(idx) = self.pool.index_for(pos) {
+      self.pool.get_mut(idx).dirty = true;
     }
   }
 
@@ -238,10 +224,10 @@ impl PixelWorld {
   /// to participate in simulation (e.g., displaced water).
   pub fn mark_pixel_sim_dirty(&mut self, pos: WorldPos) {
     let (chunk_pos, local_pos) = pos.to_chunk_and_local();
-    let Some(&idx) = self.active.get(&chunk_pos) else {
+    let Some(idx) = self.pool.index_for(chunk_pos) else {
       return;
     };
-    let slot = &mut self.slots[idx.0];
+    let slot = self.pool.get_mut(idx);
     if !slot.is_seeded() {
       return;
     }
@@ -252,44 +238,19 @@ impl PixelWorld {
 
   /// Returns an iterator over active chunk positions and their slot indices.
   pub(crate) fn active_chunks(&self) -> impl Iterator<Item = (ChunkPos, SlotIndex)> + '_ {
-    self.active.iter().map(|(&pos, &idx)| (pos, idx))
+    self.pool.iter_active()
   }
 
   /// Collects mutable references to all seeded chunks for parallel access.
   ///
-  /// # Safety
-  /// This method uses raw pointers to work around the borrow checker.
-  /// It is safe because:
-  /// - Each slot appears at most once in `self.active` (unique SlotIndex
-  ///   values)
-  /// - Slots are stored in a Vec with distinct indices
-  /// - The resulting mutable references are non-overlapping
+  /// Delegates to ChunkPool which encapsulates the unsafe pointer handling.
   pub(crate) fn collect_seeded_chunks(&mut self) -> HashMap<ChunkPos, &mut Chunk> {
-    let seeded_positions: Vec<_> = self
-      .active
-      .iter()
-      .filter_map(|(&pos, &idx)| {
-        if self.slots[idx.0].is_seeded() {
-          Some((pos, idx))
-        } else {
-          None
-        }
-      })
-      .collect();
-
-    let mut chunks: HashMap<ChunkPos, &mut Chunk> = HashMap::new();
-    for (pos, idx) in seeded_positions {
-      // SAFETY: seeded_positions contains unique SlotIndex values.
-      let chunk = &mut self.slots[idx.0].chunk;
-      let chunk_ptr = chunk as *mut Chunk;
-      chunks.insert(pos, unsafe { &mut *chunk_ptr });
-    }
-    chunks
+    self.pool.collect_seeded_mut()
   }
 
   /// Returns the number of active chunks.
   pub fn active_count(&self) -> usize {
-    self.active.len()
+    self.pool.active_count()
   }
 
   // === Streaming logic ===
@@ -306,9 +267,9 @@ impl PixelWorld {
 
     let mut to_spawn = Vec::new();
     for pos in positions {
-      if let Some(idx) = self.acquire_slot() {
-        self.slots[idx.0].initialize(pos);
-        self.active.insert(pos, idx);
+      if let Some(idx) = self.pool.acquire() {
+        self.pool.get_mut(idx).initialize(pos);
+        self.pool.activate(pos, idx);
         to_spawn.push((pos, idx));
       } else {
         eprintln!("Pool exhausted at {:?}", pos);
@@ -348,8 +309,8 @@ impl PixelWorld {
     let mut to_despawn = Vec::new();
     let mut to_save = Vec::new();
     for pos in old_set.difference(&new_set) {
-      if let Some(idx) = self.active.remove(pos) {
-        let slot = &mut self.slots[idx.0];
+      if let Some(idx) = self.pool.deactivate(pos) {
+        let slot = self.pool.get_mut(idx);
         let entity = slot.entity;
 
         // Clone pixel data for saving before release
@@ -370,9 +331,9 @@ impl PixelWorld {
     // Find chunks to spawn (in new but not old)
     let mut to_spawn = Vec::new();
     for pos in new_set.difference(&old_set) {
-      if let Some(idx) = self.acquire_slot() {
-        self.slots[idx.0].initialize(*pos);
-        self.active.insert(*pos, idx);
+      if let Some(idx) = self.pool.acquire() {
+        self.pool.get_mut(idx).initialize(*pos);
+        self.pool.activate(*pos, idx);
         to_spawn.push((*pos, idx));
       } else {
         eprintln!("Pool exhausted at {:?}", pos);
@@ -394,7 +355,7 @@ impl PixelWorld {
     #[cfg(not(feature = "headless"))] texture: Handle<Image>,
     #[cfg(not(feature = "headless"))] material: Handle<ChunkMaterial>,
   ) {
-    let slot = &mut self.slots[index.0];
+    let slot = self.pool.get_mut(index);
     slot.entity = Some(entity);
     #[cfg(not(feature = "headless"))]
     {
@@ -410,8 +371,8 @@ impl PixelWorld {
   /// Returns None if the chunk is not loaded or not yet seeded.
   pub fn get_pixel(&self, pos: WorldPos) -> Option<&Pixel> {
     let (chunk_pos, local_pos) = pos.to_chunk_and_local();
-    let idx = self.active.get(&chunk_pos)?;
-    let slot = &self.slots[idx.0];
+    let idx = self.pool.index_for(chunk_pos)?;
+    let slot = self.pool.get(idx);
     if !slot.is_seeded() {
       return None;
     }
@@ -424,8 +385,8 @@ impl PixelWorld {
   /// Does NOT mark the chunk as dirty - caller must do so.
   pub fn get_pixel_mut(&mut self, pos: WorldPos) -> Option<&mut Pixel> {
     let (chunk_pos, local_pos) = pos.to_chunk_and_local();
-    let idx = self.active.get(&chunk_pos)?;
-    let slot = &mut self.slots[idx.0];
+    let idx = self.pool.index_for(chunk_pos)?;
+    let slot = self.pool.get_mut(idx);
     if !slot.is_seeded() {
       return None;
     }
@@ -441,21 +402,21 @@ impl PixelWorld {
     let (chunk_b, local_b) = b.to_chunk_and_local();
 
     // Get slot indices for both chunks
-    let Some(&idx_a) = self.active.get(&chunk_a) else {
+    let Some(idx_a) = self.pool.index_for(chunk_a) else {
       return false;
     };
-    let Some(&idx_b) = self.active.get(&chunk_b) else {
+    let Some(idx_b) = self.pool.index_for(chunk_b) else {
       return false;
     };
 
     // Check both are seeded
-    if !self.slots[idx_a.0].is_seeded() || !self.slots[idx_b.0].is_seeded() {
+    if !self.pool.get(idx_a).is_seeded() || !self.pool.get(idx_b).is_seeded() {
       return false;
     }
 
     if chunk_a == chunk_b {
       // Same chunk - simple swap
-      let slot = &mut self.slots[idx_a.0];
+      let slot = self.pool.get_mut(idx_a);
       let (la, lb) = (
         (local_a.x as u32, local_a.y as u32),
         (local_b.x as u32, local_b.y as u32),
@@ -469,14 +430,7 @@ impl PixelWorld {
       slot.persisted = false;
     } else {
       // Different chunks - need to swap across
-      // SAFETY: idx_a != idx_b since chunk_a != chunk_b and active map is 1:1
-      let (slot_a, slot_b) = if idx_a.0 < idx_b.0 {
-        let (left, right) = self.slots.split_at_mut(idx_b.0);
-        (&mut left[idx_a.0], &mut right[0])
-      } else {
-        let (left, right) = self.slots.split_at_mut(idx_a.0);
-        (&mut right[0], &mut left[idx_b.0])
-      };
+      let (slot_a, slot_b) = self.pool.get_two_mut(idx_a, idx_b);
 
       let la = (local_a.x as u32, local_a.y as u32);
       let lb = (local_b.x as u32, local_b.y as u32);
@@ -501,10 +455,10 @@ impl PixelWorld {
   /// `visual-debug` feature is enabled. Pass `()` when disabled.
   pub fn set_pixel(&mut self, pos: WorldPos, pixel: Pixel, debug_gizmos: DebugGizmos<'_>) -> bool {
     let (chunk_pos, local_pos) = pos.to_chunk_and_local();
-    let Some(&idx) = self.active.get(&chunk_pos) else {
+    let Some(idx) = self.pool.index_for(chunk_pos) else {
       return false;
     };
-    let slot = &mut self.slots[idx.0];
+    let slot = self.pool.get_mut(idx);
     if !slot.is_seeded() {
       return false;
     }
@@ -557,10 +511,11 @@ impl PixelWorld {
 
     // Mark affected chunks as dirty and needing save
     for &pos in &dirty {
-      if let Some(&idx) = self.active.get(&pos) {
-        self.slots[idx.0].dirty = true;
-        self.slots[idx.0].modified = true;
-        self.slots[idx.0].persisted = false;
+      if let Some(idx) = self.pool.index_for(pos) {
+        let slot = self.pool.get_mut(idx);
+        slot.dirty = true;
+        slot.modified = true;
+        slot.persisted = false;
       }
     }
 

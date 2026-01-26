@@ -23,7 +23,7 @@ use crate::pixel_body::{LastBlitTransform, Persistable, PixelBody, PixelBodyId};
 
 /// Tracks chunks unloading this frame.
 ///
-/// Populated by `tick_pixel_worlds` before pixel body save systems run.
+/// Populated by `update_streaming_windows` before pixel body save systems run.
 /// Cleared at the start of each frame.
 #[derive(Resource, Default)]
 pub struct UnloadingChunks {
@@ -31,23 +31,24 @@ pub struct UnloadingChunks {
   pub positions: Vec<ChunkPos>,
 }
 
-/// Tracks chunks that finished loading this frame.
+/// Tracks chunks that finished seeding this frame.
 ///
 /// Populated by `poll_seeding_tasks` when seeding completes.
-/// Cleared at the start of each frame.
+/// A chunk is "seeded" when it has valid pixel data (from disk or procedural
+/// generation). Cleared at the start of each frame.
 #[derive(Resource, Default)]
-pub struct LoadedChunks {
-  /// Positions of chunks that just finished loading.
+pub struct SeededChunks {
+  /// Positions of chunks that just finished seeding.
   pub positions: Vec<ChunkPos>,
 }
 
 /// System: Clears chunk tracking resources at the start of each frame.
 pub(crate) fn clear_chunk_tracking(
   mut unloading: ResMut<UnloadingChunks>,
-  mut loaded: ResMut<LoadedChunks>,
+  mut seeded: ResMut<SeededChunks>,
 ) {
   unloading.positions.clear();
-  loaded.positions.clear();
+  seeded.positions.clear();
 }
 
 /// System: Converts `RequestPersistence` messages into pending save requests.
@@ -114,6 +115,79 @@ pub(crate) fn process_pending_save_requests(
   }
 }
 
+/// Returns true if there are pending persistence operations.
+fn has_pending_work(tasks: &PersistenceTasks) -> bool {
+  !tasks.save_queue.is_empty()
+    || !tasks.body_save_queue.is_empty()
+    || !tasks.body_remove_queue.is_empty()
+}
+
+/// Clears all queued operations without saving.
+fn discard_queued_operations(tasks: &mut PersistenceTasks) {
+  tasks.save_queue.clear();
+  tasks.body_save_queue.clear();
+  tasks.body_remove_queue.clear();
+}
+
+/// Writes all queued chunk saves to the save file.
+fn flush_chunk_saves(
+  save: &mut crate::persistence::WorldSave,
+  queue: &mut Vec<crate::persistence::SaveTask>,
+) {
+  for task in queue.drain(..) {
+    let entry = crate::persistence::format::PageTableEntry::new(
+      task.pos,
+      save.data_write_pos + 4, // Skip size prefix
+      task.data.len() as u32,
+      task.storage_type,
+    );
+
+    if let Err(e) = write_chunk_data(&save.path, save.data_write_pos, &task.data) {
+      eprintln!("Warning: failed to save chunk {:?}: {}", task.pos, e);
+      continue;
+    }
+
+    save.index.insert(entry);
+    save.data_write_pos += 4 + task.data.len() as u64;
+    save.header.chunk_count = save.index.len() as u32;
+    save.dirty = true;
+  }
+}
+
+/// Writes all queued body saves to the save file.
+fn flush_body_saves(
+  save: &mut crate::persistence::WorldSave,
+  queue: &mut Vec<crate::persistence::BodySaveTask>,
+) {
+  for task in queue.drain(..) {
+    if let Err(e) = save.save_body(&task.record) {
+      eprintln!(
+        "Warning: failed to save pixel body {}: {}",
+        task.record.stable_id, e
+      );
+    }
+  }
+}
+
+/// Processes all queued body removals.
+fn flush_body_removes(
+  save: &mut crate::persistence::WorldSave,
+  queue: &mut Vec<crate::persistence::BodyRemoveTask>,
+) {
+  for task in queue.drain(..) {
+    save.remove_body(task.stable_id);
+  }
+}
+
+/// Attempts to flush the save file to disk if dirty.
+fn try_flush_to_disk(save: &mut crate::persistence::WorldSave) {
+  if save.dirty {
+    if let Err(e) = save.flush() {
+      eprintln!("Warning: failed to flush save: {}", e);
+    }
+  }
+}
+
 /// System: Flushes pending persistence tasks to disk.
 ///
 /// Writes queued chunk and body saves to the save file. Only runs if a
@@ -125,42 +199,29 @@ pub(crate) fn flush_persistence_queue(
   mut persistence_control: ResMut<PersistenceControl>,
   save_resource: Option<ResMut<WorldSaveResource>>,
 ) {
-  let has_chunk_saves = !persistence_tasks.save_queue.is_empty();
-  let has_body_saves = !persistence_tasks.body_save_queue.is_empty();
-  let has_body_removes = !persistence_tasks.body_remove_queue.is_empty();
-
-  if !has_chunk_saves && !has_body_saves && !has_body_removes {
+  if !has_pending_work(&persistence_tasks) {
     return;
   }
 
   let Some(save_resource) = save_resource else {
-    // No save file configured, discard queued operations
-    persistence_tasks.save_queue.clear();
-    persistence_tasks.body_save_queue.clear();
-    persistence_tasks.body_remove_queue.clear();
+    discard_queued_operations(&mut persistence_tasks);
     return;
   };
 
-  // Check if any pending request targets a different save (copy-on-write)
+  // Handle copy-on-write if saving to a different name
   let target_save = persistence_control
     .pending_requests
     .iter()
     .find(|req| req.target_save != persistence_control.current_save)
     .map(|req| req.target_save.clone());
 
-  // Handle copy-on-write if saving to a different name
   if let Some(new_save_name) = target_save {
     let new_path = persistence_control.save_path(&new_save_name);
 
-    let mut save = match save_resource.save.write() {
-      Ok(s) => s,
-      Err(e) => {
-        eprintln!("Warning: failed to acquire save lock for copy: {}", e);
-        persistence_tasks.save_queue.clear();
-        persistence_tasks.body_save_queue.clear();
-        persistence_tasks.body_remove_queue.clear();
-        return;
-      }
+    let Ok(mut save) = save_resource.save.write() else {
+      eprintln!("Warning: failed to acquire save lock for copy");
+      discard_queued_operations(&mut persistence_tasks);
+      return;
     };
 
     match save.copy_to(&new_path) {
@@ -170,73 +231,26 @@ pub(crate) fn flush_persistence_queue(
           save.path(),
           new_save.path()
         );
-        // Replace with new save
         *save = new_save;
         persistence_control.current_save = new_save_name;
       }
       Err(e) => {
         eprintln!("Warning: failed to copy save to new location: {}", e);
-        // Continue with current save file
       }
     }
   }
 
-  // Process all queued saves
-  let mut save = match save_resource.save.write() {
-    Ok(s) => s,
-    Err(e) => {
-      eprintln!("Warning: failed to acquire save lock: {}", e);
-      persistence_tasks.save_queue.clear();
-      persistence_tasks.body_save_queue.clear();
-      persistence_tasks.body_remove_queue.clear();
-      return;
-    }
+  // Acquire lock and flush all queued operations
+  let Ok(mut save) = save_resource.save.write() else {
+    eprintln!("Warning: failed to acquire save lock");
+    discard_queued_operations(&mut persistence_tasks);
+    return;
   };
 
-  // Save chunks
-  for task in persistence_tasks.save_queue.drain(..) {
-    // Create page table entry and write data
-    let entry = crate::persistence::format::PageTableEntry::new(
-      task.pos,
-      save.data_write_pos + 4, // Skip size prefix
-      task.data.len() as u32,
-      task.storage_type,
-    );
-
-    // Open file and write
-    if let Err(e) = write_chunk_data(&save.path, save.data_write_pos, &task.data) {
-      eprintln!("Warning: failed to save chunk {:?}: {}", task.pos, e);
-      continue;
-    }
-
-    // Update save state
-    save.index.insert(entry);
-    save.data_write_pos += 4 + task.data.len() as u64;
-    save.header.chunk_count = save.index.len() as u32;
-    save.dirty = true;
-  }
-
-  // Save pixel bodies
-  for task in persistence_tasks.body_save_queue.drain(..) {
-    if let Err(e) = save.save_body(&task.record) {
-      eprintln!(
-        "Warning: failed to save pixel body {}: {}",
-        task.record.stable_id, e
-      );
-    }
-  }
-
-  // Remove pixel bodies
-  for task in persistence_tasks.body_remove_queue.drain(..) {
-    save.remove_body(task.stable_id);
-  }
-
-  // Flush page table periodically (every N chunks or on demand)
-  if save.dirty
-    && let Err(e) = save.flush()
-  {
-    eprintln!("Warning: failed to flush save: {}", e);
-  }
+  flush_chunk_saves(&mut save, &mut persistence_tasks.save_queue);
+  flush_body_saves(&mut save, &mut persistence_tasks.body_save_queue);
+  flush_body_removes(&mut save, &mut persistence_tasks.body_remove_queue);
+  try_flush_to_disk(&mut save);
 }
 
 /// Creates a PixelBodyRecord from entity components with blitted transform.
