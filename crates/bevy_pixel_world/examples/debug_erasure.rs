@@ -1,15 +1,18 @@
-//! Debug Erasure - Visual test for pixel body erasure.
+//! Debug Erasure - Visual test for pixel body erasure and chunk repositioning.
 //!
-//! This example runs two automated test cases:
+//! This example runs three automated test cases:
 //! 1. Stability test: Spawn bodies, verify they don't disintegrate
 //! 2. Erasure test: Spawn bodies, erase them with brush, verify complete
 //!    removal
+//! 3. Repositioning test: Spawn bodies, scroll camera away 5 chunks, scroll
+//!    back, verify no pixel duplication
 //!
 //! Controls:
 //! - Space: Spawn a body at random position
 //! - E: Toggle manual auto-erase cycle
 //! - 1: Run stability test (spawn only)
 //! - 2: Run erasure test (spawn + erase + verify)
+//! - 3: Run repositioning test (spawn + scroll + verify)
 //! - WASD: Move camera
 //!
 //! Run with: `cargo run -p bevy_pixel_world --example debug_erasure --features
@@ -18,6 +21,7 @@
 //! Command line arguments:
 //!   --test 1    Run stability test automatically
 //!   --test 2    Run erasure test automatically
+//!   --test 3    Run repositioning test automatically
 //!   --exit      Exit after test completes (for CI)
 
 use bevy::camera::ScalingMode;
@@ -45,6 +49,12 @@ const CLEAR_MARGIN: i64 = 50; // Extra margin around visible area to clear
 const SPAWN_COUNT: usize = 15; // Number of bodies to spawn
 const SETTLE_FRAMES: usize = 120; // Frames to wait for bodies to settle (2 seconds at 60fps)
 const VERIFY_FRAMES: usize = 60; // Frames to verify erasure (1 second)
+
+// Repositioning test constants
+const CHUNK_SIZE_PX: f32 = 64.0; // Chunk size in pixels
+const REPOSITION_DISTANCE: f32 = CHUNK_SIZE_PX * 5.0; // 5 chunks = 320 pixels
+const SCROLL_SPEED: f32 = 200.0; // Pixels per second for scrolling
+const WAIT_UP_FRAMES: usize = 30; // Frames to wait after scrolling up
 
 /// Command line configuration
 #[derive(Resource, Default)]
@@ -146,6 +156,12 @@ enum TestPhase {
   Settling,
   /// Erasing with brush sweeps
   Erasing,
+  /// Scrolling camera up (repositioning test)
+  ScrollingUp,
+  /// Waiting after scrolling up (repositioning test)
+  WaitingUp,
+  /// Scrolling camera back down (repositioning test)
+  ScrollingDown,
   /// Verifying complete removal
   Verifying,
   /// Test completed
@@ -159,6 +175,8 @@ enum TestType {
   StabilityOnly,
   /// Spawn, erase, and verify removal
   FullErasure,
+  /// Spawn, scroll away, scroll back, verify no duplicates
+  Repositioning,
 }
 
 #[derive(Resource)]
@@ -191,6 +209,12 @@ struct DebugState {
   manual_erase: bool,
   manual_erase_index: usize,
   manual_erase_timer: Timer,
+  /// Repositioning test: original camera Y position
+  original_camera_y: f32,
+  /// Repositioning test: body count before scrolling
+  pre_scroll_body_count: usize,
+  /// Repositioning test: pixel count before scrolling
+  pre_scroll_pixel_count: usize,
 }
 
 impl Default for DebugState {
@@ -212,6 +236,9 @@ impl Default for DebugState {
       manual_erase: false,
       manual_erase_index: 0,
       manual_erase_timer: Timer::from_seconds(0.05, TimerMode::Repeating),
+      original_camera_y: 0.0,
+      pre_scroll_body_count: 0,
+      pre_scroll_pixel_count: 0,
     }
   }
 }
@@ -235,9 +262,13 @@ impl DebugState {
     self.verify_body_counts.clear();
     self.verify_pixel_counts.clear();
     self.test_passed = None;
+    self.original_camera_y = 0.0;
+    self.pre_scroll_body_count = 0;
+    self.pre_scroll_pixel_count = 0;
     let name = match test_type {
       TestType::StabilityOnly => "STABILITY",
       TestType::FullErasure => "FULL ERASURE",
+      TestType::Repositioning => "REPOSITIONING",
     };
     self.log(format!("=== Starting {} test ===", name));
   }
@@ -288,6 +319,10 @@ fn auto_start_test(mut state: ResMut<DebugState>, cli: Res<CliConfig>) {
     Some(2) => {
       state.log("Auto-starting erasure test (--test 2)".to_string());
       state.start_test(TestType::FullErasure);
+    }
+    Some(3) => {
+      state.log("Auto-starting repositioning test (--test 3)".to_string());
+      state.start_test(TestType::Repositioning);
     }
     _ => {}
   }
@@ -401,6 +436,9 @@ fn manual_input(
   if keys.just_pressed(KeyCode::Digit2) && state.phase == TestPhase::Idle && state.platform_ready {
     state.start_test(TestType::FullErasure);
   }
+  if keys.just_pressed(KeyCode::Digit3) && state.phase == TestPhase::Idle && state.platform_ready {
+    state.start_test(TestType::Repositioning);
+  }
 
   // Manual spawn
   if keys.just_pressed(KeyCode::Space) && state.phase == TestPhase::Idle {
@@ -442,6 +480,7 @@ fn run_test_phases(
   time: Res<Time>,
   mut worlds: Query<&mut PixelWorld>,
   bodies: Query<&PixelBody>,
+  mut camera: Query<&mut Transform, With<StreamingCamera>>,
   gizmos: bevy_pixel_world::debug_shim::GizmosParam,
   #[cfg(feature = "avian2d")] mut commands: Commands,
 ) {
@@ -531,6 +570,20 @@ fn run_test_phases(
             state.brush_y = PLATFORM_Y + PLATFORM_HEIGHT + BRUSH_RADIUS + 1;
             state.log("Starting brush erasure sweep...".to_string());
           }
+          Some(TestType::Repositioning) => {
+            // Record counts and camera position before scrolling
+            state.pre_scroll_body_count = body_count;
+            state.pre_scroll_pixel_count = total_solid;
+            if let Ok(cam_transform) = camera.single() {
+              state.original_camera_y = cam_transform.translation.y;
+            }
+            state.phase = TestPhase::ScrollingUp;
+            state.frame_counter = 0;
+            state.log(format!(
+              "Bodies settled: {} bodies, {} pixels. Starting scroll up...",
+              body_count, total_solid
+            ));
+          }
           None => {
             state.phase = TestPhase::Done;
           }
@@ -581,10 +634,10 @@ fn run_test_phases(
           state.verify_pixel_counts.clear();
           state.log("Erasure complete, verifying...".to_string());
         } else {
-          // Reset for another pass - start above platform, lower by 1 pixel each pass
+          // Reset for another pass - start above platform, lower by 2 pixels each pass
           state.brush_x = SPAWN_AREA.0 as i64 - CLEAR_MARGIN;
-          // Lower the brush by 1 pixel each pass to catch pixels at the edge
-          let pass_offset = state.frame_counter as i64;
+          // Lower the brush by 2 pixels each pass to catch pixels at the edge
+          let pass_offset = (state.frame_counter as i64) * 2;
           let new_y = PLATFORM_Y + PLATFORM_HEIGHT + BRUSH_RADIUS + 1 - pass_offset;
           state.brush_y = new_y;
           let pass = state.frame_counter + 1;
@@ -596,9 +649,58 @@ fn run_test_phases(
       }
     }
 
+    TestPhase::ScrollingUp => {
+      let Ok(mut cam_transform) = camera.single_mut() else {
+        return;
+      };
+
+      let target_y = state.original_camera_y + REPOSITION_DISTANCE;
+      let delta = SCROLL_SPEED * time.delta_secs();
+
+      if cam_transform.translation.y < target_y {
+        cam_transform.translation.y = (cam_transform.translation.y + delta).min(target_y);
+      } else {
+        state.phase = TestPhase::WaitingUp;
+        state.frame_counter = 0;
+        state.log(format!(
+          "Reached top position (y={}). Waiting for chunk repositioning...",
+          cam_transform.translation.y
+        ));
+      }
+    }
+
+    TestPhase::WaitingUp => {
+      state.frame_counter += 1;
+      if state.frame_counter >= WAIT_UP_FRAMES {
+        state.phase = TestPhase::ScrollingDown;
+        state.frame_counter = 0;
+        state.log("Scrolling back down...".to_string());
+      }
+    }
+
+    TestPhase::ScrollingDown => {
+      let Ok(mut cam_transform) = camera.single_mut() else {
+        return;
+      };
+
+      let target_y = state.original_camera_y;
+      let delta = SCROLL_SPEED * time.delta_secs();
+
+      if cam_transform.translation.y > target_y {
+        cam_transform.translation.y = (cam_transform.translation.y - delta).max(target_y);
+      } else {
+        state.phase = TestPhase::Verifying;
+        state.frame_counter = 0;
+        state.verify_body_counts.clear();
+        state.verify_pixel_counts.clear();
+        state.log("Returned to original position. Verifying...".to_string());
+      }
+    }
+
     TestPhase::Verifying => {
       let body_count = bodies.iter().count();
       let world_body_pixels = count_body_pixels(&worlds);
+      let total_solid: usize = bodies.iter().map(|b| b.solid_count()).sum();
 
       state.verify_body_counts.push(body_count);
       state.verify_pixel_counts.push(world_body_pixels);
@@ -608,31 +710,75 @@ fn run_test_phases(
       if state.frame_counter % 10 == 0 {
         let frame = state.frame_counter;
         state.log(format!(
-          "Verify frame {}: {} bodies, {} PIXEL_BODY flags",
-          frame, body_count, world_body_pixels
+          "Verify frame {}: {} bodies, {} PIXEL_BODY flags, {} solid pixels",
+          frame, body_count, world_body_pixels, total_solid
         ));
       }
 
       if state.frame_counter >= VERIFY_FRAMES {
-        // Check results: all counts should be 0
-        let all_bodies_zero = state.verify_body_counts.iter().all(|&c| c == 0);
-        let all_pixels_zero = state.verify_pixel_counts.iter().all(|&c| c == 0);
-
-        let max_bodies = *state.verify_body_counts.iter().max().unwrap_or(&0);
-        let max_pixels = *state.verify_pixel_counts.iter().max().unwrap_or(&0);
-
         state.phase = TestPhase::Done;
-        if all_bodies_zero && all_pixels_zero {
-          state.test_passed = Some(true);
-          state.log("=== ERASURE TEST PASSED ===".to_string());
-          state.log("All bodies removed, no ghost pixels".to_string());
-        } else {
-          state.test_passed = Some(false);
-          state.log("=== ERASURE TEST FAILED ===".to_string());
-          state.log(format!(
-            "Remaining: max {} bodies, max {} PIXEL_BODY flags",
-            max_bodies, max_pixels
-          ));
+
+        match state.test_type {
+          Some(TestType::FullErasure) => {
+            // Check results: all counts should be 0
+            let all_bodies_zero = state.verify_body_counts.iter().all(|&c| c == 0);
+            let all_pixels_zero = state.verify_pixel_counts.iter().all(|&c| c == 0);
+
+            let max_bodies = *state.verify_body_counts.iter().max().unwrap_or(&0);
+            let max_pixels = *state.verify_pixel_counts.iter().max().unwrap_or(&0);
+
+            if all_bodies_zero && all_pixels_zero {
+              state.test_passed = Some(true);
+              state.log("=== ERASURE TEST PASSED ===".to_string());
+              state.log("All bodies removed, no ghost pixels".to_string());
+            } else {
+              state.test_passed = Some(false);
+              state.log("=== ERASURE TEST FAILED ===".to_string());
+              state.log(format!(
+                "Remaining: max {} bodies, max {} PIXEL_BODY flags",
+                max_bodies, max_pixels
+              ));
+            }
+          }
+          Some(TestType::Repositioning) => {
+            // Check that body count and pixel count match pre-scroll values
+            let final_body_count = *state.verify_body_counts.last().unwrap_or(&0);
+            let final_world_pixels = *state.verify_pixel_counts.last().unwrap_or(&0);
+            let expected_body_count = state.pre_scroll_body_count;
+
+            let body_count_match = final_body_count == expected_body_count;
+            // World pixels should roughly match total solid pixels from bodies
+            // (some variance is acceptable due to overlap at chunk boundaries)
+            let pixel_variance = (final_world_pixels as i64 - total_solid as i64).abs();
+            let pixel_count_reasonable = pixel_variance < (total_solid as i64 / 10).max(50);
+
+            state.log(format!(
+              "Final: {} bodies (expected {}), {} world pixels, {} body pixels",
+              final_body_count, expected_body_count, final_world_pixels, total_solid
+            ));
+
+            if body_count_match && pixel_count_reasonable {
+              state.test_passed = Some(true);
+              state.log("=== REPOSITIONING TEST PASSED ===".to_string());
+              state.log("No pixel duplication after chunk repositioning".to_string());
+            } else {
+              state.test_passed = Some(false);
+              state.log("=== REPOSITIONING TEST FAILED ===".to_string());
+              if !body_count_match {
+                state.log(format!(
+                  "Body count mismatch: {} vs expected {}",
+                  final_body_count, expected_body_count
+                ));
+              }
+              if !pixel_count_reasonable {
+                state.log(format!(
+                  "Pixel count variance too high: world has {}, bodies have {} (variance: {})",
+                  final_world_pixels, total_solid, pixel_variance
+                ));
+              }
+            }
+          }
+          _ => {}
         }
       }
     }
@@ -726,6 +872,7 @@ fn diagnostic_ui(
       ui.label("Controls:");
       ui.label("  1 - Run stability test (spawn only)");
       ui.label("  2 - Run erasure test (spawn + erase)");
+      ui.label("  3 - Run repositioning test (spawn + scroll)");
       ui.label("  Space - Manual spawn");
       ui.label("  E - Toggle manual erase sweep");
       ui.label("  WASD - Move camera");
@@ -738,6 +885,9 @@ fn diagnostic_ui(
         TestPhase::Spawning => ("SPAWNING", egui::Color32::YELLOW),
         TestPhase::Settling => ("SETTLING", egui::Color32::LIGHT_BLUE),
         TestPhase::Erasing => ("ERASING", egui::Color32::ORANGE),
+        TestPhase::ScrollingUp => ("SCROLLING UP", egui::Color32::KHAKI),
+        TestPhase::WaitingUp => ("WAITING UP", egui::Color32::LIGHT_BLUE),
+        TestPhase::ScrollingDown => ("SCROLLING DOWN", egui::Color32::KHAKI),
         TestPhase::Verifying => ("VERIFYING", egui::Color32::LIGHT_BLUE),
         TestPhase::Done => {
           if state.test_passed == Some(true) {
@@ -766,7 +916,10 @@ fn diagnostic_ui(
       ui.label(format!("Total solid pixels: {}", total_solid));
       ui.label(format!("World PIXEL_BODY flags: {}", world_body_pixels));
 
-      if state.phase == TestPhase::Settling || state.phase == TestPhase::Verifying {
+      if matches!(
+        state.phase,
+        TestPhase::Settling | TestPhase::Verifying | TestPhase::WaitingUp
+      ) {
         ui.label(format!("Frame: {}", state.frame_counter));
       }
 

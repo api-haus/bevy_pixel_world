@@ -3,6 +3,7 @@
 use bevy::prelude::*;
 
 use crate::coords::CHUNK_SIZE;
+use crate::pixel::Pixel;
 use crate::primitives::Chunk;
 use crate::render::ChunkMaterial;
 
@@ -100,6 +101,7 @@ impl ChunkSlot {
   pub(crate) fn release(&mut self) -> bool {
     let needs_save = self.needs_save();
     self.chunk.clear_pos();
+    self.chunk.pixels.as_slice_mut().fill(Pixel::VOID);
     self.lifecycle = ChunkLifecycle::InPool;
     self.pos = None;
     self.dirty = false;
