@@ -31,49 +31,57 @@
 - Data structure definitions are permitted in plans. Implementation code is not.
 - Use mermaid diagrams for complex systems (state machines, data flow).
 
-## Git Worktrees (Multi-Agent Workflow)
+## Git Worktrees
 
-When multiple agents may work concurrently, use git worktrees to prevent interference:
+**MANDATORY**: Always work in a dedicated worktree, never directly in main.
 
-### Worktree Selection
+### First Step: Establish Worktree
 
-Before starting work, determine task locality from the user's prompt:
+Before doing ANY other work, you MUST establish a worktree:
 
-1. **Check existing worktrees**: `git worktree list`
-2. **Match task to worktree** by examining active branches:
-   - Docs tasks → worktree with `docs-*` branch
-   - Refactoring → worktree with `refactor-*` branch
-   - Feature work → worktree with `feat-*` branch
-   - If no matching worktree exists, create one
+```bash
+# 1. Check existing worktrees
+git worktree list
+
+# 2. Either cd to a matching worktree, or create one:
+git worktree add ../sim2d-<descriptive-name> -b <type>/<description>
+cd ../sim2d-<descriptive-name>
+```
+
+Do not read files, do not explore the codebase, do not make plans—establish your worktree FIRST.
+
+### Matching Task to Worktree
+
+If a worktree already exists for your task type, use it:
+- Docs tasks → worktree with `docs/*` branch
+- Refactoring → worktree with `refactor/*` branch
+- Feature work → worktree with `feat/*` branch
+- Bug fixes → worktree with `fix/*` branch
+
+If no matching worktree exists, create one.
 
 ### Creating a Worktree
 
 ```bash
-# Create worktree with descriptive name matching the task
-git worktree add ../sim2d-<descriptive-name> -b <type>/<description>
-
 # Examples:
 git worktree add ../sim2d-arch-docs -b docs/architecture-reorg
 git worktree add ../sim2d-plugin-helpers -b refactor/plugin-helpers
 git worktree add ../sim2d-physics-desync -b fix/physics-desync-on-load
 ```
 
-### Worktree Conventions
+### Conventions
 
 - **Location**: Sibling directories (`../sim2d-<suffix>`)
-- **Descriptive names**: Use specific names, not generic ones. `../sim2d-physics-desync-fix` not `../sim2d-fix`
-- **Branch naming**: `<type>/<description>` (e.g., `docs/buoyancy`, `refactor/plugin-helpers`, `fix/physics-desync-on-load`)
-- **Cleanup**: Remove worktree when task complete and merged: `git worktree remove ../sim2d-<suffix>`
+- **Descriptive names**: `../sim2d-physics-desync-fix` not `../sim2d-fix`
+- **Branch naming**: `<type>/<description>`
+- **Cleanup**: `git worktree remove ../sim2d-<suffix>` when merged
 
-### Why This Matters
+### Why This Is Mandatory
 
+- You cannot know if other agents are running
+- Main worktree may have uncommitted changes from other work
 - Each worktree has independent staging area and HEAD
-- Prevents one agent's `git add` from polluting another's commit
-- sccache shares compiled artifacts across worktrees (configured in `.cargo/config.toml`)
-
-### Single-Agent Exception
-
-If you are certain no other agents are running, you may work directly in the main worktree. When in doubt, use a worktree.
+- sccache shares compiled artifacts (no rebuild penalty)
 
 ### Plans Must Include Worktree Context
 
