@@ -56,53 +56,131 @@ gantt
 
 ```mermaid
 flowchart TB
-    subgraph PreSim["Pre-Simulation (chained)"]
+    subgraph PreSim["Pre-Simulation"]
         direction TB
-        PS1[clear_chunk_tracking]
-        PS2[handle_persistence_messages]
-        PS3[initialize_palette]
-        PS4[update_streaming_windows]
-        PS5[save_pixel_bodies_on_chunk_unload]
-        PS6[update_entity_culling]
-        PS7[dispatch_seeding]
-        PS8[poll_seeding_tasks]
-        PS9[queue_pixel_bodies_on_chunk_seed]
-        PS10[update_simulation_bounds]
-        PS11[finalize_pending_pixel_bodies]
-        PS1 --> PS2 --> PS3 --> PS4 --> PS5 --> PS6 --> PS7 --> PS8 --> PS9 --> PS10 --> PS11
+
+        subgraph FrameReset["Frame Reset"]
+            PS1["Reset tracking"]
+            PS2["Process save messages"]
+        end
+
+        subgraph GPUInit["GPU Init (once)"]
+            PS3["Upload palette"]
+        end
+
+        subgraph Streaming["Streaming"]
+            PS4["Update chunk window"]
+            PS5["Save unloading bodies"]
+            PS6["Cull distant entities"]
+        end
+
+        subgraph Seeding["Chunk Seeding"]
+            PS7["Dispatch async seeds"]
+            PS8["Poll completed seeds"]
+            PS9["Queue bodies from disk"]
+        end
+
+        subgraph SimSetup["Simulation Setup"]
+            PS10["Set CA bounds"]
+            PS11["Finalize new bodies"]
+        end
+
+        PS1 --> PS2
+        PS2 --> PS3 --> PS4
+        PS4 --> PS5 --> PS6
+        PS6 --> PS7 --> PS8 --> PS9
+        PS9 --> PS10 --> PS11
     end
 
-    subgraph Barrier["Command Application"]
-        AD[ApplyDeferred]
+    subgraph Barrier["Entity Visibility Barrier"]
+        AD["ApplyDeferred"]
     end
 
-    subgraph Sim["Simulation (chained)"]
+    subgraph Sim["Simulation"]
         direction TB
-        S1[detect_external_erasure]
-        S2[update_pixel_bodies]
-        S3["run_simulation<br/>(if not paused)"]
-        S4[readback_pixel_bodies]
-        S5[apply_readback_changes]
-        S6[split_pixel_bodies]
-        S7[invalidate_dirty_tiles]
-        S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7
+
+        subgraph BodyPrep["Body Preparation"]
+            S1["Detect brush erasure"]
+            S2["Clear + blit pixels"]
+        end
+
+        subgraph CA["Cellular Automata"]
+            S3["Run 4-phase CA"]
+        end
+
+        subgraph Readback["Destruction Readback"]
+            S4["Detect destroyed pixels"]
+            S5["Update shape masks"]
+            S6["Split fragments"]
+        end
+
+        subgraph CacheInval["Cache Maintenance"]
+            S7["Invalidate collision tiles"]
+        end
+
+        S1 --> S2 --> S3
+        S3 --> S4 --> S5 --> S6 --> S7
     end
 
-    subgraph PostSim["Post-Simulation (chained)"]
+    subgraph PostSim["Post-Simulation"]
         direction TB
-        P1[dispatch_collision_tasks]
-        P2[poll_collision_tasks]
-        P3[spawn_pending_pixel_bodies]
-        P4[upload_dirty_chunks]
-        P5[process_pending_save_requests]
-        P6[save_pixel_bodies_on_request]
-        P7[flush_persistence_queue]
-        P8[notify_persistence_complete]
-        P1 --> P2 --> P3 --> P4 --> P5 --> P6 --> P7 --> P8
+
+        subgraph Collision["Collision Generation"]
+            P1["Dispatch mesh tasks"]
+            P2["Poll mesh results"]
+            P3["Spawn ready bodies"]
+        end
+
+        subgraph Render["Rendering"]
+            P4["Upload to GPU"]
+        end
+
+        subgraph Persist["Persistence"]
+            P5["Queue chunks"]
+            P6["Queue bodies"]
+            P7["Flush to disk"]
+            P8["Signal complete"]
+        end
+
+        P1 --> P2 --> P3
+        P3 --> P4
+        P4 --> P5 --> P6 --> P7 --> P8
     end
 
     PreSim --> Barrier --> Sim --> PostSim
 ```
+
+**System Reference:**
+
+| Group | Description | Function | Module |
+|-------|-------------|----------|--------|
+| Frame Reset | Reset tracking | `clear_chunk_tracking` | `world::persistence_systems` |
+| Frame Reset | Process save messages | `handle_persistence_messages` | `world::persistence_systems` |
+| GPU Init | Upload palette | `initialize_palette` | `world::plugin` |
+| Streaming | Update chunk window | `update_streaming_windows` | `world::plugin` |
+| Streaming | Save unloading bodies | `save_pixel_bodies_on_chunk_unload` | `world::persistence_systems` |
+| Streaming | Cull distant entities | `update_entity_culling` | `culling` |
+| Chunk Seeding | Dispatch async seeds | `dispatch_seeding` | `world::plugin` |
+| Chunk Seeding | Poll completed seeds | `poll_seeding_tasks` | `world::plugin` |
+| Chunk Seeding | Queue bodies from disk | `queue_pixel_bodies_on_chunk_seed` | `world::body_loader` |
+| Simulation Setup | Set CA bounds | `update_simulation_bounds` | `world::plugin` |
+| Simulation Setup | Finalize new bodies | `finalize_pending_pixel_bodies` | `pixel_body::spawn` |
+| Barrier | Entity visibility | `ApplyDeferred` | bevy built-in |
+| Body Preparation | Detect brush erasure | `detect_external_erasure` | `pixel_body::readback` |
+| Body Preparation | Clear + blit pixels | `update_pixel_bodies` | `pixel_body::blit` |
+| Cellular Automata | Run 4-phase CA | `run_simulation` | `world::plugin` |
+| Destruction Readback | Detect destroyed pixels | `readback_pixel_bodies` | `pixel_body::readback` |
+| Destruction Readback | Update shape masks | `apply_readback_changes` | `pixel_body::readback` |
+| Destruction Readback | Split fragments | `split_pixel_bodies` | `pixel_body::split` |
+| Cache Maintenance | Invalidate collision tiles | `invalidate_dirty_tiles` | `collision::systems` |
+| Collision Generation | Dispatch mesh tasks | `dispatch_collision_tasks` | `collision::systems` |
+| Collision Generation | Poll mesh results | `poll_collision_tasks` | `collision::systems` |
+| Collision Generation | Spawn ready bodies | `spawn_pending_pixel_bodies` | `world::body_loader` |
+| Rendering | Upload to GPU | `upload_dirty_chunks` | `world::plugin` |
+| Persistence | Queue chunks | `process_pending_save_requests` | `world::persistence_systems` |
+| Persistence | Queue bodies | `save_pixel_bodies_on_request` | `world::persistence_systems` |
+| Persistence | Flush to disk | `flush_persistence_queue` | `world::persistence_systems` |
+| Persistence | Signal complete | `notify_persistence_complete` | `world::persistence_systems` |
 
 ---
 
