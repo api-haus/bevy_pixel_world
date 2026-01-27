@@ -34,6 +34,8 @@ pub mod visual_debug;
 pub mod world;
 
 pub use bodies_plugin::PixelBodiesPlugin;
+#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+pub use buoyancy::BuoyancyConfig;
 pub use collision::{CollisionCache, CollisionConfig, CollisionQueryPoint, CollisionTasks};
 pub use coords::{
   CHUNK_SIZE, ChunkPos, ColorIndex, LocalPos, MaterialId, TILE_SIZE, TilePos, WorldFragment,
@@ -57,6 +59,7 @@ pub use render::{
 pub use schedule::{PixelWorldSet, SimulationPhase};
 pub use seeding::{ChunkSeeder, MaterialSeeder, NoiseSeeder, PersistenceSeeder};
 pub use simulation::simulate_tick;
+pub use submergence::SubmersionConfig;
 pub use text::{CpuFont, TextMask, TextStyle, draw_text, rasterize_text, stamp_text};
 #[cfg(feature = "tracy")]
 pub use tracy_init::init_tracy;

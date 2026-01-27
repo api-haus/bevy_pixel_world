@@ -30,14 +30,14 @@ use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 use bevy_pixel_world::SpawnPixelBody;
 use bevy_pixel_world::diagnostics::DiagnosticsPlugin;
-use bevy_pixel_world::submergence::{PixelSubmergencePlugin, SubmersionState};
+use bevy_pixel_world::submergence::SubmersionState;
 use bevy_pixel_world::visual_debug::{
   SettingsPersistence, VisualDebugSettings, visual_debug_checkboxes,
 };
 use bevy_pixel_world::{
   ColorIndex, MaterialId, MaterialSeeder, Materials, PersistenceControl, Pixel, PixelBody,
-  PixelFlags, PixelWorld, PixelWorldPlugin, SpawnPixelWorld, StreamingCamera, WorldPos, WorldRect,
-  collision::CollisionQueryPoint, material_ids,
+  PixelFlags, PixelWorld, PixelWorldFullBundle, SpawnPixelWorld, StreamingCamera, WorldPos,
+  WorldRect, collision::CollisionQueryPoint, material_ids,
 };
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 use rand::Rng;
@@ -97,9 +97,7 @@ fn main() {
       }),
       ..default()
     }))
-    // Enable persistence with named save "world"
-    .add_plugins(PixelWorldPlugin::with_persistence("pixel_world_painting").load("world"))
-    .add_plugins(bevy_pixel_world::PixelBodiesPlugin)
+    .add_plugins(PixelWorldFullBundle::new("pixel_world_painting").load("world"))
     .add_plugins(EguiPlugin::default())
     .insert_resource(BrushState::default())
     .init_resource::<UiState>()
@@ -147,10 +145,6 @@ fn main() {
 
   #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
   app.add_systems(Update, spawn_pixel_body.after(input_system));
-
-  // Enable submergence detection - all pixel bodies will automatically
-  // have their gravity and damping adjusted based on liquid submersion
-  app.add_plugins(PixelSubmergencePlugin::default());
 
   app.run();
 }

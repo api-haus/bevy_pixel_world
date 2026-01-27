@@ -106,7 +106,3 @@ impl Plugin for Buoyancy2dPlugin {
     app.add_systems(Update, compute_buoyancy_forces);
   }
 }
-
-/// Deprecated alias for [`Buoyancy2dPlugin`].
-#[deprecated(note = "Renamed to Buoyancy2dPlugin")]
-pub type PixelBuoyancyPlugin = Buoyancy2dPlugin;

@@ -1,3 +1,6 @@
+// TODO: refactor submergence into generic pixel awareness with
+// material-agnostic queries (not just water)
+
 //! Submergence detection for pixel bodies.
 //!
 //! This module provides automatic liquid awareness for pixel bodies. Bodies
@@ -7,9 +10,9 @@
 //! # Usage
 //!
 //! ```ignore
-//! use bevy_pixel_world::submergence::{PixelSubmergencePlugin, SubmersionConfig};
+//! use bevy_pixel_world::submergence::{PixelAwarenessPlugin, SubmersionConfig};
 //!
-//! app.add_plugins(PixelSubmergencePlugin::default());
+//! app.add_plugins(PixelAwarenessPlugin::default());
 //! ```
 //!
 //! All pixel bodies automatically gain the [`Submergent`] marker on spawn.
@@ -160,7 +163,3 @@ impl Plugin for PixelAwarenessPlugin {
     }
   }
 }
-
-/// Deprecated alias for [`PixelAwarenessPlugin`].
-#[deprecated(note = "Renamed to PixelAwarenessPlugin")]
-pub type PixelSubmergencePlugin = PixelAwarenessPlugin;

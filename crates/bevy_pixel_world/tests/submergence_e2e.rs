@@ -16,7 +16,7 @@ use bevy::image::ImageSampler;
 use bevy::prelude::*;
 use bevy_pixel_world::debug_shim::DebugGizmos;
 use bevy_pixel_world::submergence::{
-  PixelSubmergencePlugin, Submerged, Submergent, SubmersionState, Surfaced,
+  PixelAwarenessPlugin, Submerged, Submergent, SubmersionState, Surfaced,
 };
 use bevy_pixel_world::{
   ColorIndex, MaterialSeeder, PersistenceConfig, Pixel, PixelBodiesPlugin, PixelBody, PixelWorld,
@@ -98,7 +98,7 @@ impl TestHarness {
     }
 
     // Add submergence detection plugin
-    app.add_plugins(PixelSubmergencePlugin::default());
+    app.add_plugins(PixelAwarenessPlugin::default());
 
     // Create test image for spawning bodies
     let test_image = create_test_image(&mut app);
