@@ -33,6 +33,10 @@ impl TestHarness {
 
     // TransformPlugin is needed for GlobalTransform propagation
     app.add_plugins(bevy::transform::TransformPlugin);
+    app.add_plugins(bevy::asset::AssetPlugin::default());
+    app.add_plugins(bevy::image::ImagePlugin::default());
+    app.add_plugins(bevy::scene::ScenePlugin);
+    app.add_plugins(bevy::gizmos::GizmoPlugin);
 
     app.add_plugins(
       PixelWorldPlugin::default().persistence(PersistenceConfig::new("test").with_path(save_path)),
