@@ -14,12 +14,12 @@ use super::{
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 use crate::collision::CollisionQueryPoint;
 use crate::collision::Stabilizing;
-#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
-use crate::culling::StreamCulled;
 use crate::debug_shim::GizmosParam;
 use crate::material::Materials;
 use crate::persistence::PersistenceTasks;
 use crate::world::PixelWorld;
+#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+use crate::world::streaming::culling::StreamCulled;
 
 /// Type alias for velocity query - varies by physics backend.
 #[cfg(feature = "avian2d")]

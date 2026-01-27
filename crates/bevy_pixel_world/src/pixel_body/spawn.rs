@@ -13,7 +13,7 @@ use super::{DisplacementState, LastBlitTransform, Persistable, PixelBodyId, Pixe
 use crate::collision::CollisionQueryPoint;
 use crate::coords::MaterialId;
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
-use crate::culling::StreamCulled;
+use crate::world::streaming::culling::StreamCulled;
 
 /// Returns the physics bundle for a pixel body (collider + rigid body +
 /// markers).
