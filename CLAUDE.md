@@ -70,10 +70,10 @@ git worktree add ../sim2d-plugin-helpers -b refactor/plugin-helpers
 git worktree add ../sim2d-physics-desync -b fix/physics-desync-on-load
 
 # After creating the worktree, copy target/ to speed up first compilation:
-cp -al target/ ../sim2d-<suffix>/target/
+cp -r target/ ../sim2d-<suffix>/target/
 ```
 
-> **Tip**: `cp -al` uses hard links, so the copy is instant and uses no extra disk space. sccache helps with incremental rebuilds, but having a local `target/` avoids re-downloading and re-compiling all dependencies from scratch.
+> **Tip**: Use `cp -r` (not `cp -al`) so each worktree gets independent files. Hard links would cause lock conflicts when compiling multiple worktrees concurrently. sccache still shares cached artifacts across worktrees.
 
 ### Conventions
 
