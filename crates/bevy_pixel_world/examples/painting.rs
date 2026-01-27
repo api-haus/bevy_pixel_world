@@ -29,7 +29,6 @@ use bevy::window::PrimaryWindow;
 use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 use bevy_pixel_world::SpawnPixelBody;
-use bevy_pixel_world::diagnostics::DiagnosticsPlugin;
 use bevy_pixel_world::submergence::SubmersionState;
 use bevy_pixel_world::visual_debug::{
   SettingsPersistence, VisualDebugSettings, visual_debug_checkboxes,
@@ -122,8 +121,6 @@ fn main() {
       )
         .chain(),
     );
-
-  app.add_plugins(DiagnosticsPlugin);
 
   #[cfg(feature = "avian2d")]
   {

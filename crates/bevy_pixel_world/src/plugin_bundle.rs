@@ -8,6 +8,7 @@ use crate::PixelWorldPlugin;
 use crate::bodies_plugin::PixelBodiesPlugin;
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 use crate::buoyancy::{Buoyancy2dPlugin, BuoyancyConfig};
+use crate::diagnostics::DiagnosticsPlugin;
 use crate::submergence::{PixelAwarenessPlugin, SubmersionConfig};
 use crate::world::streaming::CullingConfig;
 
@@ -33,6 +34,8 @@ pub struct PixelWorldFullBundle {
   /// Buoyancy physics plugin (forces, torque).
   #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
   pub buoyancy: Buoyancy2dPlugin,
+  /// Diagnostics plugin (frame time, simulation metrics).
+  pub diagnostics: DiagnosticsPlugin,
 }
 
 impl PixelWorldFullBundle {
@@ -84,6 +87,7 @@ impl Default for PixelWorldFullBundle {
       awareness: PixelAwarenessPlugin::default(),
       #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
       buoyancy: Buoyancy2dPlugin::default(),
+      diagnostics: DiagnosticsPlugin,
     }
   }
 }
@@ -98,6 +102,6 @@ impl PluginGroup for PixelWorldFullBundle {
     #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
     let builder = builder.add(self.buoyancy);
 
-    builder
+    builder.add(self.diagnostics)
   }
 }
