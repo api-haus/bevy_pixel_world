@@ -21,7 +21,7 @@ palette = { version = "0.7", default-features = false, features = ["std"] }
 paste = "1.0"
 bitflags = "2"
 rayon = "1.10"
-bevy_egui = { version = "0.37", optional = true }
+bevy_egui = "0.37"
 tracing = { version = "0.1", optional = true }
 tracing-tracy = { version = "0.11", optional = true, default-features = false, features = ["flush-on-exit"] }
 tracing-subscriber = { version = "0.3", optional = true, default-features = false, features = ["registry"] }
@@ -29,9 +29,12 @@ avian2d = { version = "0.4", optional = true }
 bevy_rapier2d = { version = "0.32", optional = true }
 
 [dev-dependencies]
-bevy_egui = "0.37"
 rand = "0.8"
 tempfile = "3"
+
+[[test]]
+name = "body_stability_e2e"
+required-features = ["headless"]
 
 [[test]]
 name = "persistence_bevy_e2e"
@@ -51,16 +54,12 @@ required-features = ["headless"]
 
 [[test]]
 name = "submergence_e2e"
-required-features = ["headless", "submergence", "avian2d"]
+required-features = ["headless", "avian2d"]
 
 [features]
-default = ["dev", "submergence", "buoyancy"]
-dev = ["bevy/dynamic_linking", "visual_debug", "diagnostics"]
+default = []
+dev = ["bevy/dynamic_linking"]
 headless = []
-visual_debug = []
-diagnostics = ["dep:bevy_egui"]
 tracy = ["dep:tracing", "dep:tracing-tracy", "dep:tracing-subscriber"]
 avian2d = ["dep:avian2d"]
 rapier2d = ["dep:bevy_rapier2d"]
-buoyancy = []
-submergence = []

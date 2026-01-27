@@ -3,7 +3,7 @@
 //! This module consolidates all Pre-Simulation phase systems that handle
 //! chunk streaming, seeding, culling, and pixel body loading.
 
-mod body_loading;
+pub(crate) mod body_loading;
 pub mod culling;
 mod frame_reset;
 mod seeding;

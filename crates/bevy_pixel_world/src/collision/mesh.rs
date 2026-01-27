@@ -21,8 +21,7 @@ pub struct TileCollisionMesh {
   /// Incremented each time the mesh is regenerated.
   pub generation: u64,
 
-  /// Time spent generating this mesh (only with diagnostics feature).
-  #[cfg(feature = "diagnostics")]
+  /// Time spent generating this mesh.
   pub generation_time_ms: f32,
 }
 

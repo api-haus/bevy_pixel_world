@@ -11,7 +11,7 @@
 //! - [`blit`] — parallel blit orchestration
 
 mod blit;
-mod body_loader;
+pub(crate) mod body_loader;
 mod bundle;
 pub mod control;
 pub(crate) mod persistence_systems;

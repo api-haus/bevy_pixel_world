@@ -7,10 +7,10 @@ dev_rapier:
 
 # Run painting example with release profile (diagnostics only for FPS)
 run:
-    cargo run -p bevy_pixel_world --example painting --release --no-default-features --features diagnostics,visual_debug,submergence,buoyancy,avian2d
+    cargo run -p bevy_pixel_world --example painting --release --features avian2d
 
 run_rapier2d:
-    cargo run -p bevy_pixel_world --example painting --release --no-default-features --features diagnostics,visual_debug,submergence,buoyancy,rapier2d
+    cargo run -p bevy_pixel_world --example painting --release --features rapier2d
 
 # Run all bevy_pixel_world E2E and unit tests (headless, no GPU)
 test-pixel-world:

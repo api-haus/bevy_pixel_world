@@ -40,10 +40,7 @@ fn physics_bundle(collider: Collider) -> impl Bundle {
 }
 
 /// Returns the damping bundle for submergence physics effects.
-#[cfg(all(
-  feature = "submergence",
-  any(feature = "avian2d", feature = "rapier2d")
-))]
+#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 fn submergence_damping_bundle() -> impl Bundle {
   #[cfg(feature = "avian2d")]
   {
@@ -272,13 +269,9 @@ pub fn finalize_pending_pixel_bodies(
     #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
     entity_commands.insert(physics_bundle(collider));
 
-    #[cfg(feature = "submergence")]
     entity_commands.insert(crate::submergence::Submergent);
 
-    #[cfg(all(
-      feature = "submergence",
-      any(feature = "avian2d", feature = "rapier2d")
-    ))]
+    #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
     entity_commands.insert(submergence_damping_bundle());
   }
 }

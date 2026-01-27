@@ -4,7 +4,6 @@ mod core;
 mod editor;
 mod input;
 mod player;
-#[cfg(feature = "visual_debug")]
 mod visual_debug;
 mod world;
 
@@ -51,10 +50,7 @@ fn main() {
   #[cfg(not(feature = "editor"))]
   app.add_plugins(world::WorldPlugin);
 
-  #[cfg(feature = "visual_debug")]
   app.add_plugins(visual_debug::VisualDebugPlugin);
-
-  #[cfg(feature = "diagnostics")]
   app.add_plugins(bevy_pixel_world::diagnostics::DiagnosticsPlugin);
 
   app.run();

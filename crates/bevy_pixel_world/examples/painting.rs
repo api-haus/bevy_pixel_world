@@ -29,11 +29,8 @@ use bevy::window::PrimaryWindow;
 use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 use bevy_pixel_world::SpawnPixelBody;
-#[cfg(feature = "diagnostics")]
 use bevy_pixel_world::diagnostics::DiagnosticsPlugin;
-#[cfg(feature = "submergence")]
 use bevy_pixel_world::submergence::{PixelSubmergencePlugin, SubmersionState};
-#[cfg(feature = "visual_debug")]
 use bevy_pixel_world::visual_debug::{
   SettingsPersistence, VisualDebugSettings, visual_debug_checkboxes,
 };
@@ -102,6 +99,7 @@ fn main() {
     }))
     // Enable persistence with named save "world"
     .add_plugins(PixelWorldPlugin::with_persistence("pixel_world_painting").load("world"))
+    .add_plugins(bevy_pixel_world::PixelBodiesPlugin)
     .add_plugins(EguiPlugin::default())
     .insert_resource(BrushState::default())
     .init_resource::<UiState>()
@@ -127,7 +125,6 @@ fn main() {
         .chain(),
     );
 
-  #[cfg(feature = "diagnostics")]
   app.add_plugins(DiagnosticsPlugin);
 
   #[cfg(feature = "avian2d")]
@@ -153,7 +150,6 @@ fn main() {
 
   // Enable submergence detection - all pixel bodies will automatically
   // have their gravity and damping adjusted based on liquid submersion
-  #[cfg(feature = "submergence")]
   app.add_plugins(PixelSubmergencePlugin::default());
 
   app.run();
@@ -264,9 +260,9 @@ fn ui_system(
   mut ui_state: ResMut<UiState>,
   worlds: Query<&PixelWorld>,
   body_query: Query<Entity, With<PixelBody>>,
-  #[cfg(feature = "submergence")] submersion_query: Query<&SubmersionState>,
-  #[cfg(feature = "visual_debug")] mut settings: ResMut<VisualDebugSettings>,
-  #[cfg(feature = "visual_debug")] mut persistence: ResMut<SettingsPersistence>,
+  submersion_query: Query<&SubmersionState>,
+  mut settings: ResMut<VisualDebugSettings>,
+  mut persistence: ResMut<SettingsPersistence>,
 ) {
   let Ok(ctx) = contexts.ctx_mut() else {
     return;
@@ -416,8 +412,7 @@ fn ui_system(
           }
         });
 
-      // Visual Debug section (feature-gated, collapsed by default)
-      #[cfg(feature = "visual_debug")]
+      // Visual Debug section (collapsed by default)
       egui::CollapsingHeader::new("Visual Debug")
         .default_open(false)
         .show(ui, |ui| {
@@ -436,23 +431,16 @@ fn ui_system(
           } else {
             bodies.sort_by_key(|e| e.index());
             for entity in &bodies {
-              #[cfg(feature = "submergence")]
-              {
-                let (status, color) = if let Ok(state) = submersion_query.get(*entity) {
-                  if state.is_submerged {
-                    ("submerged", egui::Color32::LIGHT_BLUE)
-                  } else {
-                    ("not submerged", egui::Color32::GRAY)
-                  }
+              let (status, color) = if let Ok(state) = submersion_query.get(*entity) {
+                if state.is_submerged {
+                  ("submerged", egui::Color32::LIGHT_BLUE)
                 } else {
-                  ("no state", egui::Color32::DARK_GRAY)
-                };
-                ui.colored_label(color, format!("Body {}: {}", entity.index(), status));
-              }
-              #[cfg(not(feature = "submergence"))]
-              {
-                ui.label(format!("Body {}", entity.index()));
-              }
+                  ("not submerged", egui::Color32::GRAY)
+                }
+              } else {
+                ("no state", egui::Color32::DARK_GRAY)
+              };
+              ui.colored_label(color, format!("Body {}: {}", entity.index(), status));
             }
           }
         });

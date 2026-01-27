@@ -100,8 +100,9 @@ pub fn draw_pixel_body_centers(
 /// VisualDebugSettings::show_collision_meshes.
 pub fn sync_collision_config(
   settings: Res<VisualDebugSettings>,
-  mut config: ResMut<crate::collision::CollisionConfig>,
+  config: Option<ResMut<crate::collision::CollisionConfig>>,
 ) {
+  let Some(mut config) = config else { return };
   if config.debug_gizmos != settings.show_collision_meshes {
     config.debug_gizmos = settings.show_collision_meshes;
   }

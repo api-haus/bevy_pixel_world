@@ -19,8 +19,9 @@ use bevy_pixel_world::submergence::{
   PixelSubmergencePlugin, Submerged, Submergent, SubmersionState, Surfaced,
 };
 use bevy_pixel_world::{
-  ColorIndex, MaterialSeeder, PersistenceConfig, Pixel, PixelBody, PixelWorld, PixelWorldPlugin,
-  SpawnPixelBodyFromImage, SpawnPixelWorld, StreamingCamera, WorldPos, material_ids,
+  ColorIndex, MaterialSeeder, PersistenceConfig, Pixel, PixelBodiesPlugin, PixelBody, PixelWorld,
+  PixelWorldPlugin, SpawnPixelBodyFromImage, SpawnPixelWorld, StreamingCamera, WorldPos,
+  material_ids,
 };
 use tempfile::TempDir;
 
@@ -74,6 +75,7 @@ impl TestHarness {
     app.add_plugins(
       PixelWorldPlugin::default().persistence(PersistenceConfig::new("test").with_path(save_path)),
     );
+    app.add_plugins(PixelBodiesPlugin);
 
     // Add physics plugins (required for submergence physics effects)
     #[cfg(feature = "avian2d")]

@@ -33,7 +33,6 @@ use bevy::prelude::*;
 use bevy_egui::{EguiPlugin, EguiPrimaryContextPass};
 #[cfg(feature = "avian2d")]
 use bevy_pixel_world::SpawnPixelBody;
-#[cfg(feature = "diagnostics")]
 use bevy_pixel_world::diagnostics::DiagnosticsPlugin;
 use bevy_pixel_world::{
   MaterialSeeder, PersistenceConfig, Pixel, PixelWorld, PixelWorldPlugin, SpawnPixelWorld,
@@ -65,6 +64,7 @@ fn main() {
       PixelWorldPlugin::default()
         .persistence(PersistenceConfig::new("debug_erasure").with_path(&save_path)),
     )
+    .add_plugins(bevy_pixel_world::PixelBodiesPlugin)
     .add_plugins(EguiPlugin::default())
     .insert_resource(cli_config)
     .init_resource::<DebugState>()
@@ -82,7 +82,6 @@ fn main() {
       ),
     );
 
-  #[cfg(feature = "diagnostics")]
   app.add_plugins(DiagnosticsPlugin);
 
   #[cfg(feature = "avian2d")]
