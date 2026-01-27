@@ -12,5 +12,9 @@ run:
 run_rapier2d:
     cargo run -p bevy_pixel_world --example painting --release --no-default-features --features diagnostics,visual_debug,submergence,buoyancy,rapier2d
 
+# Run all bevy_pixel_world E2E and unit tests (headless, no GPU)
+test-pixel-world:
+    cargo test -p bevy_pixel_world --features headless --no-default-features
+
 game:
     cargo run -p game
