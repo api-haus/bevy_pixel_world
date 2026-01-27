@@ -185,7 +185,13 @@ fn spawn_tile_colliders(
           let a = poly.vertices[tri.a] - tile_origin;
           let b = poly.vertices[tri.b] - tile_origin;
           let c = poly.vertices[tri.c] - tile_origin;
-          Some((Vec2::ZERO, 0.0, Collider::triangle(a, b, c)))
+          // Skip degenerate triangles that crash parry2d's BVH
+          let cross = (b - a).perp_dot(c - a);
+          if cross.abs() > f32::EPSILON {
+            Some((Vec2::ZERO, 0.0, Collider::triangle(a, b, c)))
+          } else {
+            None
+          }
         })
       })
       .collect();

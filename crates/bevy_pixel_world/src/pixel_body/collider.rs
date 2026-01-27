@@ -82,7 +82,13 @@ pub fn generate_collider_with_tolerance(body: &PixelBody, tolerance: f32) -> Opt
         let a = vertices[tri.a];
         let b = vertices[tri.b];
         let c = vertices[tri.c];
-        Some((Vec2::ZERO, 0.0, Collider::triangle(a, b, c)))
+        // Skip degenerate triangles that crash parry2d's BVH
+        let cross = (b - a).perp_dot(c - a);
+        if cross.abs() > f32::EPSILON {
+          Some((Vec2::ZERO, 0.0, Collider::triangle(a, b, c)))
+        } else {
+          None
+        }
       })
     })
     .collect();
