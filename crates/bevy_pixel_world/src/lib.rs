@@ -8,10 +8,14 @@ use std::path::PathBuf;
 use bevy::prelude::*;
 use bevy::sprite_render::Material2dPlugin;
 
+pub mod basic_persistence;
 pub mod bodies_plugin;
 pub mod buoyancy;
 pub mod collision;
 pub mod coords;
+pub mod creative_mode;
+pub mod debug_camera;
+pub mod debug_controller;
 pub mod debug_shim;
 pub mod diagnostics;
 pub mod material;
@@ -32,6 +36,7 @@ mod tracy_init;
 pub mod visual_debug;
 pub mod world;
 
+pub use basic_persistence::BasicPersistencePlugin;
 pub use bodies_plugin::PixelBodiesPlugin;
 pub use buoyancy::BuoyancyConfig;
 pub use buoyancy::SubmersionConfig;
@@ -40,6 +45,9 @@ pub use coords::{
   CHUNK_SIZE, ChunkPos, ColorIndex, LocalPos, MaterialId, TILE_SIZE, TilePos, WorldFragment,
   WorldPos, WorldRect,
 };
+pub use creative_mode::CreativeModePlugins;
+pub use debug_camera::{CameraZoom, PixelDebugControllerCameraPlugin};
+pub use debug_controller::{BrushState, PixelDebugControllerPlugin, UiPointerState};
 pub use material::{Material, Materials, PhysicsState, ids as material_ids};
 pub use persistence::{PixelBodyRecord, WorldSave, WorldSaveResource};
 pub use pixel::{Pixel, PixelFlags, PixelSurface};
