@@ -5,18 +5,23 @@
 //! - Handles streaming window logic internally
 //! - Provides world-coordinate pixel modification API
 //! - Uses async background seeding with proper state tracking
+//!
+//! Sub-modules split `PixelWorld` methods by responsibility:
+//! - [`pixel_access`] — world-coordinate pixel read/write/swap
+//! - [`blit`] — parallel blit orchestration
 
+mod blit;
 mod body_loader;
 mod bundle;
 pub mod control;
 pub(crate) mod persistence_systems;
+mod pixel_access;
 pub mod plugin;
 mod pool;
 pub(crate) mod slot;
 pub(crate) mod streaming;
 pub(crate) mod systems;
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use bevy::prelude::*;
@@ -26,13 +31,10 @@ pub(crate) use slot::{ChunkSlot, SlotIndex};
 pub(crate) use streaming::{ChunkSaveData, StreamingDelta};
 use streaming::{compute_position_changes, visible_positions};
 
-use crate::coords::{ChunkPos, TilePos, WorldFragment, WorldPos, WorldRect};
-use crate::debug_shim::{self, DebugGizmos};
-use crate::pixel::Pixel;
+use crate::coords::{ChunkPos, WorldRect};
 use crate::primitives::Chunk;
 #[cfg(not(feature = "headless"))]
 use crate::render::ChunkMaterial;
-use crate::scheduling::blitter::{Canvas, parallel_blit};
 use crate::seeding::ChunkSeeder;
 
 /// Configuration for pixel world simulation behavior.
@@ -211,42 +213,9 @@ impl PixelWorld {
       .map(|idx| &mut self.pool.get_mut(idx).chunk)
   }
 
-  /// Marks a chunk as needing GPU upload.
-  pub fn mark_dirty(&mut self, pos: ChunkPos) {
-    if let Some(idx) = self.pool.index_for(pos) {
-      self.pool.get_mut(idx).dirty = true;
-    }
-  }
-
-  /// Marks a world position as simulation-dirty.
-  ///
-  /// This expands the tile dirty rect so the CA simulation will process
-  /// the pixel on the next tick. Use this when placing material that needs
-  /// to participate in simulation (e.g., displaced water).
-  pub fn mark_pixel_sim_dirty(&mut self, pos: WorldPos) {
-    let (chunk_pos, local_pos) = pos.to_chunk_and_local();
-    let Some(idx) = self.pool.index_for(chunk_pos) else {
-      return;
-    };
-    let slot = self.pool.get_mut(idx);
-    if !slot.is_seeded() {
-      return;
-    }
-    slot
-      .chunk
-      .mark_pixel_dirty(local_pos.x as u32, local_pos.y as u32);
-  }
-
   /// Returns an iterator over active chunk positions and their slot indices.
   pub(crate) fn active_chunks(&self) -> impl Iterator<Item = (ChunkPos, SlotIndex)> + '_ {
     self.pool.iter_active()
-  }
-
-  /// Collects mutable references to all seeded chunks for parallel access.
-  ///
-  /// Delegates to ChunkPool which encapsulates the unsafe pointer handling.
-  pub(crate) fn collect_seeded_chunks(&mut self) -> HashMap<ChunkPos, &mut Chunk> {
-    self.pool.collect_seeded_mut()
   }
 
   /// Returns the number of active chunks.
@@ -357,172 +326,5 @@ impl PixelWorld {
       slot.texture = Some(texture);
       slot.material = Some(material);
     }
-  }
-
-  // === Pixel access API ===
-
-  /// Returns a reference to the pixel at the given world position.
-  ///
-  /// Returns None if the chunk is not loaded or not yet seeded.
-  pub fn get_pixel(&self, pos: WorldPos) -> Option<&Pixel> {
-    let (chunk_pos, local_pos) = pos.to_chunk_and_local();
-    let idx = self.pool.index_for(chunk_pos)?;
-    let slot = self.pool.get(idx);
-    if !slot.is_seeded() {
-      return None;
-    }
-    Some(&slot.chunk.pixels[(local_pos.x as u32, local_pos.y as u32)])
-  }
-
-  /// Returns a mutable reference to the pixel at the given world position.
-  ///
-  /// Returns None if the chunk is not loaded or not yet seeded.
-  /// Does NOT mark the chunk as dirty - caller must do so.
-  pub fn get_pixel_mut(&mut self, pos: WorldPos) -> Option<&mut Pixel> {
-    let (chunk_pos, local_pos) = pos.to_chunk_and_local();
-    let idx = self.pool.index_for(chunk_pos)?;
-    let slot = self.pool.get_mut(idx);
-    if !slot.is_seeded() {
-      return None;
-    }
-    Some(&mut slot.chunk.pixels[(local_pos.x as u32, local_pos.y as u32)])
-  }
-
-  /// Swaps two pixels at the given world positions.
-  ///
-  /// Returns true if the swap was successful, false if either chunk
-  /// is not loaded or not yet seeded.
-  pub fn swap_pixels(&mut self, a: WorldPos, b: WorldPos) -> bool {
-    let (chunk_a, local_a) = a.to_chunk_and_local();
-    let (chunk_b, local_b) = b.to_chunk_and_local();
-
-    // Get slot indices for both chunks
-    let Some(idx_a) = self.pool.index_for(chunk_a) else {
-      return false;
-    };
-    let Some(idx_b) = self.pool.index_for(chunk_b) else {
-      return false;
-    };
-
-    // Check both are seeded
-    if !self.pool.get(idx_a).is_seeded() || !self.pool.get(idx_b).is_seeded() {
-      return false;
-    }
-
-    if chunk_a == chunk_b {
-      // Same chunk - simple swap
-      let slot = self.pool.get_mut(idx_a);
-      let (la, lb) = (
-        (local_a.x as u32, local_a.y as u32),
-        (local_b.x as u32, local_b.y as u32),
-      );
-      let pixel_a = slot.chunk.pixels[la];
-      let pixel_b = slot.chunk.pixels[lb];
-      slot.chunk.pixels[la] = pixel_b;
-      slot.chunk.pixels[lb] = pixel_a;
-      slot.dirty = true;
-      slot.modified = true;
-      slot.persisted = false;
-    } else {
-      // Different chunks - need to swap across
-      let (slot_a, slot_b) = self.pool.get_two_mut(idx_a, idx_b);
-
-      let la = (local_a.x as u32, local_a.y as u32);
-      let lb = (local_b.x as u32, local_b.y as u32);
-      std::mem::swap(&mut slot_a.chunk.pixels[la], &mut slot_b.chunk.pixels[lb]);
-      slot_a.dirty = true;
-      slot_a.modified = true;
-      slot_a.persisted = false;
-      slot_b.dirty = true;
-      slot_b.modified = true;
-      slot_b.persisted = false;
-    }
-
-    true
-  }
-
-  /// Sets the pixel at the given world position.
-  ///
-  /// Returns true if the pixel was set, false if the chunk is not loaded
-  /// or not yet seeded.
-  ///
-  /// The `debug_gizmos` parameter emits visual debug overlays when the
-  /// `visual-debug` feature is enabled. Pass `()` when disabled.
-  pub fn set_pixel(&mut self, pos: WorldPos, pixel: Pixel, debug_gizmos: DebugGizmos<'_>) -> bool {
-    let (chunk_pos, local_pos) = pos.to_chunk_and_local();
-    let Some(idx) = self.pool.index_for(chunk_pos) else {
-      return false;
-    };
-    let slot = self.pool.get_mut(idx);
-    if !slot.is_seeded() {
-      return false;
-    }
-    slot.chunk.pixels[(local_pos.x as u32, local_pos.y as u32)] = pixel;
-    let was_clean = !slot.dirty;
-    slot.dirty = true;
-    slot.modified = true;
-    slot.persisted = false; // Needs saving again
-
-    // Emit chunk gizmo if this is the first modification
-    if was_clean {
-      debug_shim::emit_chunk(debug_gizmos, chunk_pos);
-    }
-
-    true
-  }
-
-  /// Blits pixels using a shader-style callback.
-  ///
-  /// For each pixel in `rect`, calls `f(fragment)` where fragment contains
-  /// world coordinates and normalized UV. If `f` returns Some(pixel), that
-  /// pixel is written; if None, the pixel is unchanged.
-  ///
-  /// Uses parallel 2x2 checkerboard scheduling for thread-safe concurrent
-  /// writes. Returns the list of chunk positions that were modified.
-  ///
-  /// The `debug_gizmos` parameter emits visual debug overlays when the
-  /// `visual-debug` feature is enabled. Pass `()` when disabled.
-  pub fn blit<F>(&mut self, rect: WorldRect, f: F, debug_gizmos: DebugGizmos<'_>) -> Vec<ChunkPos>
-  where
-    F: Fn(WorldFragment) -> Option<Pixel> + Sync,
-  {
-    let chunks = self.collect_seeded_chunks();
-    let chunk_access = Canvas::new(chunks);
-    let dirty_chunks = std::sync::Mutex::new(std::collections::HashSet::new());
-    let dirty_tiles = std::sync::Mutex::new(std::collections::HashSet::<TilePos>::new());
-
-    parallel_blit(&chunk_access, rect, f, &dirty_chunks, Some(&dirty_tiles));
-
-    let dirty: Vec<_> = dirty_chunks
-      .into_inner()
-      .unwrap_or_default()
-      .into_iter()
-      .collect();
-    let dirty_tile_list: Vec<_> = dirty_tiles
-      .into_inner()
-      .unwrap_or_default()
-      .into_iter()
-      .collect();
-
-    // Mark affected chunks as dirty and needing save
-    for &pos in &dirty {
-      if let Some(idx) = self.pool.index_for(pos) {
-        let slot = self.pool.get_mut(idx);
-        slot.dirty = true;
-        slot.modified = true;
-        slot.persisted = false;
-      }
-    }
-
-    // Emit debug gizmos
-    debug_shim::emit_blit_rect(debug_gizmos, rect);
-    for &pos in &dirty {
-      debug_shim::emit_chunk(debug_gizmos, pos);
-    }
-    for &tile in &dirty_tile_list {
-      debug_shim::emit_tile(debug_gizmos, tile);
-    }
-
-    dirty
   }
 }
