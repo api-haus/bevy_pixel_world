@@ -9,7 +9,11 @@ use bevy::math::Vec2;
 
 /// Edge segment within a cell, represented as start and end points.
 /// Coordinates are in cell-local space [0, 1].
-pub type EdgeSegment = ((f32, f32), (f32, f32));
+#[derive(Clone, Copy, Debug)]
+pub struct EdgeSegment {
+  pub start: (f32, f32),
+  pub end: (f32, f32),
+}
 
 /// Lookup table for marching squares edge segments.
 ///
@@ -29,37 +33,43 @@ pub type EdgeSegment = ((f32, f32), (f32, f32));
 ///   (0,0)----(0.5,0)----(1,0)
 ///
 /// Returns 0, 1, or 2 edge segments per cell case.
+macro_rules! edge {
+  ($s:expr, $e:expr) => {
+    EdgeSegment { start: $s, end: $e }
+  };
+}
+
 pub const EDGE_TABLE: [&[EdgeSegment]; 16] = [
   // Case 0 (0000): all empty - no contour
   &[],
   // Case 1 (0001): tl solid - diagonal from left to top
-  &[((0.0, 0.5), (0.5, 1.0))],
+  &[edge!((0.0, 0.5), (0.5, 1.0))],
   // Case 2 (0010): tr solid - diagonal from top to right
-  &[((0.5, 1.0), (1.0, 0.5))],
+  &[edge!((0.5, 1.0), (1.0, 0.5))],
   // Case 3 (0011): tl+tr solid (top row) - horizontal from left to right
-  &[((0.0, 0.5), (1.0, 0.5))],
+  &[edge!((0.0, 0.5), (1.0, 0.5))],
   // Case 4 (0100): bl solid - diagonal from bottom to left
-  &[((0.5, 0.0), (0.0, 0.5))],
+  &[edge!((0.5, 0.0), (0.0, 0.5))],
   // Case 5 (0101): tl+bl solid (left column) - vertical from bottom to top
-  &[((0.5, 0.0), (0.5, 1.0))],
+  &[edge!((0.5, 0.0), (0.5, 1.0))],
   // Case 6 (0110): tr+bl solid (diagonal saddle) - two separate contours
-  &[((0.0, 0.5), (0.5, 1.0)), ((0.5, 0.0), (1.0, 0.5))],
+  &[edge!((0.0, 0.5), (0.5, 1.0)), edge!((0.5, 0.0), (1.0, 0.5))],
   // Case 7 (0111): tl+tr+bl solid (only br empty) - diagonal from bottom to right
-  &[((0.5, 0.0), (1.0, 0.5))],
+  &[edge!((0.5, 0.0), (1.0, 0.5))],
   // Case 8 (1000): br solid - diagonal from right to bottom
-  &[((1.0, 0.5), (0.5, 0.0))],
+  &[edge!((1.0, 0.5), (0.5, 0.0))],
   // Case 9 (1001): tl+br solid (diagonal saddle) - two separate contours
-  &[((0.0, 0.5), (0.5, 0.0)), ((0.5, 1.0), (1.0, 0.5))],
+  &[edge!((0.0, 0.5), (0.5, 0.0)), edge!((0.5, 1.0), (1.0, 0.5))],
   // Case 10 (1010): tr+br solid (right column) - vertical from top to bottom
-  &[((0.5, 1.0), (0.5, 0.0))],
+  &[edge!((0.5, 1.0), (0.5, 0.0))],
   // Case 11 (1011): tl+tr+br solid (only bl empty) - diagonal from left to bottom
-  &[((0.0, 0.5), (0.5, 0.0))],
+  &[edge!((0.0, 0.5), (0.5, 0.0))],
   // Case 12 (1100): bl+br solid (bottom row) - horizontal from right to left
-  &[((1.0, 0.5), (0.0, 0.5))],
+  &[edge!((1.0, 0.5), (0.0, 0.5))],
   // Case 13 (1101): tl+bl+br solid (only tr empty) - diagonal from top to right
-  &[((0.5, 1.0), (1.0, 0.5))],
+  &[edge!((0.5, 1.0), (1.0, 0.5))],
   // Case 14 (1110): tr+bl+br solid (only tl empty) - diagonal from left to top
-  &[((0.0, 0.5), (0.5, 1.0))],
+  &[edge!((0.0, 0.5), (0.5, 1.0))],
   // Case 15 (1111): all solid - no contour
   &[],
 ];
@@ -219,11 +229,11 @@ where
 
       let case = (tl as usize) | ((tr as usize) << 1) | ((bl as usize) << 2) | ((br as usize) << 3);
 
-      for &((x1, y1), (x2, y2)) in EDGE_TABLE[case] {
-        let local_x1 = (cx as f32 - origin_offset) + x1;
-        let local_y1 = (cy as f32 - origin_offset) + y1;
-        let local_x2 = (cx as f32 - origin_offset) + x2;
-        let local_y2 = (cy as f32 - origin_offset) + y2;
+      for seg in EDGE_TABLE[case] {
+        let local_x1 = (cx as f32 - origin_offset) + seg.start.0;
+        let local_y1 = (cy as f32 - origin_offset) + seg.start.1;
+        let local_x2 = (cx as f32 - origin_offset) + seg.end.0;
+        let local_y2 = (cy as f32 - origin_offset) + seg.end.1;
 
         segments.push((Vec2::new(local_x1, local_y1), Vec2::new(local_x2, local_y2)));
       }

@@ -261,6 +261,77 @@ pub(crate) fn create_body_record_blitted(
   )
 }
 
+/// What to do with an entity after saving its body.
+enum PostSaveAction {
+  /// Despawn the entity (chunk unload).
+  Despawn,
+  /// Keep the entity alive (manual/auto save).
+  Keep,
+}
+
+/// Iterates bodies, queuing saves or removals for each. Returns number saved.
+///
+/// Shared logic for both chunk-unload and request-based saves.
+#[allow(unused_variables)]
+fn save_matching_bodies(
+  commands: &mut Commands,
+  persistence_tasks: &mut PersistenceTasks,
+  bodies: &Query<(
+    Entity,
+    &PixelBodyId,
+    &PixelBody,
+    &Persistable,
+    &LastBlitTransform,
+  )>,
+  #[cfg(feature = "avian2d")] velocities: &Query<(
+    Option<&avian2d::prelude::LinearVelocity>,
+    Option<&avian2d::prelude::AngularVelocity>,
+  )>,
+  #[cfg(all(feature = "rapier2d", not(feature = "avian2d")))] velocities: &Query<
+    Option<&bevy_rapier2d::prelude::Velocity>,
+  >,
+  mut filter: impl FnMut(Entity, &LastBlitTransform) -> Option<PostSaveAction>,
+) -> u32 {
+  let mut count = 0;
+
+  for (entity, body_id, body, _, blitted) in bodies.iter() {
+    let Some(action) = filter(entity, blitted) else {
+      continue;
+    };
+
+    if body.is_empty() {
+      persistence_tasks.queue_body_remove(body_id.value());
+      if matches!(action, PostSaveAction::Despawn) {
+        commands.entity(entity).despawn();
+      }
+      continue;
+    }
+
+    let Some(record) = create_body_record_blitted(
+      entity,
+      body_id,
+      body,
+      blitted,
+      #[cfg(any(
+        feature = "avian2d",
+        all(feature = "rapier2d", not(feature = "avian2d"))
+      ))]
+      velocities,
+    ) else {
+      continue;
+    };
+
+    persistence_tasks.queue_body_save(record);
+    count += 1;
+
+    if matches!(action, PostSaveAction::Despawn) {
+      commands.entity(entity).despawn();
+    }
+  }
+
+  count
+}
+
 /// System: Saves pixel bodies when their chunk unloads.
 ///
 /// Uses the blitted transform to ensure saved position matches where pixels
@@ -291,42 +362,24 @@ pub(crate) fn save_pixel_bodies_on_chunk_unload(
 
   let unloading_set: HashSet<_> = unloading_chunks.positions.iter().copied().collect();
 
-  for (entity, body_id, body, _, blitted) in bodies.iter() {
-    let Some(bt) = &blitted.transform else {
-      continue;
-    };
-
-    let (chunk_pos, _) =
-      WorldPos::new(bt.translation().x as i64, bt.translation().y as i64).to_chunk_and_local();
-
-    if !unloading_set.contains(&chunk_pos) {
-      continue;
-    }
-
-    // If body is empty (fully erased), queue removal instead of save
-    if body.is_empty() {
-      persistence_tasks.queue_body_remove(body_id.value());
-      commands.entity(entity).despawn();
-      continue;
-    }
-
-    let Some(record) = create_body_record_blitted(
-      entity,
-      body_id,
-      body,
-      blitted,
-      #[cfg(any(
-        feature = "avian2d",
-        all(feature = "rapier2d", not(feature = "avian2d"))
-      ))]
-      &velocities,
-    ) else {
-      continue;
-    };
-
-    persistence_tasks.queue_body_save(record);
-    commands.entity(entity).despawn();
-  }
+  save_matching_bodies(
+    &mut commands,
+    &mut persistence_tasks,
+    &bodies,
+    #[cfg(any(
+      feature = "avian2d",
+      all(feature = "rapier2d", not(feature = "avian2d"))
+    ))]
+    &velocities,
+    |_entity, blitted| {
+      let bt = blitted.transform.as_ref()?;
+      let (chunk_pos, _) =
+        WorldPos::new(bt.translation().x as i64, bt.translation().y as i64).to_chunk_and_local();
+      unloading_set
+        .contains(&chunk_pos)
+        .then_some(PostSaveAction::Despawn)
+    },
+  );
 }
 
 /// System: Saves all pixel bodies when a full save is requested.
@@ -335,6 +388,7 @@ pub(crate) fn save_pixel_bodies_on_chunk_unload(
 /// despawning them, used for manual saves (Ctrl+S) and auto-saves.
 #[allow(unused_variables)]
 pub(crate) fn save_pixel_bodies_on_request(
+  mut commands: Commands,
   persistence: Res<PersistenceControl>,
   mut persistence_tasks: ResMut<PersistenceTasks>,
   bodies: Query<(
@@ -361,31 +415,17 @@ pub(crate) fn save_pixel_bodies_on_request(
     return;
   }
 
-  let mut count = 0;
-  for (entity, body_id, body, _, blitted) in bodies.iter() {
-    // If body is empty (fully erased), queue removal instead of save
-    if body.is_empty() {
-      persistence_tasks.queue_body_remove(body_id.value());
-      continue;
-    }
-
-    let Some(record) = create_body_record_blitted(
-      entity,
-      body_id,
-      body,
-      blitted,
-      #[cfg(any(
-        feature = "avian2d",
-        all(feature = "rapier2d", not(feature = "avian2d"))
-      ))]
-      &velocities,
-    ) else {
-      continue;
-    };
-
-    persistence_tasks.queue_body_save(record);
-    count += 1;
-  }
+  let count = save_matching_bodies(
+    &mut commands,
+    &mut persistence_tasks,
+    &bodies,
+    #[cfg(any(
+      feature = "avian2d",
+      all(feature = "rapier2d", not(feature = "avian2d"))
+    ))]
+    &velocities,
+    |_entity, _blitted| Some(PostSaveAction::Keep),
+  );
 
   if count > 0 {
     info!("Queued {} pixel bodies for saving", count);

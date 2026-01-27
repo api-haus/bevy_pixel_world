@@ -125,6 +125,15 @@ impl<T> Surface<T> {
   pub fn as_slice_mut(&mut self) -> &mut [T] {
     &mut self.data
   }
+
+  /// Fills the entire surface with the given value.
+  #[inline]
+  pub fn fill(&mut self, value: T)
+  where
+    T: Clone,
+  {
+    self.data.fill(value);
+  }
 }
 
 impl<T> Index<(u32, u32)> for Surface<T> {

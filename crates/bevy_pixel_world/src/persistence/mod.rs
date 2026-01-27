@@ -430,12 +430,7 @@ impl LoadedChunk {
   pub fn apply_to(&self, chunk: &mut Chunk) -> Result<(), LoadError> {
     match self.storage_type {
       StorageType::Empty => {
-        // Fill with void
-        for y in 0..chunk.pixels.height() {
-          for x in 0..chunk.pixels.width() {
-            chunk.pixels[(x, y)] = crate::pixel::Pixel::VOID;
-          }
-        }
+        chunk.pixels.fill(crate::pixel::Pixel::VOID);
       }
       StorageType::Delta => {
         let deltas = decode_delta(&self.data).map_err(LoadError::DeltaDecode)?;

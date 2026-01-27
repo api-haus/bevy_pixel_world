@@ -7,9 +7,9 @@
 use bevy::prelude::*;
 
 use super::SeededChunks;
-use crate::coords::{TilePos, WorldRect};
+use crate::coords::TilePos;
 use crate::persistence::{PersistenceTasks, PixelBodyRecord, WorldSaveResource};
-use crate::pixel_body::PixelBodyIdGenerator;
+use crate::pixel_body::{PixelBodyIdGenerator, compute_transformed_aabb};
 
 /// Entry for a body waiting to spawn.
 pub(crate) struct PendingBodyEntry {
@@ -27,37 +27,22 @@ pub struct PendingPixelBodies {
 pub(crate) fn compute_required_tiles(record: &PixelBodyRecord) -> Vec<TilePos> {
   let half_w = record.width as f32 / 2.0;
   let half_h = record.height as f32 / 2.0;
-  let (cos_r, sin_r) = (record.rotation.cos(), record.rotation.sin());
+
+  let transform = GlobalTransform::from(
+    Transform::from_translation(Vec3::new(record.position.x, record.position.y, 0.0))
+      .with_rotation(Quat::from_rotation_z(record.rotation)),
+  );
 
   let corners = [
-    Vec2::new(-half_w, -half_h),
-    Vec2::new(half_w, -half_h),
-    Vec2::new(-half_w, half_h),
-    Vec2::new(half_w, half_h),
+    Vec3::new(-half_w, -half_h, 0.0),
+    Vec3::new(half_w, -half_h, 0.0),
+    Vec3::new(-half_w, half_h, 0.0),
+    Vec3::new(half_w, half_h, 0.0),
   ];
 
-  let (mut min_x, mut max_x) = (f32::INFINITY, f32::NEG_INFINITY);
-  let (mut min_y, mut max_y) = (f32::INFINITY, f32::NEG_INFINITY);
-
-  for c in corners {
-    let rotated = Vec2::new(
-      c.x * cos_r - c.y * sin_r + record.position.x,
-      c.x * sin_r + c.y * cos_r + record.position.y,
-    );
-    min_x = min_x.min(rotated.x);
-    max_x = max_x.max(rotated.x);
-    min_y = min_y.min(rotated.y);
-    max_y = max_y.max(rotated.y);
-  }
-
-  WorldRect::new(
-    min_x.floor() as i64,
-    min_y.floor() as i64,
-    (max_x.ceil() - min_x.floor()) as u32 + 1,
-    (max_y.ceil() - min_y.floor()) as u32 + 1,
-  )
-  .to_tile_range()
-  .collect()
+  compute_transformed_aabb(corners, &transform)
+    .to_tile_range()
+    .collect()
 }
 
 /// System: Queues pixel bodies when their chunk finishes seeding.

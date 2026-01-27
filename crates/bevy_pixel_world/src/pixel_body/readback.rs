@@ -4,6 +4,8 @@
 //! 1. External modification (brush erasure) - detected before clear/blit
 //! 2. CA simulation - detected after simulation
 
+use std::collections::HashSet;
+
 use bevy::prelude::*;
 use rayon::prelude::*;
 
@@ -116,11 +118,16 @@ pub fn readback_pixel_bodies(
       }
 
       // Merge with any existing destroyed pixels (from external erasure)
-      let mut all_destroyed = existing.clone().unwrap_or_default();
+      let mut seen: HashSet<(u32, u32)> = existing
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+        .copied()
+        .collect();
+      let mut all_destroyed: Vec<_> = seen.iter().copied().collect();
 
-      // Deduplicate
       for pixel in destroyed_pixels {
-        if !all_destroyed.contains(&pixel) {
+        if seen.insert(pixel) {
           all_destroyed.push(pixel);
         }
       }

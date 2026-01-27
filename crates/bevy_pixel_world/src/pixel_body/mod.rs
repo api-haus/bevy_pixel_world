@@ -34,8 +34,8 @@ mod spawn;
 mod split;
 
 use bevy::prelude::*;
-pub(crate) use blit::compute_world_aabb;
 pub use blit::{LastBlitTransform, update_pixel_bodies};
+pub(crate) use blit::{compute_transformed_aabb, compute_world_aabb};
 pub use collider::generate_collider;
 pub use displacement::DisplacementState;
 pub use loader::PixelBodyLoader;
@@ -164,6 +164,37 @@ impl PixelBody {
   /// Returns true if the shape mask is entirely empty.
   pub fn is_empty(&self) -> bool {
     !self.shape_mask.iter().any(|&s| s)
+  }
+
+  /// Maps a world-space point to local pixel coordinates if it hits a solid
+  /// pixel.
+  ///
+  /// Applies the inverse transform, subtracts the origin, performs bounds
+  /// checking, and verifies the pixel is solid. Returns `None` if the point
+  /// is outside the body or lands on a non-solid pixel.
+  pub fn world_to_solid_local(
+    &self,
+    world_point: Vec3,
+    inverse: &bevy::math::Affine3A,
+  ) -> Option<(u32, u32)> {
+    let local_point = inverse.transform_point3(world_point);
+    let local_x = (local_point.x - self.origin.x as f32).floor() as i32;
+    let local_y = (local_point.y - self.origin.y as f32).floor() as i32;
+
+    if local_x < 0
+      || local_x >= self.width() as i32
+      || local_y < 0
+      || local_y >= self.height() as i32
+    {
+      return None;
+    }
+
+    let (lx, ly) = (local_x as u32, local_y as u32);
+    if !self.is_solid(lx, ly) {
+      return None;
+    }
+
+    Some((lx, ly))
   }
 }
 

@@ -27,35 +27,20 @@ pub(super) fn for_each_body_pixel<F>(body: &PixelBody, transform: &GlobalTransfo
 where
   F: FnMut(BodyPixelMapping),
 {
-  let width = body.width() as i32;
-  let height = body.height() as i32;
-  let origin = body.origin;
-
   let aabb = compute_world_aabb(body, transform);
   let inverse = transform.affine().inverse();
 
   for world_y in aabb.y..(aabb.y + aabb.height as i64) {
     for world_x in aabb.x..(aabb.x + aabb.width as i64) {
       let world_point = Vec3::new(world_x as f32 + 0.5, world_y as f32 + 0.5, 0.0);
-      let local_point = inverse.transform_point3(world_point);
 
-      let local_x = (local_point.x - origin.x as f32).floor() as i32;
-      let local_y = (local_point.y - origin.y as f32).floor() as i32;
-
-      if local_x < 0 || local_x >= width || local_y < 0 || local_y >= height {
-        continue;
+      if let Some((lx, ly)) = body.world_to_solid_local(world_point, &inverse) {
+        f(BodyPixelMapping {
+          world_pos: WorldPos::new(world_x, world_y),
+          local_x: lx,
+          local_y: ly,
+        });
       }
-
-      let (lx, ly) = (local_x as u32, local_y as u32);
-      if !body.is_solid(lx, ly) {
-        continue;
-      }
-
-      f(BodyPixelMapping {
-        world_pos: WorldPos::new(world_x, world_y),
-        local_x: lx,
-        local_y: ly,
-      });
     }
   }
 }
@@ -147,24 +132,18 @@ pub fn update_pixel_bodies(
   }
 }
 
-/// Computes the axis-aligned bounding box of a rotated pixel body in world
-/// space.
-pub(crate) fn compute_world_aabb(body: &PixelBody, transform: &GlobalTransform) -> WorldRect {
-  let width = body.width() as f32;
-  let height = body.height() as f32;
-  let ox = body.origin.x as f32;
-  let oy = body.origin.y as f32;
-
-  let corners = [
-    Vec3::new(ox, oy, 0.0),
-    Vec3::new(ox + width, oy, 0.0),
-    Vec3::new(ox, oy + height, 0.0),
-    Vec3::new(ox + width, oy + height, 0.0),
-  ];
-
+/// Computes the axis-aligned bounding box of four local-space corners after
+/// applying a transform.
+///
+/// This is the shared primitive for AABB computation used by both blit
+/// (PixelBody + GlobalTransform) and body loading (PixelBodyRecord fields).
+pub(crate) fn compute_transformed_aabb(
+  local_corners: [Vec3; 4],
+  transform: &GlobalTransform,
+) -> WorldRect {
   let (mut min_x, mut max_x) = (f32::INFINITY, f32::NEG_INFINITY);
   let (mut min_y, mut max_y) = (f32::INFINITY, f32::NEG_INFINITY);
-  for c in corners {
+  for c in local_corners {
     let w = transform.transform_point(c);
     min_x = min_x.min(w.x);
     max_x = max_x.max(w.x);
@@ -177,6 +156,25 @@ pub(crate) fn compute_world_aabb(body: &PixelBody, transform: &GlobalTransform) 
     min_y.floor() as i64,
     (max_x.ceil() - min_x.floor()) as u32 + 1,
     (max_y.ceil() - min_y.floor()) as u32 + 1,
+  )
+}
+
+/// Computes the axis-aligned bounding box of a rotated pixel body in world
+/// space.
+pub(crate) fn compute_world_aabb(body: &PixelBody, transform: &GlobalTransform) -> WorldRect {
+  let width = body.width() as f32;
+  let height = body.height() as f32;
+  let ox = body.origin.x as f32;
+  let oy = body.origin.y as f32;
+
+  compute_transformed_aabb(
+    [
+      Vec3::new(ox, oy, 0.0),
+      Vec3::new(ox + width, oy, 0.0),
+      Vec3::new(ox, oy + height, 0.0),
+      Vec3::new(ox + width, oy + height, 0.0),
+    ],
+    transform,
   )
 }
 

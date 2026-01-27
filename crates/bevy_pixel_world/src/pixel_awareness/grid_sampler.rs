@@ -61,26 +61,15 @@ pub fn sample_body_grid(
     matched_center_sum: Vec2::ZERO,
   };
 
+  let inverse = transform.affine().inverse();
+
   for gy in 0..grid_size {
     for gx in 0..grid_size {
       let sample_x = aabb.x as f32 + (gx as f32 + 0.5) * step_x;
       let sample_y = aabb.y as f32 + (gy as f32 + 0.5) * step_y;
 
-      // Check if this sample point is within the body's shape
       let world_point = Vec3::new(sample_x, sample_y, 0.0);
-      let local_point = transform.affine().inverse().transform_point3(world_point);
-      let local_x = (local_point.x - body.origin.x as f32).floor() as i32;
-      let local_y = (local_point.y - body.origin.y as f32).floor() as i32;
-
-      if local_x < 0
-        || local_x >= body.width() as i32
-        || local_y < 0
-        || local_y >= body.height() as i32
-      {
-        continue;
-      }
-
-      if !body.is_solid(local_x as u32, local_y as u32) {
+      if body.world_to_solid_local(world_point, &inverse).is_none() {
         continue;
       }
 
