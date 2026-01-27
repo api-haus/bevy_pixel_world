@@ -280,7 +280,7 @@ impl PixelWorld {
         if slot.needs_save() {
           to_save.push(ChunkSaveData {
             pos,
-            pixels: slot.chunk.pixels.as_bytes().to_vec(),
+            pixels: slot.chunk.pixels.bytes_without_body_pixels(),
           });
         }
 

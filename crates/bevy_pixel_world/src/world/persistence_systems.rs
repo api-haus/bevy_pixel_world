@@ -11,6 +11,7 @@
 use std::collections::HashSet;
 use std::sync::atomic::Ordering;
 
+use bevy::ecs::entity_disabling::Disabled;
 use bevy::ecs::message::{MessageReader, MessageWriter};
 use bevy::prelude::*;
 
@@ -73,7 +74,7 @@ pub(crate) fn process_pending_save_requests(
     // Queue each chunk and mark as persisted
     for (pos, idx) in to_save {
       let slot = world.slot(idx);
-      let compressed = compress_lz4(slot.chunk.pixels.as_bytes());
+      let compressed = compress_lz4(&slot.chunk.pixels.bytes_without_body_pixels());
       persistence_tasks.queue_save(pos, compressed, StorageType::Full);
 
       // Mark slot as persisted so we don't save again until modified
@@ -276,13 +277,16 @@ enum PostSaveAction {
 fn save_matching_bodies(
   commands: &mut Commands,
   persistence_tasks: &mut PersistenceTasks,
-  bodies: &Query<(
-    Entity,
-    &PixelBodyId,
-    &PixelBody,
-    &Persistable,
-    &LastBlitTransform,
-  )>,
+  bodies: &Query<
+    (
+      Entity,
+      &PixelBodyId,
+      &PixelBody,
+      &Persistable,
+      &LastBlitTransform,
+    ),
+    Allow<Disabled>,
+  >,
   #[cfg(feature = "avian2d")] velocities: &Query<(
     Option<&avian2d::prelude::LinearVelocity>,
     Option<&avian2d::prelude::AngularVelocity>,
@@ -341,13 +345,16 @@ pub(crate) fn save_pixel_bodies_on_chunk_unload(
   mut commands: Commands,
   unloading_chunks: Res<UnloadingChunks>,
   mut persistence_tasks: ResMut<PersistenceTasks>,
-  bodies: Query<(
-    Entity,
-    &PixelBodyId,
-    &PixelBody,
-    &Persistable,
-    &LastBlitTransform,
-  )>,
+  bodies: Query<
+    (
+      Entity,
+      &PixelBodyId,
+      &PixelBody,
+      &Persistable,
+      &LastBlitTransform,
+    ),
+    Allow<Disabled>,
+  >,
   #[cfg(feature = "avian2d")] velocities: Query<(
     Option<&avian2d::prelude::LinearVelocity>,
     Option<&avian2d::prelude::AngularVelocity>,
@@ -391,13 +398,16 @@ pub(crate) fn save_pixel_bodies_on_request(
   mut commands: Commands,
   persistence: Res<PersistenceControl>,
   mut persistence_tasks: ResMut<PersistenceTasks>,
-  bodies: Query<(
-    Entity,
-    &PixelBodyId,
-    &PixelBody,
-    &Persistable,
-    &LastBlitTransform,
-  )>,
+  bodies: Query<
+    (
+      Entity,
+      &PixelBodyId,
+      &PixelBody,
+      &Persistable,
+      &LastBlitTransform,
+    ),
+    Allow<Disabled>,
+  >,
   #[cfg(feature = "avian2d")] velocities: Query<(
     Option<&avian2d::prelude::LinearVelocity>,
     Option<&avian2d::prelude::AngularVelocity>,

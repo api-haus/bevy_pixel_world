@@ -154,6 +154,30 @@ impl<T> IndexMut<(u32, u32)> for Surface<T> {
   }
 }
 
+impl Surface<crate::pixel::Pixel> {
+  /// Returns pixel data as bytes with `PIXEL_BODY` pixels replaced by
+  /// `Pixel::VOID`.
+  ///
+  /// Used when saving chunk data to avoid baking body pixels into persistent
+  /// storage. Bodies are saved separately and re-blitted on load.
+  pub fn bytes_without_body_pixels(&self) -> Vec<u8> {
+    use crate::pixel::{Pixel, PixelFlags};
+
+    let mut bytes = self.as_bytes().to_vec();
+    let pixel_size = std::mem::size_of::<Pixel>();
+    let void_bytes: [u8; 4] = unsafe { std::mem::transmute(Pixel::VOID) };
+
+    for (i, pixel) in self.data.iter().enumerate() {
+      if pixel.flags.contains(PixelFlags::PIXEL_BODY) {
+        let offset = i * pixel_size;
+        bytes[offset..offset + pixel_size].copy_from_slice(&void_bytes);
+      }
+    }
+
+    bytes
+  }
+}
+
 /// A surface containing RGBA pixels, suitable for GPU upload.
 ///
 /// Used for GPU upload and basic examples only. Simulation uses

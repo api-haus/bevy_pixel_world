@@ -22,7 +22,9 @@ use crate::world::body_loader::spawn_pending_pixel_bodies;
 use crate::world::persistence_systems::{
   save_pixel_bodies_on_chunk_unload, save_pixel_bodies_on_request,
 };
-use crate::world::streaming::{PendingPixelBodies, queue_pixel_bodies_on_chunk_seed};
+use crate::world::streaming::{
+  PendingPixelBodies, queue_pixel_bodies_on_chunk_seed, update_simulation_bounds,
+};
 
 /// Plugin for pixel body systems: spawning, simulation integration, collision,
 /// and body-specific persistence.
@@ -52,6 +54,8 @@ impl Plugin for PixelBodiesPlugin {
     app.init_resource::<PhysicsColliderRegistry>();
 
     // Pre-simulation body systems, ordered after core streaming systems.
+    // Must run after update_simulation_bounds (last in world chain) so that
+    // UnloadingChunks and SeededChunks are populated for the current frame.
     app.add_systems(
       Update,
       (
@@ -60,6 +64,7 @@ impl Plugin for PixelBodiesPlugin {
         finalize_pending_pixel_bodies,
       )
         .chain()
+        .after(update_simulation_bounds)
         .in_set(PixelWorldSet::PreSimulation),
     );
 
