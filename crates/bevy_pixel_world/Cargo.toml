@@ -48,6 +48,13 @@ name = "named_saves_e2e"
 name = "spawn_pixel_body_e2e"
 
 [[test]]
+name = "body_persistence_e2e"
+
+[[test]]
+name = "body_rapier2d_e2e"
+required-features = ["rapier2d"]
+
+[[test]]
 name = "submergence_e2e"
 required-features = ["avian2d"]
 

@@ -21,12 +21,19 @@ pub(crate) fn spawn_pending_pixel_bodies(
   cache: Res<CollisionCache>,
   mut persistence_tasks: ResMut<PersistenceTasks>,
   existing_bodies: Query<&PixelBodyId>,
+  query_points: Query<(), With<crate::collision::CollisionQueryPoint>>,
 ) {
+  // Only wait for collision tiles if there are active collision query points.
+  // Without physics, no tiles are generated and bodies would wait forever.
+  let require_tiles = !query_points.is_empty();
+
   pending.entries.retain(|entry| {
     // Check if all required tiles are cached
-    let ready = entry.required_tiles.iter().all(|t| cache.contains(*t));
-    if !ready {
-      return true; // Keep waiting
+    if require_tiles {
+      let ready = entry.required_tiles.iter().all(|t| cache.contains(*t));
+      if !ready {
+        return true; // Keep waiting
+      }
     }
 
     let record = &entry.record;

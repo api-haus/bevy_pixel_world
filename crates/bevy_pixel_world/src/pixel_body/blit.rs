@@ -260,8 +260,9 @@ pub(super) fn blit_single_body(
 
     let mut pixel_with_flag = pixel;
     pixel_with_flag.flags.insert(PixelFlags::PIXEL_BODY);
-    world.set_pixel(pos, pixel_with_flag, debug_gizmos);
-    written_positions.push((pos, lx, ly));
+    if world.set_pixel(pos, pixel_with_flag, debug_gizmos) {
+      written_positions.push((pos, lx, ly));
+    }
   }
 
   written_positions
@@ -312,7 +313,8 @@ pub fn detect_destroyed_from_written(
   for &(pos, lx, ly) in written_positions {
     let is_destroyed = match world.get_pixel(pos) {
       Some(pixel) => pixel.is_void() || !pixel.flags.contains(PixelFlags::PIXEL_BODY),
-      None => true,
+      // Chunk not loaded — skip, don't treat as destroyed
+      None => false,
     };
 
     if is_destroyed {
