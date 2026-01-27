@@ -49,7 +49,6 @@ pub fn emit_chunk(gizmos: DebugGizmos<'_>, pos: ChunkPos) {
   if let Some(g) = gizmos.0 {
     g.push(crate::visual_debug::PendingGizmo::chunk(pos));
   }
-  let _ = (gizmos, pos);
 }
 
 /// Emit a tile dirty gizmo.
@@ -58,7 +57,6 @@ pub fn emit_tile(gizmos: DebugGizmos<'_>, pos: TilePos) {
   if let Some(g) = gizmos.0 {
     g.push(crate::visual_debug::PendingGizmo::tile(pos));
   }
-  let _ = (gizmos, pos);
 }
 
 /// Emit a blit rect gizmo.
@@ -67,7 +65,6 @@ pub fn emit_blit_rect(gizmos: DebugGizmos<'_>, rect: WorldRect) {
   if let Some(g) = gizmos.0 {
     g.push(crate::visual_debug::PendingGizmo::blit_rect(rect));
   }
-  let _ = (gizmos, rect);
 }
 
 /// Emit a dirty rect gizmo.
@@ -76,5 +73,4 @@ pub fn emit_dirty_rect(gizmos: DebugGizmos<'_>, tile: TilePos, bounds: (u8, u8, 
   if let Some(g) = gizmos.0 {
     g.push(crate::visual_debug::PendingGizmo::dirty_rect(tile, bounds));
   }
-  let _ = (gizmos, tile, bounds);
 }
