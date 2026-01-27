@@ -33,7 +33,6 @@ use streaming::{compute_position_changes, visible_positions};
 
 use crate::coords::{ChunkPos, WorldRect};
 use crate::primitives::Chunk;
-#[cfg(not(feature = "headless"))]
 use crate::render::ChunkMaterial;
 use crate::seeding::ChunkSeeder;
 
@@ -316,15 +315,12 @@ impl PixelWorld {
     &mut self,
     index: SlotIndex,
     entity: Entity,
-    #[cfg(not(feature = "headless"))] texture: Handle<Image>,
-    #[cfg(not(feature = "headless"))] material: Handle<ChunkMaterial>,
+    texture: Option<Handle<Image>>,
+    material: Option<Handle<ChunkMaterial>>,
   ) {
     let slot = self.pool.get_mut(index);
     slot.entity = Some(entity);
-    #[cfg(not(feature = "headless"))]
-    {
-      slot.texture = Some(texture);
-      slot.material = Some(material);
-    }
+    slot.texture = texture;
+    slot.material = material;
   }
 }

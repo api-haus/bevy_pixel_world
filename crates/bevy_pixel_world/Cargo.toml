@@ -34,32 +34,26 @@ tempfile = "3"
 
 [[test]]
 name = "body_stability_e2e"
-required-features = ["headless"]
 
 [[test]]
 name = "persistence_bevy_e2e"
-required-features = ["headless"]
 
 [[test]]
 name = "body_reload_stress"
-required-features = ["headless"]
 
 [[test]]
 name = "named_saves_e2e"
-required-features = ["headless"]
 
 [[test]]
 name = "spawn_pixel_body_e2e"
-required-features = ["headless"]
 
 [[test]]
 name = "submergence_e2e"
-required-features = ["headless", "avian2d"]
+required-features = ["avian2d"]
 
 [features]
 default = []
 dev = ["bevy/dynamic_linking"]
-headless = []
 tracy = ["dep:tracing", "dep:tracing-tracy", "dep:tracing-subscriber"]
 avian2d = ["dep:avian2d"]
 rapier2d = ["dep:bevy_rapier2d"]

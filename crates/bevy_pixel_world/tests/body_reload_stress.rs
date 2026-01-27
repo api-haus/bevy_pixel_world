@@ -4,8 +4,7 @@
 //! This catches the race condition where unload + reload in the same frame
 //! causes duplicate body spawns, leaving "ghost" bodies that can't be erased.
 //!
-//! Run: cargo test -p bevy_pixel_world body_reload_stress --features headless
-//! --no-default-features
+//! Run: cargo test -p bevy_pixel_world body_reload_stress
 
 use std::path::Path;
 

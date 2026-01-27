@@ -6,7 +6,7 @@
 - Integration and E2E tests only. Tests should catch real bugs.
 - Visual verification via runnable examples is preferred for graphical systems.
 - Keep tests in `tests/` directory, not inline `#[cfg(test)]` modules.
-- E2E tests require headless mode: `just test-pixel-world` or `cargo test -p bevy_pixel_world --features headless --no-default-features`. Tests will fail without `--no-default-features` due to missing GPU resources.
+- E2E tests: `just test-pixel-world` or `cargo test -p bevy_pixel_world`. Rendering is detected at runtime — no special features needed.
 
 ## API Design
 

@@ -9,7 +9,6 @@ use crate::coords::{CHUNK_SIZE, ChunkPos, WorldPos, WorldRect};
 use crate::persistence::PersistenceTasks;
 use crate::persistence::compression::compress_lz4;
 use crate::persistence::format::StorageType;
-#[cfg(not(feature = "headless"))]
 use crate::render::{ChunkMaterial, create_pixel_texture};
 use crate::world::{PixelWorld, SlotIndex};
 
@@ -39,9 +38,9 @@ pub(crate) fn update_streaming_windows(
   mut commands: Commands,
   camera_query: Query<&GlobalTransform, With<StreamingCamera>>,
   mut worlds: Query<(Entity, &mut PixelWorld)>,
-  #[cfg(not(feature = "headless"))] mut images: ResMut<Assets<Image>>,
-  #[cfg(not(feature = "headless"))] mut materials: ResMut<Assets<ChunkMaterial>>,
-  #[cfg(not(feature = "headless"))] palette: Option<Res<SharedPaletteTexture>>,
+  mut images: Option<ResMut<Assets<Image>>>,
+  mut materials: Option<ResMut<Assets<ChunkMaterial>>>,
+  palette: Option<Res<SharedPaletteTexture>>,
   mut persistence_tasks: ResMut<PersistenceTasks>,
   mut unloading_chunks: ResMut<UnloadingChunks>,
 ) {
@@ -49,7 +48,6 @@ pub(crate) fn update_streaming_windows(
     return;
   };
 
-  #[cfg(not(feature = "headless"))]
   let palette_handle = palette.as_ref().map(|p| p.handle.clone());
 
   // Convert camera position to chunk position
@@ -89,11 +87,8 @@ pub(crate) fn update_streaming_windows(
       spawn_chunk_entity(
         &mut commands,
         &mut world,
-        #[cfg(not(feature = "headless"))]
-        &mut images,
-        #[cfg(not(feature = "headless"))]
-        &mut materials,
-        #[cfg(not(feature = "headless"))]
+        images.as_deref_mut(),
+        materials.as_deref_mut(),
         palette_handle.clone(),
         pos,
         slot_idx,
@@ -106,9 +101,9 @@ pub(crate) fn update_streaming_windows(
 fn spawn_chunk_entity(
   commands: &mut Commands,
   world: &mut PixelWorld,
-  #[cfg(not(feature = "headless"))] images: &mut Assets<Image>,
-  #[cfg(not(feature = "headless"))] materials: &mut Assets<ChunkMaterial>,
-  #[cfg(not(feature = "headless"))] palette_handle: Option<Handle<Image>>,
+  images: Option<&mut Assets<Image>>,
+  materials: Option<&mut Assets<ChunkMaterial>>,
+  palette_handle: Option<Handle<Image>>,
   pos: ChunkPos,
   slot_idx: SlotIndex,
 ) {
@@ -120,8 +115,7 @@ fn spawn_chunk_entity(
     0.0,
   );
 
-  #[cfg(not(feature = "headless"))]
-  let (entity, texture, material) = {
+  let (entity, texture, material) = if let (Some(images), Some(materials)) = (images, materials) {
     let slot = world.slot_mut(slot_idx);
 
     // Create or reuse pixel texture (Rgba8Uint for raw pixel data)
@@ -157,20 +151,13 @@ fn spawn_chunk_entity(
       ))
       .id();
 
-    (entity, texture, material)
+    (entity, Some(texture), Some(material))
+  } else {
+    let entity = commands.spawn(transform).id();
+    (entity, None, None)
   };
 
-  #[cfg(feature = "headless")]
-  let entity = commands.spawn(transform).id();
-
-  world.register_slot_entity(
-    slot_idx,
-    entity,
-    #[cfg(not(feature = "headless"))]
-    texture,
-    #[cfg(not(feature = "headless"))]
-    material,
-  );
+  world.register_slot_entity(slot_idx, entity, texture, material);
 }
 
 /// System: Updates simulation bounds from camera viewport.

@@ -137,7 +137,7 @@ impl TestHarness {
 }
 
 /// This test uses MinimalPlugins which doesn't provide GizmoConfigStore.
-/// Run with: cargo test --features headless --no-default-features
+/// Run with: cargo test -p bevy_pixel_world
 #[test]
 fn painted_chunks_persist_across_scroll() {
   let temp_dir = TempDir::new().unwrap();

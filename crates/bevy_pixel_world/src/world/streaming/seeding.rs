@@ -2,11 +2,9 @@
 //!
 //! Handles asynchronous chunk generation through the seeder trait.
 
-#[cfg(not(feature = "headless"))]
 use std::collections::HashSet;
 
 use bevy::prelude::*;
-#[cfg(not(feature = "headless"))]
 use bevy::tasks::{AsyncComputeTaskPool, Task};
 
 use super::SeededChunks;
@@ -14,19 +12,16 @@ use crate::coords::{CHUNK_SIZE, ChunkPos};
 use crate::debug_shim;
 use crate::primitives::Chunk;
 use crate::world::PixelWorld;
-#[cfg(not(feature = "headless"))]
 use crate::world::SlotIndex;
 use crate::world::slot::ChunkLifecycle;
 
 /// Resource holding async seeding tasks.
 #[derive(Resource, Default)]
 pub(crate) struct SeedingTasks {
-  #[cfg(not(feature = "headless"))]
   pub(super) tasks: Vec<SeedingTask>,
 }
 
 /// An in-flight seeding task.
-#[cfg(not(feature = "headless"))]
 pub(super) struct SeedingTask {
   /// Which PixelWorld entity.
   pub world_entity: Entity,
@@ -39,7 +34,6 @@ pub(super) struct SeedingTask {
 }
 
 /// Maximum number of concurrent seeding tasks.
-#[cfg(not(feature = "headless"))]
 const MAX_SEEDING_TASKS: usize = 2;
 
 /// Creates and seeds a new chunk at the given position.
@@ -76,7 +70,6 @@ pub(crate) fn merge_seeded_pixels(
 }
 
 /// Collects in-flight seeding task count and slot indices for a world entity.
-#[cfg(not(feature = "headless"))]
 fn collect_in_flight_tasks(
   tasks: &[SeedingTask],
   world_entity: Entity,
@@ -93,7 +86,6 @@ fn collect_in_flight_tasks(
 }
 
 /// Spawns an async seeding task for a chunk.
-#[cfg(not(feature = "headless"))]
 fn spawn_seeding_task(
   seeding_tasks: &mut SeedingTasks,
   task_pool: &AsyncComputeTaskPool,
@@ -114,19 +106,28 @@ fn spawn_seeding_task(
 }
 
 /// System: Dispatches async seeding tasks for unseeded chunks.
-#[cfg(not(feature = "headless"))]
+///
+/// When rendering is absent, all unseeded chunks are dispatched at once
+/// (no task limit), so `poll_seeding_tasks` can block-complete them in
+/// the same frame.
 #[cfg_attr(feature = "tracy", tracing::instrument(skip_all))]
 pub(crate) fn dispatch_seeding(
   mut seeding_tasks: ResMut<SeedingTasks>,
   mut worlds: Query<(Entity, &mut PixelWorld)>,
+  rendering: Option<Res<crate::world::plugin::RenderingEnabled>>,
 ) {
   let task_pool = AsyncComputeTaskPool::get();
+  let max_tasks = if rendering.is_some() {
+    MAX_SEEDING_TASKS
+  } else {
+    usize::MAX
+  };
 
   for (world_entity, world) in worlds.iter_mut() {
     let (mut in_flight, in_flight_slots) =
       collect_in_flight_tasks(&seeding_tasks.tasks, world_entity);
 
-    if in_flight >= MAX_SEEDING_TASKS {
+    if in_flight >= max_tasks {
       continue;
     }
 
@@ -150,70 +151,31 @@ pub(crate) fn dispatch_seeding(
       );
 
       in_flight += 1;
-      if in_flight >= MAX_SEEDING_TASKS {
+      if in_flight >= max_tasks {
         break;
       }
     }
   }
 }
 
-/// System: Seeds chunks synchronously in headless mode.
-///
-/// In headless mode, we seed synchronously instead of using async tasks
-/// because the async task pool may not work reliably in test environments.
-#[cfg(feature = "headless")]
-#[cfg_attr(feature = "tracy", tracing::instrument(skip_all))]
-pub(crate) fn dispatch_seeding(
-  mut worlds: Query<&mut PixelWorld>,
-  mut seeded_chunks: ResMut<SeededChunks>,
-  gizmos: debug_shim::GizmosParam,
-) {
-  let debug_gizmos = gizmos.get();
-
-  for mut world in worlds.iter_mut() {
-    // Collect unseeded chunks
-    let unseeded: Vec<_> = world
-      .active_chunks()
-      .filter(|(_, idx)| !world.slot(*idx).is_seeded())
-      .collect();
-
-    for (pos, slot_idx) in unseeded {
-      // Seed synchronously
-      let seeded_chunk = seed_chunk(world.seeder().as_ref(), pos);
-
-      // Merge seeded data into slot, preserving PIXEL_BODY pixels
-      let slot = world.slot_mut(slot_idx);
-      merge_seeded_pixels(&mut slot.chunk.pixels, &seeded_chunk.pixels);
-      slot.chunk.set_all_dirty_rects_full();
-      slot.lifecycle = ChunkLifecycle::Active;
-      slot.dirty = true;
-
-      // If loaded from disk, mark as persisted
-      if seeded_chunk.from_persistence {
-        slot.persisted = true;
-      }
-
-      // Track that this chunk just finished seeding
-      seeded_chunks.positions.push(pos);
-
-      debug_shim::emit_chunk(debug_gizmos, pos);
-    }
-  }
-}
-
 /// System: Polls completed seeding tasks and swaps in seeded chunks.
-#[cfg(not(feature = "headless"))]
+///
+/// When rendering is absent (no `RenderingEnabled` resource), all pending
+/// tasks are block-waited to completion. This gives synchronous semantics
+/// in test environments where frames advance faster than async tasks.
 #[cfg_attr(feature = "tracy", tracing::instrument(skip_all))]
 pub(crate) fn poll_seeding_tasks(
   mut seeding_tasks: ResMut<SeedingTasks>,
   mut worlds: Query<&mut PixelWorld>,
   mut seeded_chunks: ResMut<SeededChunks>,
   gizmos: debug_shim::GizmosParam,
+  rendering: Option<Res<crate::world::plugin::RenderingEnabled>>,
 ) {
   let debug_gizmos = gizmos.get();
+  let block_all = rendering.is_none();
 
   seeding_tasks.tasks.retain_mut(|task| {
-    if !task.task.is_finished() {
+    if !block_all && !task.task.is_finished() {
       return true; // keep pending tasks
     }
 

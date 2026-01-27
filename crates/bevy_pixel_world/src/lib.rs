@@ -6,7 +6,6 @@
 use std::path::PathBuf;
 
 use bevy::prelude::*;
-#[cfg(not(feature = "headless"))]
 use bevy::sprite_render::Material2dPlugin;
 
 pub mod bodies_plugin;
@@ -217,10 +216,10 @@ impl PixelWorldPlugin {
 impl Plugin for PixelWorldPlugin {
   fn build(&self, app: &mut App) {
     // Embed the chunk shader and register material (rendering only)
-    #[cfg(not(feature = "headless"))]
-    {
+    if app.is_plugin_added::<bevy::render::RenderPlugin>() {
       bevy::asset::embedded_asset!(app, "render/shaders/chunk.wgsl");
       app.add_plugins(Material2dPlugin::<ChunkMaterial>::default());
+      app.insert_resource(world::plugin::RenderingEnabled);
     }
 
     // Initialize Materials registry (users can override by inserting before plugin)
@@ -264,8 +263,9 @@ impl Plugin for PixelWorldPlugin {
     app.add_plugins(world::plugin::PixelWorldStreamingPlugin);
 
     // Add visual debug plugin (requires rendering infrastructure)
-    #[cfg(not(feature = "headless"))]
-    app.add_plugins(visual_debug::VisualDebugPlugin);
+    if app.is_plugin_added::<bevy::render::RenderPlugin>() {
+      app.add_plugins(visual_debug::VisualDebugPlugin);
+    }
   }
 }
 
