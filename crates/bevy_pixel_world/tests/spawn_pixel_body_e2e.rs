@@ -10,11 +10,11 @@
 //!
 //! Run with avian2d:
 //!   cargo test -p bevy_pixel_world --test spawn_pixel_body_e2e --features
-//! "headless,avian2d" --no-default-features
+//! avian2d
 //!
 //! Run with rapier2d:
 //!   cargo test -p bevy_pixel_world --test spawn_pixel_body_e2e --features
-//! "headless,rapier2d" --no-default-features
+//! rapier2d
 
 use std::path::Path;
 

@@ -114,8 +114,10 @@ impl Plugin for PixelBodiesPlugin {
         .in_set(PixelWorldSet::PostSimulation),
     );
 
-    // Debug collision gizmos
-    #[cfg(not(feature = "headless"))]
-    app.add_systems(PostUpdate, draw_collision_gizmos);
+    // Debug collision gizmos (only when rendering is available)
+    app.add_systems(
+      PostUpdate,
+      draw_collision_gizmos.run_if(resource_exists::<crate::world::plugin::RenderingEnabled>),
+    );
   }
 }

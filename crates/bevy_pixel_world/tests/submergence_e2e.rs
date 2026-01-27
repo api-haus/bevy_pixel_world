@@ -5,7 +5,7 @@
 //!
 //! Run with:
 //!   cargo test -p bevy_pixel_world --test submergence_e2e \
-//!     --features "headless,submergence,avian2d" --no-default-features
+//!     --features avian2d
 
 use std::path::Path;
 

@@ -4,8 +4,7 @@
 //! 1. Bodies must not spontaneously lose pixels (disintegrate)
 //! 2. Erased bodies must be fully removable (no ghosts)
 //!
-//! Run: cargo test -p bevy_pixel_world body_stability --features headless
-//! --no-default-features
+//! Run: cargo test -p bevy_pixel_world body_stability
 
 use std::path::Path;
 

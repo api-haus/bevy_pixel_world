@@ -72,16 +72,10 @@ impl SpawnPixelWorld {
 
 impl bevy::ecs::system::Command for SpawnPixelWorld {
   fn apply(self, world: &mut bevy::ecs::world::World) {
-    // In headless mode, use a default (invalid) mesh handle - it won't be used
-    #[cfg(feature = "headless")]
-    let mesh = Handle::default();
-
-    #[cfg(not(feature = "headless"))]
     let mesh = world
       .get_resource::<super::plugin::SharedChunkMesh>()
-      .expect("SharedChunkMesh not found - add PixelWorldPlugin first")
-      .0
-      .clone();
+      .map(|r| r.0.clone())
+      .unwrap_or_default();
 
     // Use explicit config or fall back to plugin default
     let config = self.config.unwrap_or_else(|| {

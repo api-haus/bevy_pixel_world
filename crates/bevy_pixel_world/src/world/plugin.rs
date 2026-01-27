@@ -12,7 +12,6 @@ use super::persistence_systems::{
   flush_persistence_queue, handle_persistence_messages, notify_persistence_complete,
   process_pending_save_requests,
 };
-#[cfg(not(feature = "headless"))]
 use super::streaming::poll_seeding_tasks;
 use super::streaming::{
   CullingConfig, SeedingTasks, clear_chunk_tracking, dispatch_seeding, update_entity_culling,
@@ -20,16 +19,19 @@ use super::streaming::{
 };
 pub use super::streaming::{SeededChunks, StreamingCamera, UnloadingChunks};
 pub(crate) use super::streaming::{SharedChunkMesh, SharedPaletteTexture};
-#[cfg(not(feature = "headless"))]
 use super::systems::upload_dirty_chunks;
 use crate::coords::CHUNK_SIZE;
 use crate::debug_shim;
 use crate::material::Materials;
 use crate::persistence::PersistenceTasks;
-#[cfg(not(feature = "headless"))]
 use crate::render::{create_chunk_quad, create_palette_texture, upload_palette};
 use crate::schedule::{PixelWorldSet, SimulationPhase};
 use crate::simulation;
+
+/// Marker resource indicating rendering infrastructure is available.
+/// Inserted by PixelWorldPlugin when RenderPlugin is detected.
+#[derive(Resource)]
+pub(crate) struct RenderingEnabled;
 
 /// Internal plugin for PixelWorld streaming systems.
 ///
@@ -75,8 +77,10 @@ impl Plugin for PixelWorldStreamingPlugin {
         .in_set(PixelWorldSet::Simulation),
     );
 
-    #[cfg(not(feature = "headless"))]
-    app.add_systems(PreStartup, setup_shared_resources);
+    app.add_systems(
+      PreStartup,
+      setup_shared_resources.run_if(resource_exists::<RenderingEnabled>),
+    );
 
     // Core pre-simulation systems (streaming, persistence messages, seeding)
     app.add_systems(
@@ -87,6 +91,7 @@ impl Plugin for PixelWorldStreamingPlugin {
         update_streaming_windows,
         update_entity_culling,
         dispatch_seeding,
+        poll_seeding_tasks,
         update_simulation_bounds,
       )
         .chain()
@@ -113,9 +118,7 @@ impl Plugin for PixelWorldStreamingPlugin {
         .in_set(PixelWorldSet::PostSimulation),
     );
 
-    // Render-only systems slotted into the shared schedule via ordering
-    // constraints.
-    #[cfg(not(feature = "headless"))]
+    // Render-only systems
     app.add_systems(
       Update,
       (
@@ -123,11 +126,9 @@ impl Plugin for PixelWorldStreamingPlugin {
           .after(handle_persistence_messages)
           .before(update_streaming_windows)
           .in_set(PixelWorldSet::PreSimulation),
-        poll_seeding_tasks
-          .after(dispatch_seeding)
-          .in_set(PixelWorldSet::PreSimulation),
         upload_dirty_chunks.in_set(PixelWorldSet::PostSimulation),
-      ),
+      )
+        .run_if(resource_exists::<RenderingEnabled>),
     );
   }
 }
@@ -136,7 +137,6 @@ impl Plugin for PixelWorldStreamingPlugin {
 ///
 /// Runs in PreStartup to ensure resources are available before user Startup
 /// systems that spawn PixelWorlds.
-#[cfg(not(feature = "headless"))]
 fn setup_shared_resources(world: &mut World) {
   let mesh = {
     let mut meshes = world.resource_mut::<Assets<Mesh>>();
@@ -155,7 +155,6 @@ fn setup_shared_resources(world: &mut World) {
 }
 
 /// System: Initializes the palette texture when Materials becomes available.
-#[cfg(not(feature = "headless"))]
 #[cfg_attr(feature = "tracy", tracing::instrument(skip_all))]
 fn initialize_palette(
   mut palette: ResMut<SharedPaletteTexture>,

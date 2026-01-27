@@ -14,9 +14,9 @@ run_avian2d:
 run_rapier2d:
     cargo run -p bevy_pixel_world --example painting --release --features rapier2d
 
-# Run all bevy_pixel_world E2E and unit tests (headless, no GPU)
+# Run all bevy_pixel_world E2E and unit tests
 test-pixel-world:
-    cargo test -p bevy_pixel_world --features headless --no-default-features
+    cargo test -p bevy_pixel_world
 
 game:
     cargo run -p game
