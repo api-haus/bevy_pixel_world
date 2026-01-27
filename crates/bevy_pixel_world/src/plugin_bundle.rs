@@ -6,10 +6,11 @@ use bevy::prelude::*;
 use crate::PersistenceConfig;
 use crate::PixelWorldPlugin;
 use crate::bodies_plugin::PixelBodiesPlugin;
-#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
-use crate::buoyancy::{Buoyancy2dPlugin, BuoyancyConfig};
+#[cfg(physics)]
+use crate::buoyancy::SubmersionPhysicsConfig;
+use crate::buoyancy::{Buoyancy2dPlugin, BuoyancyConfig, SubmersionConfig};
 use crate::diagnostics::DiagnosticsPlugin;
-use crate::submergence::{PixelAwarenessPlugin, SubmersionConfig};
+use crate::pixel_awareness::{GridSampleConfig, PixelAwarenessPlugin};
 use crate::world::streaming::CullingConfig;
 
 /// Plugin group that adds [`PixelWorldPlugin`] and all optional sub-plugins
@@ -21,7 +22,7 @@ use crate::world::streaming::CullingConfig;
 /// app.add_plugins(
 ///     PixelWorldFullBundle::new("my_game")
 ///         .load("world")
-///         .awareness(SubmersionConfig { sample_grid_size: 8, ..default() })
+///         .submersion(SubmersionConfig { submersion_threshold: 0.5, ..default() })
 /// );
 /// ```
 pub struct PixelWorldFullBundle {
@@ -29,10 +30,9 @@ pub struct PixelWorldFullBundle {
   pub world: PixelWorldPlugin,
   /// Pixel bodies plugin (spawning, collision, body persistence).
   pub bodies: PixelBodiesPlugin,
-  /// Submergence awareness plugin (liquid detection, events).
+  /// Pixel awareness plugin (liquid detection sampling).
   pub awareness: PixelAwarenessPlugin,
-  /// Buoyancy physics plugin (forces, torque).
-  #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+  /// Buoyancy and submersion plugin (threshold, events, forces, physics).
   pub buoyancy: Buoyancy2dPlugin,
   /// Diagnostics plugin (frame time, simulation metrics).
   pub diagnostics: DiagnosticsPlugin,
@@ -65,16 +65,28 @@ impl PixelWorldFullBundle {
     self
   }
 
-  /// Sets the submersion awareness configuration.
-  pub fn awareness(mut self, config: SubmersionConfig) -> Self {
+  /// Sets the grid sampling configuration for pixel awareness.
+  pub fn awareness(mut self, config: GridSampleConfig) -> Self {
     self.awareness = PixelAwarenessPlugin::new(config);
     self
   }
 
+  /// Sets the submersion threshold configuration.
+  pub fn submersion(mut self, config: SubmersionConfig) -> Self {
+    self.buoyancy = self.buoyancy.with_submersion(config);
+    self
+  }
+
   /// Sets the buoyancy configuration.
-  #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
   pub fn buoyancy(mut self, config: BuoyancyConfig) -> Self {
     self.buoyancy = Buoyancy2dPlugin::new(config);
+    self
+  }
+
+  /// Sets the submersion physics configuration.
+  #[cfg(physics)]
+  pub fn submersion_physics(mut self, config: SubmersionPhysicsConfig) -> Self {
+    self.buoyancy = self.buoyancy.with_physics(config);
     self
   }
 }
@@ -85,7 +97,6 @@ impl Default for PixelWorldFullBundle {
       world: PixelWorldPlugin::default(),
       bodies: PixelBodiesPlugin,
       awareness: PixelAwarenessPlugin::default(),
-      #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
       buoyancy: Buoyancy2dPlugin::default(),
       diagnostics: DiagnosticsPlugin,
     }
@@ -94,14 +105,11 @@ impl Default for PixelWorldFullBundle {
 
 impl PluginGroup for PixelWorldFullBundle {
   fn build(self) -> PluginGroupBuilder {
-    let builder = PluginGroupBuilder::start::<Self>()
+    PluginGroupBuilder::start::<Self>()
       .add(self.world)
       .add(self.bodies)
-      .add(self.awareness);
-
-    #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
-    let builder = builder.add(self.buoyancy);
-
-    builder.add(self.diagnostics)
+      .add(self.awareness)
+      .add(self.buoyancy)
+      .add(self.diagnostics)
   }
 }

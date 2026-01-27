@@ -9,15 +9,15 @@ use bevy::prelude::*;
 use bevy_rapier2d::prelude::Collider;
 
 use super::{DisplacementState, LastBlitTransform, Persistable, PixelBodyId, PixelBodyLoader};
-#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+#[cfg(physics)]
 use crate::collision::CollisionQueryPoint;
 use crate::coords::MaterialId;
-#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+#[cfg(physics)]
 use crate::world::streaming::culling::StreamCulled;
 
 /// Returns the physics bundle for a pixel body (collider + rigid body +
 /// markers).
-#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+#[cfg(physics)]
 fn physics_bundle(collider: Collider) -> impl Bundle {
   #[cfg(feature = "avian2d")]
   {
@@ -40,7 +40,7 @@ fn physics_bundle(collider: Collider) -> impl Bundle {
 }
 
 /// Returns the damping bundle for submergence physics effects.
-#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+#[cfg(physics)]
 fn submergence_damping_bundle() -> impl Bundle {
   #[cfg(feature = "avian2d")]
   {
@@ -241,7 +241,7 @@ pub fn finalize_pending_pixel_bodies(
     };
 
     // Generate collider (physics only)
-    #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+    #[cfg(physics)]
     let Some(collider) = super::generate_collider(&body) else {
       commands.entity(entity).despawn();
       continue;
@@ -266,12 +266,12 @@ pub fn finalize_pending_pixel_bodies(
       Persistable,
     ));
 
-    #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+    #[cfg(physics)]
     entity_commands.insert(physics_bundle(collider));
 
-    entity_commands.insert(crate::submergence::Submergent);
+    entity_commands.insert(crate::buoyancy::Submergent);
 
-    #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+    #[cfg(physics)]
     entity_commands.insert(submergence_damping_bundle());
   }
 }

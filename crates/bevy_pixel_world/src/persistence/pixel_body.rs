@@ -74,7 +74,7 @@ impl PixelBodyRecord {
       velocity.map(|v| v.angvel).unwrap_or(0.0),
     );
 
-    #[cfg(not(any(feature = "avian2d", feature = "rapier2d")))]
+    #[cfg(not(physics))]
     let (linear_velocity, angular_velocity) = (Vec2::ZERO, 0.0);
 
     Self {
@@ -123,7 +123,7 @@ impl PixelBodyRecord {
       velocity.map(|v| v.angvel).unwrap_or(0.0),
     );
 
-    #[cfg(not(any(feature = "avian2d", feature = "rapier2d")))]
+    #[cfg(not(physics))]
     let (linear_velocity, angular_velocity) = (Vec2::ZERO, 0.0);
 
     Some(Self {

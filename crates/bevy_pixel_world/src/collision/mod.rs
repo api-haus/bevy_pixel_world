@@ -38,7 +38,7 @@ mod simplify;
 mod systems;
 mod triangulate;
 
-#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+#[cfg(physics)]
 pub mod physics;
 
 use bevy::prelude::*;

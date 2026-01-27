@@ -14,10 +14,11 @@ use bevy::asset::RenderAssetUsages;
 use bevy::ecs::message::{MessageCursor, Messages};
 use bevy::image::ImageSampler;
 use bevy::prelude::*;
-use bevy_pixel_world::debug_shim::DebugGizmos;
-use bevy_pixel_world::submergence::{
-  PixelAwarenessPlugin, Submerged, Submergent, SubmersionState, Surfaced,
+use bevy_pixel_world::buoyancy::{
+  Buoyancy2dPlugin, Submerged, Submergent, SubmersionState, Surfaced,
 };
+use bevy_pixel_world::debug_shim::DebugGizmos;
+use bevy_pixel_world::pixel_awareness::PixelAwarenessPlugin;
 use bevy_pixel_world::{
   ColorIndex, MaterialSeeder, PersistenceConfig, Pixel, PixelBodiesPlugin, PixelBody, PixelWorld,
   PixelWorldPlugin, SpawnPixelBodyFromImage, SpawnPixelWorld, StreamingCamera, WorldPos,
@@ -97,8 +98,9 @@ impl TestHarness {
       );
     }
 
-    // Add submergence detection plugin
+    // Add pixel awareness and buoyancy/submersion plugins
     app.add_plugins(PixelAwarenessPlugin::default());
+    app.add_plugins(Buoyancy2dPlugin::default());
 
     // Create test image for spawning bodies
     let test_image = create_test_image(&mut app);

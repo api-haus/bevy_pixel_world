@@ -11,14 +11,14 @@ use super::{
   LastBlitTransform, NeedsColliderRegen, Persistable, PixelBody, PixelBodyId, PixelBodyIdGenerator,
   ShapeMaskModified,
 };
-#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+#[cfg(physics)]
 use crate::collision::CollisionQueryPoint;
 use crate::collision::Stabilizing;
 use crate::debug_shim::GizmosParam;
 use crate::material::Materials;
 use crate::persistence::PersistenceTasks;
 use crate::world::PixelWorld;
-#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+#[cfg(physics)]
 use crate::world::streaming::culling::StreamCulled;
 
 /// Type alias for velocity query - varies by physics backend.
@@ -36,7 +36,7 @@ type VelocityQuery<'w, 's> = Query<
 type VelocityQuery<'w, 's> = Query<'w, 's, Option<&'static bevy_rapier2d::prelude::Velocity>>;
 
 /// Extracts linear and angular velocity for fragment spawning.
-#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+#[cfg(physics)]
 fn extract_parent_velocity(entity: Entity, velocities: &VelocityQuery) -> (Vec2, f32) {
   #[cfg(feature = "avian2d")]
   {
@@ -254,9 +254,9 @@ struct FragmentSpawnContext<'a, 'w, 's> {
   parent_body: &'a PixelBody,
   blit_transform: &'a GlobalTransform,
   parent_rotation: Quat,
-  #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+  #[cfg(physics)]
   parent_linear: Vec2,
-  #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+  #[cfg(physics)]
   parent_angular: f32,
   gizmos: crate::debug_shim::DebugGizmos<'a>,
 }
@@ -276,7 +276,7 @@ fn spawn_fragment_entities(
       continue;
     };
 
-    #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+    #[cfg(physics)]
     let Some(collider) = super::generate_collider(&fragment.body) else {
       continue;
     };
@@ -357,7 +357,7 @@ pub fn split_pixel_bodies(
     ),
     With<ShapeMaskModified>,
   >,
-  #[cfg(any(feature = "avian2d", feature = "rapier2d"))] velocities: VelocityQuery,
+  #[cfg(physics)] velocities: VelocityQuery,
   materials: Res<Materials>,
   gizmos: GizmosParam,
 ) {
@@ -388,7 +388,7 @@ pub fn split_pixel_bodies(
 
         let parent_rotation = global_transform.to_scale_rotation_translation().1;
 
-        #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+        #[cfg(physics)]
         let (parent_linear, parent_angular) = extract_parent_velocity(entity, &velocities);
 
         let Some(blit_transform) = &blitted.transform else {
@@ -413,9 +413,9 @@ pub fn split_pixel_bodies(
             parent_body: body,
             blit_transform,
             parent_rotation,
-            #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+            #[cfg(physics)]
             parent_linear,
-            #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+            #[cfg(physics)]
             parent_angular,
             gizmos: gizmos.get(),
           },

@@ -9,7 +9,6 @@ use bevy::prelude::*;
 use bevy::sprite_render::Material2dPlugin;
 
 pub mod bodies_plugin;
-#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 pub mod buoyancy;
 pub mod collision;
 pub mod coords;
@@ -18,6 +17,7 @@ pub mod diagnostics;
 pub mod material;
 pub mod persistence;
 pub mod pixel;
+pub mod pixel_awareness;
 pub mod pixel_body;
 pub mod plugin_bundle;
 pub mod primitives;
@@ -26,7 +26,6 @@ pub mod schedule;
 pub mod scheduling;
 pub mod seeding;
 pub mod simulation;
-pub mod submergence;
 pub mod text;
 #[cfg(feature = "tracy")]
 mod tracy_init;
@@ -34,8 +33,8 @@ pub mod visual_debug;
 pub mod world;
 
 pub use bodies_plugin::PixelBodiesPlugin;
-#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 pub use buoyancy::BuoyancyConfig;
+pub use buoyancy::SubmersionConfig;
 pub use collision::{CollisionCache, CollisionConfig, CollisionQueryPoint, CollisionTasks};
 pub use coords::{
   CHUNK_SIZE, ChunkPos, ColorIndex, LocalPos, MaterialId, TILE_SIZE, TilePos, WorldFragment,
@@ -44,6 +43,7 @@ pub use coords::{
 pub use material::{Material, Materials, PhysicsState, ids as material_ids};
 pub use persistence::{PixelBodyRecord, WorldSave, WorldSaveResource};
 pub use pixel::{Pixel, PixelFlags, PixelSurface};
+pub use pixel_awareness::GridSampleConfig;
 pub use pixel_body::{
   DisplacementState, LastBlitTransform, NeedsColliderRegen, PendingPixelBody, Persistable,
   PixelBody, PixelBodyId, PixelBodyIdGenerator, PixelBodyLoader, SpawnPixelBody,
@@ -59,7 +59,6 @@ pub use render::{
 pub use schedule::{PixelWorldSet, SimulationPhase};
 pub use seeding::{ChunkSeeder, MaterialSeeder, NoiseSeeder, PersistenceSeeder};
 pub use simulation::simulate_tick;
-pub use submergence::SubmersionConfig;
 pub use text::{CpuFont, TextMask, TextStyle, draw_text, rasterize_text, stamp_text};
 #[cfg(feature = "tracy")]
 pub use tracy_init::init_tracy;

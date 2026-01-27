@@ -1,15 +1,18 @@
-//! Optional buoyancy physics plugin for pixel bodies.
+//! Buoyancy and submersion physics for pixel bodies.
 //!
-//! This module provides liquid buoyancy simulation for pixel bodies.
-//! Bodies marked with the [`Buoyant`] component will float or sink based
-//! on their density relative to surrounding liquid pixels.
+//! This module provides:
+//! - **Submersion detection**: Threshold-based submerged/surfaced state derived
+//!   from [`LiquidFractionState`](crate::pixel_awareness::LiquidFractionState),
+//!   with edge-detection events.
+//! - **Buoyancy forces**: Archimedes-principle forces for bodies marked
+//!   [`Buoyant`].
 //!
 //! # Usage
 //!
 //! ```ignore
-//! use bevy_pixel_world::buoyancy::{PixelBuoyancyPlugin, Buoyant, BuoyancyConfig};
+//! use bevy_pixel_world::buoyancy::{Buoyancy2dPlugin, BuoyancyConfig};
 //!
-//! app.add_plugins(PixelBuoyancyPlugin::default());
+//! app.add_plugins(Buoyancy2dPlugin::default());
 //!
 //! // Mark a body as buoyant
 //! commands.entity(body_entity).insert(Buoyant);
@@ -20,10 +23,22 @@
 //! This module requires either the `avian2d` or `rapier2d` feature to be
 //! enabled.
 
+pub mod events;
 mod force;
+#[cfg(physics)]
+pub mod physics;
+pub mod submersion;
 
 use bevy::prelude::*;
+pub use events::emit_submersion_events;
 pub use force::compute_buoyancy_forces;
+#[cfg(physics)]
+pub use physics::{SubmersionPhysicsConfig, apply_submersion_physics};
+pub use submersion::{
+  Submerged, Submergent, SubmersionConfig, SubmersionState, Surfaced, derive_submersion_state,
+};
+
+use crate::pixel_awareness::sample_liquid_fraction;
 
 /// Configuration for buoyancy simulation.
 #[derive(Resource, Clone, Debug)]
@@ -69,40 +84,87 @@ pub struct BuoyancyState {
   pub submerged_center: Vec2,
 }
 
-/// Plugin for liquid buoyancy physics.
+/// Plugin for liquid buoyancy and submersion physics.
 ///
-/// Adds systems that apply buoyancy forces to bodies marked with [`Buoyant`].
-/// Submersion data comes from the submergence module's `SubmersionState`.
+/// Adds systems for:
+/// - Deriving submersion state from liquid fraction (threshold + events)
+/// - Applying buoyancy forces to [`Buoyant`] bodies
+/// - Modifying gravity/damping for submerged bodies (when physics enabled)
+///
+/// Requires [`PixelAwarenessPlugin`](crate::pixel_awareness::PixelAwarenessPlugin)
+/// to be added first.
 ///
 /// # Configuration
-///
-/// Pass a custom [`BuoyancyConfig`] to tune the simulation:
 ///
 /// ```ignore
 /// app.add_plugins(Buoyancy2dPlugin {
 ///     config: BuoyancyConfig {
-///         sample_grid_size: 8,
 ///         liquid_density_scale: 0.15,
-///         torque_enabled: true,
+///         ..default()
 ///     },
+///     ..default()
 /// });
 /// ```
 #[derive(Default)]
 pub struct Buoyancy2dPlugin {
   /// Configuration for the buoyancy simulation.
   pub config: BuoyancyConfig,
+  /// Configuration for submersion threshold.
+  pub submersion: SubmersionConfig,
+  /// Configuration for physics effects (gravity, damping).
+  #[cfg(physics)]
+  pub physics: SubmersionPhysicsConfig,
 }
 
 impl Buoyancy2dPlugin {
   /// Creates a new plugin with the given configuration.
   pub fn new(config: BuoyancyConfig) -> Self {
-    Self { config }
+    Self {
+      config,
+      ..Default::default()
+    }
+  }
+
+  /// Sets the submersion configuration.
+  pub fn with_submersion(mut self, config: SubmersionConfig) -> Self {
+    self.submersion = config;
+    self
+  }
+
+  /// Sets the physics configuration.
+  #[cfg(physics)]
+  pub fn with_physics(mut self, physics: SubmersionPhysicsConfig) -> Self {
+    self.physics = physics;
+    self
   }
 }
 
 impl Plugin for Buoyancy2dPlugin {
   fn build(&self, app: &mut App) {
     app.insert_resource(self.config.clone());
-    app.add_systems(Update, compute_buoyancy_forces);
+    app.insert_resource(self.submersion.clone());
+    app.add_message::<Submerged>();
+    app.add_message::<Surfaced>();
+
+    app.add_systems(
+      Update,
+      (derive_submersion_state, emit_submersion_events)
+        .chain()
+        .after(sample_liquid_fraction),
+    );
+
+    app.add_systems(
+      Update,
+      compute_buoyancy_forces.after(derive_submersion_state),
+    );
+
+    #[cfg(physics)]
+    {
+      app.insert_resource(self.physics.clone());
+      app.add_systems(
+        Update,
+        apply_submersion_physics.after(derive_submersion_state),
+      );
+    }
   }
 }

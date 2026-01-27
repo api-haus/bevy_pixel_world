@@ -7,7 +7,7 @@ use bevy::ecs::schedule::ApplyDeferred;
 use bevy::prelude::*;
 
 use crate::collision::draw_collision_gizmos;
-#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+#[cfg(physics)]
 use crate::collision::physics::{PhysicsColliderRegistry, sync_physics_colliders};
 use crate::collision::{
   CollisionCache, CollisionConfig, CollisionTasks, dispatch_collision_tasks,
@@ -48,7 +48,7 @@ impl Plugin for PixelBodiesPlugin {
       .init_resource::<PixelBodyIdGenerator>()
       .init_resource::<crate::diagnostics::CollisionMetrics>();
 
-    #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+    #[cfg(physics)]
     app.init_resource::<PhysicsColliderRegistry>();
 
     // Pre-simulation body systems, ordered after core streaming systems.
@@ -106,7 +106,7 @@ impl Plugin for PixelBodiesPlugin {
     );
 
     // Physics collider sync (after collision polling)
-    #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+    #[cfg(physics)]
     app.add_systems(
       Update,
       sync_physics_colliders

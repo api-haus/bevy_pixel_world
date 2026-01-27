@@ -6,7 +6,7 @@
 use bevy::ecs::message::MessageWriter;
 use bevy::prelude::*;
 
-use super::{Submerged, SubmersionState, Surfaced};
+use super::submersion::{Submerged, SubmersionState, Surfaced};
 
 /// Emits submersion messages when bodies cross the threshold.
 ///

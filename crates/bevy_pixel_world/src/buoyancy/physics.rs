@@ -5,7 +5,7 @@
 
 use bevy::prelude::*;
 
-use super::SubmersionState;
+use super::submersion::SubmersionState;
 
 /// Configuration for submersion physics effects.
 #[derive(Resource, Clone, Debug)]
@@ -104,5 +104,5 @@ pub fn apply_submersion_physics(
 }
 
 /// No-op when neither physics engine is enabled.
-#[cfg(not(any(feature = "avian2d", feature = "rapier2d")))]
+#[cfg(not(physics))]
 pub fn apply_submersion_physics() {}

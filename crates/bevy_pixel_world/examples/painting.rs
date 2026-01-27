@@ -26,10 +26,10 @@ use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
 use bevy::time::{Timer, TimerMode};
 use bevy::window::PrimaryWindow;
-use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
+use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 use bevy_pixel_world::SpawnPixelBody;
-use bevy_pixel_world::submergence::SubmersionState;
+use bevy_pixel_world::buoyancy::SubmersionState;
 use bevy_pixel_world::visual_debug::{
   SettingsPersistence, VisualDebugSettings, visual_debug_checkboxes,
 };
@@ -97,7 +97,6 @@ fn main() {
       ..default()
     }))
     .add_plugins(PixelWorldFullBundle::new("pixel_world_painting").load("world"))
-    .add_plugins(EguiPlugin::default())
     .insert_resource(BrushState::default())
     .init_resource::<UiState>()
     .init_resource::<CameraZoom>()

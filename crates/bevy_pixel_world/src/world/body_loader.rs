@@ -46,7 +46,7 @@ pub(crate) fn spawn_pending_pixel_bodies(
       return false;
     }
 
-    #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+    #[cfg(physics)]
     let Some(collider) = crate::pixel_body::generate_collider(&body) else {
       return false;
     };

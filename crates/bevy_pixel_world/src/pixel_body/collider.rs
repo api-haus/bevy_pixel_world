@@ -5,13 +5,13 @@
 
 #[cfg(feature = "avian2d")]
 use avian2d::prelude::Collider;
-#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+#[cfg(physics)]
 use bevy::math::Vec2;
 #[cfg(feature = "rapier2d")]
 use bevy_rapier2d::prelude::Collider;
 
 use super::PixelBody;
-#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+#[cfg(physics)]
 use crate::collision::{
   connect_segments, extract_marching_segments, simplify_polylines, triangulate_polygons,
 };
@@ -22,13 +22,13 @@ use crate::collision::{
 /// to reduce vertex count, and triangulation for physics collision.
 ///
 /// Returns None if the shape mask is empty or produces no valid geometry.
-#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+#[cfg(physics)]
 pub fn generate_collider(body: &PixelBody) -> Option<Collider> {
   generate_collider_with_tolerance(body, 0.5)
 }
 
 /// Generates a collider with custom simplification tolerance.
-#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+#[cfg(physics)]
 pub fn generate_collider_with_tolerance(body: &PixelBody, tolerance: f32) -> Option<Collider> {
   let width = body.width();
   let height = body.height();
@@ -95,7 +95,7 @@ pub fn generate_collider_with_tolerance(body: &PixelBody, tolerance: f32) -> Opt
 }
 
 /// Builds a boolean grid from the shape mask for marching squares.
-#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+#[cfg(physics)]
 fn build_marching_grid(body: &PixelBody) -> Vec<Vec<bool>> {
   let width = body.width() as usize;
   let height = body.height() as usize;
@@ -121,14 +121,14 @@ fn build_marching_grid(body: &PixelBody) -> Vec<Vec<bool>> {
 /// Extracts contour polylines from a dynamic-sized grid.
 ///
 /// Similar to marching_squares but works with arbitrary grid sizes.
-#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+#[cfg(physics)]
 fn extract_contours(grid: &[Vec<bool>], width: usize, height: usize) -> Vec<Vec<Vec2>> {
   let segments = extract_marching_segments(width, height, |x, y| grid[y][x], 1.0);
   connect_segments(segments)
 }
 
 /// Stub for when no physics feature is enabled.
-#[cfg(not(any(feature = "avian2d", feature = "rapier2d")))]
+#[cfg(not(physics))]
 pub fn generate_collider(_body: &PixelBody) -> Option<()> {
   None
 }
