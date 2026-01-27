@@ -100,7 +100,7 @@ pub struct Surfaced {
   pub entity: Entity,
 }
 
-/// Plugin for submergence detection.
+/// Plugin for submergence detection (pixel awareness).
 ///
 /// Adds systems that sample submersion state and emit threshold-crossing
 /// events. When physics features are enabled, also modifies gravity and
@@ -111,7 +111,7 @@ pub struct Surfaced {
 /// Pass a custom [`SubmersionConfig`] to tune detection:
 ///
 /// ```ignore
-/// app.add_plugins(PixelSubmergencePlugin {
+/// app.add_plugins(PixelAwarenessPlugin {
 ///     config: SubmersionConfig {
 ///         sample_grid_size: 8,
 ///         submersion_threshold: 0.5,
@@ -120,7 +120,7 @@ pub struct Surfaced {
 /// });
 /// ```
 #[derive(Default)]
-pub struct PixelSubmergencePlugin {
+pub struct PixelAwarenessPlugin {
   /// Configuration for submersion detection.
   pub config: SubmersionConfig,
   /// Configuration for physics effects (gravity, damping).
@@ -128,7 +128,7 @@ pub struct PixelSubmergencePlugin {
   pub physics: SubmersionPhysicsConfig,
 }
 
-impl PixelSubmergencePlugin {
+impl PixelAwarenessPlugin {
   /// Creates a new plugin with the given configuration.
   pub fn new(config: SubmersionConfig) -> Self {
     Self {
@@ -146,7 +146,7 @@ impl PixelSubmergencePlugin {
   }
 }
 
-impl Plugin for PixelSubmergencePlugin {
+impl Plugin for PixelAwarenessPlugin {
   fn build(&self, app: &mut App) {
     app.insert_resource(self.config.clone());
     app.add_message::<Submerged>();
@@ -160,3 +160,7 @@ impl Plugin for PixelSubmergencePlugin {
     }
   }
 }
+
+/// Deprecated alias for [`PixelAwarenessPlugin`].
+#[deprecated(note = "Renamed to PixelAwarenessPlugin")]
+pub type PixelSubmergencePlugin = PixelAwarenessPlugin;

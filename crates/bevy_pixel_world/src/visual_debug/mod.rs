@@ -8,7 +8,6 @@ mod gizmos;
 pub mod persistence;
 pub mod settings;
 mod systems;
-#[cfg(feature = "diagnostics")]
 mod ui;
 
 use bevy::prelude::*;
@@ -16,7 +15,6 @@ pub use gizmos::{ActiveGizmos, GizmoKind, PendingDebugGizmos, PendingGizmo};
 pub use persistence::SettingsPersistence;
 pub use settings::VisualDebugSettings;
 use systems::{draw_pixel_body_centers, render_debug_gizmos};
-#[cfg(feature = "diagnostics")]
 pub use ui::visual_debug_checkboxes;
 
 /// Plugin that enables visual debug gizmos.

@@ -112,7 +112,6 @@ fn spawn_collision_mesh_task(
   );
 
   let task = task_pool.spawn(async move {
-    #[cfg(feature = "diagnostics")]
     let start = std::time::Instant::now();
 
     let contours = marching_squares(&grid, tile_origin);
@@ -134,7 +133,6 @@ fn spawn_collision_mesh_task(
       polylines: simplified,
       triangles,
       generation: 0, // Set by cache on insert
-      #[cfg(feature = "diagnostics")]
       generation_time_ms: start.elapsed().as_secs_f32() * 1000.0,
     }
   });
@@ -213,11 +211,9 @@ fn clear_tile_dirty(world: &mut PixelWorld, tile: TilePos, tiles_per_chunk: i64)
 pub fn poll_collision_tasks(
   mut tasks: ResMut<CollisionTasks>,
   mut cache: ResMut<CollisionCache>,
-  #[cfg(feature = "diagnostics")] mut metrics: ResMut<crate::diagnostics::CollisionMetrics>,
+  mut metrics: ResMut<crate::diagnostics::CollisionMetrics>,
 ) {
-  #[cfg(feature = "diagnostics")]
   let mut completed = 0u32;
-  #[cfg(feature = "diagnostics")]
   let mut total_generation_time_ms = 0.0f32;
 
   tasks.tasks.retain_mut(|task| {
@@ -226,25 +222,18 @@ pub fn poll_collision_tasks(
     }
 
     let mesh = bevy::tasks::block_on(&mut task.task);
-    #[cfg(feature = "diagnostics")]
-    {
-      total_generation_time_ms += mesh.generation_time_ms;
-      completed += 1;
-    }
+    total_generation_time_ms += mesh.generation_time_ms;
+    completed += 1;
     cache.insert(task.tile, mesh);
 
     false // Remove completed task
   });
 
-  #[cfg(feature = "diagnostics")]
-  {
-    metrics.generation_time.push(total_generation_time_ms);
-    metrics.tasks_completed.push(completed as f32);
-  }
+  metrics.generation_time.push(total_generation_time_ms);
+  metrics.tasks_completed.push(completed as f32);
 }
 
 /// System: Draws collision meshes as debug gizmos.
-#[cfg(feature = "visual_debug")]
 pub fn draw_collision_gizmos(
   cache: Res<CollisionCache>,
   query_points: Query<&Transform, With<CollisionQueryPoint>>,

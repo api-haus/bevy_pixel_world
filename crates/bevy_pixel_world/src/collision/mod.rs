@@ -47,7 +47,6 @@ pub use contour::{EDGE_TABLE, connect_segments, extract_marching_segments, grid_
 pub use marching::{GRID_SIZE, marching_squares};
 pub use mesh::{PolygonMesh, TileCollisionMesh};
 pub use simplify::{douglas_peucker, simplify_polylines};
-#[cfg(feature = "visual_debug")]
 pub use systems::draw_collision_gizmos;
 pub use systems::{
   CollisionQueryPoint, dispatch_collision_tasks, invalidate_dirty_tiles, poll_collision_tasks,

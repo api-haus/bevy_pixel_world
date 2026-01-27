@@ -9,31 +9,32 @@ use bevy::prelude::*;
 #[cfg(not(feature = "headless"))]
 use bevy::sprite_render::Material2dPlugin;
 
-#[cfg(all(feature = "buoyancy", any(feature = "avian2d", feature = "rapier2d")))]
+pub mod bodies_plugin;
+#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 pub mod buoyancy;
 pub mod collision;
 pub mod coords;
 pub mod debug_shim;
-#[cfg(feature = "diagnostics")]
 pub mod diagnostics;
 pub mod material;
 pub mod persistence;
 pub mod pixel;
 pub mod pixel_body;
+pub mod plugin_bundle;
 pub mod primitives;
 pub mod render;
+pub mod schedule;
 pub mod scheduling;
 pub mod seeding;
 pub mod simulation;
-#[cfg(feature = "submergence")]
 pub mod submergence;
 pub mod text;
 #[cfg(feature = "tracy")]
 mod tracy_init;
-#[cfg(feature = "visual_debug")]
 pub mod visual_debug;
 pub mod world;
 
+pub use bodies_plugin::PixelBodiesPlugin;
 pub use collision::{CollisionCache, CollisionConfig, CollisionQueryPoint, CollisionTasks};
 pub use coords::{
   CHUNK_SIZE, ChunkPos, ColorIndex, LocalPos, MaterialId, TILE_SIZE, TilePos, WorldFragment,
@@ -47,12 +48,14 @@ pub use pixel_body::{
   PixelBody, PixelBodyId, PixelBodyIdGenerator, PixelBodyLoader, SpawnPixelBody,
   SpawnPixelBodyFromImage, finalize_pending_pixel_bodies, generate_collider, update_pixel_bodies,
 };
+pub use plugin_bundle::PixelWorldFullBundle;
 pub use primitives::{Chunk, Surface};
 pub use render::{
   ChunkMaterial, Rgba, create_chunk_quad, create_palette_texture, create_pixel_texture,
   create_texture, materialize, rgb, spawn_static_chunk, upload_palette, upload_pixels,
   upload_surface,
 };
+pub use schedule::{PixelWorldSet, SimulationPhase};
 pub use seeding::{ChunkSeeder, MaterialSeeder, NoiseSeeder, PersistenceSeeder};
 pub use simulation::simulate_tick;
 pub use text::{CpuFont, TextMask, TextStyle, draw_text, rasterize_text, stamp_text};
@@ -223,9 +226,6 @@ impl Plugin for PixelWorldPlugin {
     // Initialize Materials registry (users can override by inserting before plugin)
     app.init_resource::<Materials>();
 
-    // Initialize pixel body ID generator
-    app.init_resource::<pixel_body::PixelBodyIdGenerator>();
-
     // Store default config as resource for SpawnPixelWorld
     app.insert_resource(DefaultPixelWorldConfig(self.config.clone()));
 
@@ -263,8 +263,8 @@ impl Plugin for PixelWorldPlugin {
     // Add world streaming systems
     app.add_plugins(world::plugin::PixelWorldStreamingPlugin);
 
-    // Add visual debug plugin if feature is enabled
-    #[cfg(feature = "visual_debug")]
+    // Add visual debug plugin (requires rendering infrastructure)
+    #[cfg(not(feature = "headless"))]
     app.add_plugins(visual_debug::VisualDebugPlugin);
   }
 }

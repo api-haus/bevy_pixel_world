@@ -21,13 +21,9 @@
 //! enabled.
 
 mod force;
-#[cfg(not(feature = "submergence"))]
-mod sample;
 
 use bevy::prelude::*;
 pub use force::compute_buoyancy_forces;
-#[cfg(not(feature = "submergence"))]
-pub use sample::sample_submersion;
 
 /// Configuration for buoyancy simulation.
 #[derive(Resource, Clone, Debug)]
@@ -75,15 +71,15 @@ pub struct BuoyancyState {
 
 /// Plugin for liquid buoyancy physics.
 ///
-/// Adds systems that sample submersion and apply buoyancy forces to
-/// bodies marked with [`Buoyant`].
+/// Adds systems that apply buoyancy forces to bodies marked with [`Buoyant`].
+/// Submersion data comes from the submergence module's `SubmersionState`.
 ///
 /// # Configuration
 ///
 /// Pass a custom [`BuoyancyConfig`] to tune the simulation:
 ///
 /// ```ignore
-/// app.add_plugins(PixelBuoyancyPlugin {
+/// app.add_plugins(Buoyancy2dPlugin {
 ///     config: BuoyancyConfig {
 ///         sample_grid_size: 8,
 ///         liquid_density_scale: 0.15,
@@ -92,26 +88,25 @@ pub struct BuoyancyState {
 /// });
 /// ```
 #[derive(Default)]
-pub struct PixelBuoyancyPlugin {
+pub struct Buoyancy2dPlugin {
   /// Configuration for the buoyancy simulation.
   pub config: BuoyancyConfig,
 }
 
-impl PixelBuoyancyPlugin {
+impl Buoyancy2dPlugin {
   /// Creates a new plugin with the given configuration.
   pub fn new(config: BuoyancyConfig) -> Self {
     Self { config }
   }
 }
 
-impl Plugin for PixelBuoyancyPlugin {
+impl Plugin for Buoyancy2dPlugin {
   fn build(&self, app: &mut App) {
     app.insert_resource(self.config.clone());
-
-    #[cfg(not(feature = "submergence"))]
-    app.add_systems(Update, (sample_submersion, compute_buoyancy_forces).chain());
-
-    #[cfg(feature = "submergence")]
     app.add_systems(Update, compute_buoyancy_forces);
   }
 }
+
+/// Deprecated alias for [`Buoyancy2dPlugin`].
+#[deprecated(note = "Renamed to Buoyancy2dPlugin")]
+pub type PixelBuoyancyPlugin = Buoyancy2dPlugin;

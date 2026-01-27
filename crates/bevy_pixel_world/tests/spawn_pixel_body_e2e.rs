@@ -23,8 +23,9 @@ use bevy::asset::RenderAssetUsages;
 use bevy::image::ImageSampler;
 use bevy::prelude::*;
 use bevy_pixel_world::{
-  MaterialSeeder, PendingPixelBody, PersistenceConfig, PixelBody, PixelWorldPlugin, SpawnPixelBody,
-  SpawnPixelBodyFromImage, SpawnPixelWorld, StreamingCamera, material_ids,
+  MaterialSeeder, PendingPixelBody, PersistenceConfig, PixelBodiesPlugin, PixelBody,
+  PixelWorldPlugin, SpawnPixelBody, SpawnPixelBodyFromImage, SpawnPixelWorld, StreamingCamera,
+  material_ids,
 };
 use tempfile::TempDir;
 
@@ -54,6 +55,7 @@ impl TestHarness {
     app.add_plugins(
       PixelWorldPlugin::default().persistence(PersistenceConfig::new("test").with_path(save_path)),
     );
+    app.add_plugins(PixelBodiesPlugin);
 
     // Add physics plugin based on feature
     #[cfg(feature = "avian2d")]

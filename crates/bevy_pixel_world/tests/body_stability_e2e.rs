@@ -14,8 +14,8 @@ use bevy::ecs::world::Mut;
 use bevy::prelude::*;
 use bevy_pixel_world::{
   ColorIndex, DisplacementState, LastBlitTransform, MaterialSeeder, Persistable, PersistenceConfig,
-  Pixel, PixelBody, PixelBodyId, PixelBodyIdGenerator, PixelWorld, PixelWorldPlugin,
-  SpawnPixelWorld, StreamingCamera, WorldPos, WorldRect, material_ids,
+  Pixel, PixelBodiesPlugin, PixelBody, PixelBodyId, PixelBodyIdGenerator, PixelWorld,
+  PixelWorldPlugin, SpawnPixelWorld, StreamingCamera, WorldPos, WorldRect, material_ids,
 };
 use tempfile::TempDir;
 
@@ -41,6 +41,7 @@ impl TestHarness {
     app.add_plugins(
       PixelWorldPlugin::default().persistence(PersistenceConfig::new("test").with_path(save_path)),
     );
+    app.add_plugins(PixelBodiesPlugin);
 
     let camera = app
       .world_mut()

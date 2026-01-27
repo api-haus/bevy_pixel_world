@@ -52,9 +52,8 @@ pub(crate) fn upload_dirty_chunks(
   mut worlds: Query<&mut PixelWorld>,
   mut images: ResMut<Assets<Image>>,
   mut materials: ResMut<Assets<ChunkMaterial>>,
-  #[cfg(feature = "diagnostics")] mut sim_metrics: ResMut<crate::diagnostics::SimulationMetrics>,
+  mut sim_metrics: ResMut<crate::diagnostics::SimulationMetrics>,
 ) {
-  #[cfg(feature = "diagnostics")]
   let start = std::time::Instant::now();
 
   for mut world in worlds.iter_mut() {
@@ -72,9 +71,6 @@ pub(crate) fn upload_dirty_chunks(
     }
   }
 
-  #[cfg(feature = "diagnostics")]
-  {
-    let elapsed_ms = start.elapsed().as_secs_f32() * 1000.0;
-    sim_metrics.upload_time.push(elapsed_ms);
-  }
+  let elapsed_ms = start.elapsed().as_secs_f32() * 1000.0;
+  sim_metrics.upload_time.push(elapsed_ms);
 }

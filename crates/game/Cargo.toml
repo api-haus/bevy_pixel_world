@@ -18,12 +18,10 @@ toml = "0.8"
 bevy_common_assets = { version = "0.14", features = ["toml"] }
 log = { version = "*", features = ["max_level_debug", "release_max_level_warn"] }
 rayon = "1.11.0"
-bevy_pixel_world = { path = "../bevy_pixel_world", default-features = false, optional = true }
+bevy_pixel_world = { path = "../bevy_pixel_world" }
 bevy-yoleck = { version = "0.29", optional = true, features = ["vpeol_2d"] }
 
 [features]
 default = ["dev"]
-dev = ["bevy/dynamic_linking", "bevy/file_watcher", "visual_debug", "diagnostics", "editor"]
+dev = ["bevy/dynamic_linking", "bevy/file_watcher", "editor"]
 editor = ["dep:bevy-yoleck"]
-visual_debug = []
-diagnostics = ["bevy_pixel_world/diagnostics", "dep:bevy_pixel_world"]
