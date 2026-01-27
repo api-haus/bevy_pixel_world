@@ -13,8 +13,8 @@ use bevy::ecs::world::Mut;
 use bevy::prelude::*;
 use bevy_pixel_world::{
   ColorIndex, DisplacementState, LastBlitTransform, MaterialSeeder, Persistable, PersistenceConfig,
-  Pixel, PixelBodiesPlugin, PixelBody, PixelBodyId, PixelBodyIdGenerator, PixelWorld,
-  PixelWorldPlugin, SpawnPixelWorld, StreamingCamera, WorldPos, WorldRect, material_ids,
+  Pixel, PixelBodiesPlugin, PixelBody, PixelBodyIdGenerator, PixelWorld, PixelWorldPlugin,
+  SpawnPixelWorld, StreamingCamera, WorldPos, WorldRect, material_ids,
 };
 use tempfile::TempDir;
 

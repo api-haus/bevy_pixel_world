@@ -182,10 +182,10 @@ pub(crate) fn poll_seeding_tasks(
     let seeded_chunk = bevy::tasks::block_on(&mut task.task);
 
     if let Ok(mut world) = worlds.get_mut(task.world_entity)
-      // Slot may have been recycled if camera moved while task was in flight.
-      // Both checks are needed: position mapping and slot index must match.
-      && let Some(current_idx) = world.get_slot_index(task.pos)
-      && current_idx == task.slot_index
+            // Slot may have been recycled if camera moved while task was in flight.
+            // Both checks are needed: position mapping and slot index must match.
+            && let Some(current_idx) = world.get_slot_index(task.pos)
+            && current_idx == task.slot_index
     {
       let slot = world.slot_mut(task.slot_index);
       // Merge seeded pixels, preserving any PIXEL_BODY pixels that were

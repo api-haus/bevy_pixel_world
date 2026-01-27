@@ -239,18 +239,15 @@ impl Plugin for PixelWorldPlugin {
     // Initialize persistence control with named save info
     let base_dir = self.persistence.save_dir();
     let current_save = self.persistence.effective_save_name().to_string();
-    app.insert_resource(world::control::PersistenceControl::new(
-      base_dir,
-      current_save,
-    ));
+    app.insert_resource(PersistenceControl::new(base_dir, current_save));
 
     // Initialize world save if persistence is enabled
     if self.persistence.enabled {
       let save_path = self.persistence.effective_path();
-      match persistence::WorldSave::open_or_create(&save_path, self.persistence.world_seed) {
+      match WorldSave::open_or_create(&save_path, self.persistence.world_seed) {
         Ok(save) => {
           info!("Opened world save at {:?}", save_path);
-          app.insert_resource(persistence::WorldSaveResource::new(save));
+          app.insert_resource(WorldSaveResource::new(save));
         }
         Err(e) => {
           error!(
