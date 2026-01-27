@@ -78,103 +78,73 @@ impl Plugin for PixelWorldStreamingPlugin {
       app.add_systems(Update, sync_physics_colliders.after(poll_collision_tasks));
     }
 
+    // Core update loop: pre-simulation → barrier → simulation → post-simulation.
+    // Render-only systems (palette init, async seeding poll, GPU upload) are added
+    // separately below with ordering constraints, avoiding schedule duplication.
+    app.add_systems(
+      Update,
+      (
+        // Pre-simulation group
+        (
+          clear_chunk_tracking,
+          handle_persistence_messages,
+          update_streaming_windows,
+          save_pixel_bodies_on_chunk_unload,
+          update_entity_culling,
+          dispatch_seeding,
+          queue_pixel_bodies_on_chunk_seed,
+          update_simulation_bounds,
+          finalize_pending_pixel_bodies,
+        )
+          .chain(),
+        // Apply deferred commands so new bodies are visible to simulation
+        ApplyDeferred,
+        // Simulation group
+        (
+          detect_external_erasure,
+          update_pixel_bodies,
+          run_simulation.run_if(simulation_not_paused),
+          readback_pixel_bodies,
+          apply_readback_changes,
+          split_pixel_bodies,
+          invalidate_dirty_tiles,
+        )
+          .chain(),
+        // Post-simulation group
+        (
+          dispatch_collision_tasks,
+          poll_collision_tasks,
+          spawn_pending_pixel_bodies,
+          process_pending_save_requests,
+          save_pixel_bodies_on_request,
+          flush_persistence_queue,
+          notify_persistence_complete,
+        )
+          .chain(),
+      )
+        .chain(),
+    );
+
+    // Render-only systems slotted into the shared schedule via ordering
+    // constraints.
     #[cfg(not(feature = "headless"))]
     app.add_systems(
       Update,
       (
-        // Pre-simulation group
-        (
-          clear_chunk_tracking,
-          handle_persistence_messages,
-          initialize_palette,
-          update_streaming_windows,
-          save_pixel_bodies_on_chunk_unload,
-          update_entity_culling,
-          dispatch_seeding,
-          poll_seeding_tasks,
-          queue_pixel_bodies_on_chunk_seed,
-          update_simulation_bounds,
-          // Finalize pending pixel bodies from SpawnPixelBody commands
-          finalize_pending_pixel_bodies,
-        )
-          .chain(),
-        // Apply deferred commands so new bodies are visible to simulation
-        ApplyDeferred,
-        // Simulation group
-        (
-          detect_external_erasure,
-          update_pixel_bodies,
-          run_simulation.run_if(simulation_not_paused),
-          readback_pixel_bodies,
-          apply_readback_changes,
-          split_pixel_bodies,
-          invalidate_dirty_tiles,
-        )
-          .chain(),
-        // Post-simulation group
-        (
-          dispatch_collision_tasks,
-          poll_collision_tasks,
-          spawn_pending_pixel_bodies,
-          upload_dirty_chunks,
-          process_pending_save_requests,
-          save_pixel_bodies_on_request,
-          flush_persistence_queue,
-          notify_persistence_complete,
-        )
-          .chain(),
-      )
-        .chain(),
+        initialize_palette
+          .after(handle_persistence_messages)
+          .before(update_streaming_windows),
+        poll_seeding_tasks
+          .after(dispatch_seeding)
+          .before(queue_pixel_bodies_on_chunk_seed),
+        upload_dirty_chunks
+          .after(spawn_pending_pixel_bodies)
+          .before(process_pending_save_requests),
+      ),
     );
 
     #[cfg(all(not(feature = "headless"), feature = "visual_debug"))]
     app.add_systems(PostUpdate, draw_collision_gizmos);
-
-    #[cfg(feature = "headless")]
-    app.add_systems(
-      Update,
-      (
-        // Pre-simulation group
-        (
-          clear_chunk_tracking,
-          handle_persistence_messages,
-          update_streaming_windows,
-          save_pixel_bodies_on_chunk_unload,
-          update_entity_culling,
-          dispatch_seeding,
-          queue_pixel_bodies_on_chunk_seed,
-          update_simulation_bounds,
-          // Finalize pending pixel bodies from SpawnPixelBody commands
-          finalize_pending_pixel_bodies,
-        )
-          .chain(),
-        // Apply deferred commands so new bodies are visible to simulation
-        ApplyDeferred,
-        // Simulation group
-        (
-          detect_external_erasure,
-          update_pixel_bodies,
-          run_simulation.run_if(simulation_not_paused),
-          readback_pixel_bodies,
-          apply_readback_changes,
-          split_pixel_bodies,
-          invalidate_dirty_tiles,
-        )
-          .chain(),
-        // Post-simulation group
-        (
-          dispatch_collision_tasks,
-          poll_collision_tasks,
-          spawn_pending_pixel_bodies,
-          process_pending_save_requests,
-          save_pixel_bodies_on_request,
-          flush_persistence_queue,
-          notify_persistence_complete,
-        )
-          .chain(),
-      )
-        .chain(),
-    );
   }
 }
 
