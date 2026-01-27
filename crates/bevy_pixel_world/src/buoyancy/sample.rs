@@ -4,6 +4,7 @@
 //! how much of the body is submerged in liquid.
 
 use bevy::prelude::*;
+use rayon::prelude::*;
 
 use super::{BuoyancyConfig, BuoyancyState, Buoyant};
 use crate::coords::{WorldPos, WorldRect};
@@ -102,11 +103,21 @@ fn compute_submersion_state(result: &GridSampleResult, fallback_center: Vec2) ->
   }
 }
 
+/// Computed buoyancy result for a single body.
+struct BodySampleResult {
+  entity: Entity,
+  has_existing_state: bool,
+  state: BuoyancyState,
+}
+
 /// Samples submersion for all buoyant pixel bodies.
 ///
 /// Creates an NxN sample grid across each body's AABB and queries the world
 /// for liquid pixels. Updates `BuoyancyState` with the fraction submerged
 /// and the center of buoyancy.
+///
+/// Sampling is parallelized across bodies since each body's computation is
+/// independent and the world access is read-only.
 pub fn sample_submersion(
   mut commands: Commands,
   worlds: Query<&PixelWorld>,
@@ -126,19 +137,51 @@ pub fn sample_submersion(
 
   let grid_size = config.sample_grid_size as usize;
 
-  for (entity, body, transform, _, state) in bodies.iter_mut() {
-    let aabb = compute_world_aabb(body, transform);
-    let result = sample_body_grid(world, &materials, body, transform, aabb, grid_size);
-    let new_state = compute_submersion_state(&result, transform.translation().truncate());
+  // Collect body data for parallel processing
+  let body_data: Vec<_> = bodies
+    .iter()
+    .map(|(entity, body, transform, _, state)| {
+      let aabb = compute_world_aabb(body, transform);
+      let fallback_center = transform.translation().truncate();
+      (
+        entity,
+        body,
+        transform,
+        aabb,
+        fallback_center,
+        state.is_some(),
+      )
+    })
+    .collect();
 
-    match state {
-      Some(mut s) => {
-        s.submerged_fraction = new_state.submerged_fraction;
-        s.submerged_center = new_state.submerged_center;
+  // Parallel sampling phase - read-only world access
+  let results: Vec<BodySampleResult> = body_data
+    .par_iter()
+    .map(
+      |&(entity, body, transform, aabb, fallback_center, has_existing_state)| {
+        let result = sample_body_grid(world, &materials, body, transform, aabb, grid_size);
+        let state = compute_submersion_state(&result, fallback_center);
+
+        BodySampleResult {
+          entity,
+          has_existing_state,
+          state,
+        }
+      },
+    )
+    .collect();
+
+  // Sequential application phase - requires mutable access
+  for result in results {
+    if result.has_existing_state {
+      // Update existing state
+      if let Ok((_, _, _, _, Some(mut state))) = bodies.get_mut(result.entity) {
+        state.submerged_fraction = result.state.submerged_fraction;
+        state.submerged_center = result.state.submerged_center;
       }
-      None => {
-        commands.entity(entity).insert(new_state);
-      }
+    } else {
+      // Insert new state
+      commands.entity(result.entity).insert(result.state);
     }
   }
 }

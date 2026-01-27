@@ -5,6 +5,7 @@
 //! 2. CA simulation - detected after simulation
 
 use bevy::prelude::*;
+use rayon::prelude::*;
 
 use super::blit::detect_destroyed_from_written;
 use super::{LastBlitTransform, NeedsColliderRegen, PixelBody, ShapeMaskModified};
@@ -32,6 +33,9 @@ pub struct DestroyedPixels(pub Vec<(u32, u32)>);
 /// NOTE: Unlike readback_pixel_bodies, this system processes ALL bodies
 /// including those with Stabilizing marker. External erasure (brush) should
 /// work on any body regardless of its physics settling state.
+///
+/// Detection is parallelized across bodies since the world access is read-only.
+/// Shape mask mutations are applied sequentially afterward.
 pub fn detect_external_erasure(
   mut commands: Commands,
   worlds: Query<&PixelWorld>,
@@ -41,14 +45,29 @@ pub fn detect_external_erasure(
     return;
   };
 
-  for (entity, mut body, blitted) in bodies.iter_mut() {
-    if blitted.written_positions.is_empty() {
-      continue;
-    }
+  // Collect body data for parallel processing
+  let body_data: Vec<_> = bodies
+    .iter()
+    .filter(|(_, _, blitted)| !blitted.written_positions.is_empty())
+    .map(|(entity, _, blitted)| (entity, blitted))
+    .collect();
 
-    let destroyed_pixels = detect_destroyed_from_written(world, &blitted.written_positions);
+  // Parallel detection phase - read-only world access
+  let results: Vec<_> = body_data
+    .par_iter()
+    .filter_map(|&(entity, blitted)| {
+      let destroyed_pixels = detect_destroyed_from_written(world, &blitted.written_positions);
+      if destroyed_pixels.is_empty() {
+        None
+      } else {
+        Some((entity, destroyed_pixels))
+      }
+    })
+    .collect();
 
-    if !destroyed_pixels.is_empty() {
+  // Sequential mutation phase - requires mutable PixelBody access
+  for (entity, destroyed_pixels) in results {
+    if let Ok((_, mut body, _)) = bodies.get_mut(entity) {
       // Immediately update shape_mask to prevent re-blitting in update_pixel_bodies
       for &(lx, ly) in &destroyed_pixels {
         body.set_solid(lx, ly, false);
@@ -67,6 +86,9 @@ pub fn detect_external_erasure(
 /// Runs after simulation to detect pixels that were destroyed during the
 /// CA tick (e.g., burned, dissolved, etc.). Uses LastBlitTransform to check
 /// positions where pixels were written this frame.
+///
+/// Detection is parallelized across bodies since each body's check is
+/// independent and the world access is read-only.
 pub fn readback_pixel_bodies(
   mut commands: Commands,
   worlds: Query<&PixelWorld>,
@@ -76,16 +98,25 @@ pub fn readback_pixel_bodies(
     return;
   };
 
-  for (entity, blitted, existing_destroyed) in bodies.iter() {
-    if blitted.written_positions.is_empty() {
-      continue;
-    }
+  // Collect body data for parallel processing
+  let body_data: Vec<_> = bodies
+    .iter()
+    .filter(|(_, blitted, _)| !blitted.written_positions.is_empty())
+    .map(|(entity, blitted, existing)| (entity, blitted, existing.map(|d| d.0.clone())))
+    .collect();
 
-    let destroyed_pixels = detect_destroyed_from_written(world, &blitted.written_positions);
+  // Parallel detection phase - read-only world access
+  let results: Vec<_> = body_data
+    .par_iter()
+    .filter_map(|(entity, blitted, existing)| {
+      let destroyed_pixels = detect_destroyed_from_written(world, &blitted.written_positions);
 
-    if !destroyed_pixels.is_empty() {
+      if destroyed_pixels.is_empty() {
+        return None;
+      }
+
       // Merge with any existing destroyed pixels (from external erasure)
-      let mut all_destroyed = existing_destroyed.map(|d| d.0.clone()).unwrap_or_default();
+      let mut all_destroyed = existing.clone().unwrap_or_default();
 
       // Deduplicate
       for pixel in destroyed_pixels {
@@ -94,10 +125,15 @@ pub fn readback_pixel_bodies(
         }
       }
 
-      commands
-        .entity(entity)
-        .insert(DestroyedPixels(all_destroyed));
-    }
+      Some((*entity, all_destroyed))
+    })
+    .collect();
+
+  // Sequential command application phase
+  for (entity, all_destroyed) in results {
+    commands
+      .entity(entity)
+      .insert(DestroyedPixels(all_destroyed));
   }
 }
 

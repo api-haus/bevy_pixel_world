@@ -4,6 +4,7 @@
 //! how much of the body is submerged in liquid.
 
 use bevy::prelude::*;
+use rayon::prelude::*;
 
 use super::{Submergent, SubmersionConfig, SubmersionState};
 use crate::coords::{WorldPos, WorldRect};
@@ -98,11 +99,25 @@ fn sample_body_grid(
   result
 }
 
+/// Computed submersion result for a single body.
+struct BodySampleResult {
+  entity: Entity,
+  has_existing_state: bool,
+  submerged_fraction: f32,
+  submerged_center: Vec2,
+  is_submerged: bool,
+  liquid_samples: u32,
+  total_samples: u32,
+}
+
 /// Samples submersion for all submergent pixel bodies.
 ///
 /// Creates an NxN sample grid across each body's AABB and queries the world
 /// for liquid pixels. Updates `SubmersionState` with the fraction submerged,
 /// center of buoyancy, and threshold-crossing state.
+///
+/// Sampling is parallelized across bodies since each body's computation is
+/// independent and the world access is read-only.
 pub fn sample_submersion(
   mut commands: Commands,
   worlds: Query<&PixelWorld>,
@@ -123,42 +138,66 @@ pub fn sample_submersion(
   let grid_size = config.sample_grid_size as usize;
   let threshold = config.submersion_threshold;
 
-  for (entity, body, transform, _, state) in bodies.iter_mut() {
-    let aabb = compute_world_aabb(body, transform);
-    let result = sample_body_grid(world, &materials, body, transform, aabb, grid_size);
+  // Collect body data for parallel processing
+  let body_data: Vec<_> = bodies
+    .iter()
+    .map(|(entity, body, transform, _, state)| {
+      let aabb = compute_world_aabb(body, transform);
+      (entity, body, transform, aabb, state.is_some())
+    })
+    .collect();
 
-    let submerged_fraction = if result.total_samples > 0 {
-      result.liquid_samples as f32 / result.total_samples as f32
-    } else {
-      0.0
-    };
+  // Parallel sampling phase - read-only world access
+  let results: Vec<BodySampleResult> = body_data
+    .par_iter()
+    .map(|&(entity, body, transform, aabb, has_existing_state)| {
+      let result = sample_body_grid(world, &materials, body, transform, aabb, grid_size);
 
-    let submerged_center = if result.liquid_samples > 0 {
-      result.liquid_center_sum / result.liquid_samples as f32
-    } else {
-      transform.translation().truncate()
-    };
+      let submerged_fraction = if result.total_samples > 0 {
+        result.liquid_samples as f32 / result.total_samples as f32
+      } else {
+        0.0
+      };
 
-    let is_submerged = submerged_fraction >= threshold;
+      let submerged_center = if result.liquid_samples > 0 {
+        result.liquid_center_sum / result.liquid_samples as f32
+      } else {
+        transform.translation().truncate()
+      };
 
-    match state {
-      Some(mut s) => {
-        s.submerged_fraction = submerged_fraction;
-        s.submerged_center = submerged_center;
-        s.is_submerged = is_submerged;
-        s.debug_liquid_samples = result.liquid_samples;
-        s.debug_total_samples = result.total_samples;
+      BodySampleResult {
+        entity,
+        has_existing_state,
+        submerged_fraction,
+        submerged_center,
+        is_submerged: submerged_fraction >= threshold,
+        liquid_samples: result.liquid_samples,
+        total_samples: result.total_samples,
       }
-      None => {
-        commands.entity(entity).insert(SubmersionState {
-          is_submerged,
-          submerged_fraction,
-          submerged_center,
-          previous_submerged: false,
-          debug_liquid_samples: result.liquid_samples,
-          debug_total_samples: result.total_samples,
-        });
+    })
+    .collect();
+
+  // Sequential application phase - requires mutable access
+  for result in results {
+    if result.has_existing_state {
+      // Update existing state
+      if let Ok((_, _, _, _, Some(mut state))) = bodies.get_mut(result.entity) {
+        state.submerged_fraction = result.submerged_fraction;
+        state.submerged_center = result.submerged_center;
+        state.is_submerged = result.is_submerged;
+        state.debug_liquid_samples = result.liquid_samples;
+        state.debug_total_samples = result.total_samples;
       }
+    } else {
+      // Insert new state
+      commands.entity(result.entity).insert(SubmersionState {
+        is_submerged: result.is_submerged,
+        submerged_fraction: result.submerged_fraction,
+        submerged_center: result.submerged_center,
+        previous_submerged: false,
+        debug_liquid_samples: result.liquid_samples,
+        debug_total_samples: result.total_samples,
+      });
     }
   }
 }
