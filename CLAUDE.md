@@ -68,7 +68,12 @@ If no matching worktree exists, create one.
 git worktree add ../sim2d-arch-docs -b docs/architecture-reorg
 git worktree add ../sim2d-plugin-helpers -b refactor/plugin-helpers
 git worktree add ../sim2d-physics-desync -b fix/physics-desync-on-load
+
+# After creating the worktree, copy target/ to speed up first compilation:
+cp -al target/ ../sim2d-<suffix>/target/
 ```
+
+> **Tip**: `cp -al` uses hard links, so the copy is instant and uses no extra disk space. sccache helps with incremental rebuilds, but having a local `target/` avoids re-downloading and re-compiling all dependencies from scratch.
 
 ### Conventions
 
