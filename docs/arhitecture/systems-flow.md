@@ -106,6 +106,15 @@ flowchart TB
 
         subgraph CA["Cellular Automata"]
             S3["Run 4-phase CA"]
+            S3b["process_burning<br/>(every tick)"]
+            S3c{"heat tick?"}
+            S3d["propagate_heat"]
+            S3e["ignite_from_heat"]
+            S3 --> S3b --> S3c
+            S3c -->|"yes"| S3d --> S3e
+            S3c -->|"no"| S3end["done"]
+            S3e --> S3end
+            style S3end fill:none,stroke:none
         end
 
         subgraph Readback["Destruction Readback"]
@@ -132,7 +141,7 @@ flowchart TB
         end
 
         subgraph Render["Rendering"]
-            P4["Upload to GPU"]
+            P4["Upload pixels + heat to GPU"]
         end
 
         subgraph Persist["Persistence"]
@@ -169,6 +178,9 @@ flowchart TB
 | Body Preparation | Detect brush erasure | `detect_external_erasure` | `pixel_body::readback` |
 | Body Preparation | Clear + blit pixels | `update_pixel_bodies` | `pixel_body::blit` |
 | Cellular Automata | Run 4-phase CA | `run_simulation` | `world::plugin` |
+| Cellular Automata | Burning propagation | `process_burning` | `simulation::burning` |
+| Cellular Automata | Heat diffusion | `propagate_heat` | `simulation::heat` |
+| Cellular Automata | Heat ignition | `ignite_from_heat` | `simulation::heat` |
 | Destruction Readback | Detect destroyed pixels | `readback_pixel_bodies` | `pixel_body::readback` |
 | Destruction Readback | Update shape masks | `apply_readback_changes` | `pixel_body::readback` |
 | Destruction Readback | Split fragments | `split_pixel_bodies` | `pixel_body::split` |
@@ -176,7 +188,7 @@ flowchart TB
 | Collision Generation | Dispatch mesh tasks | `dispatch_collision_tasks` | `collision::systems` |
 | Collision Generation | Poll mesh results | `poll_collision_tasks` | `collision::systems` |
 | Collision Generation | Spawn ready bodies | `spawn_pending_pixel_bodies` | `world::body_loader` |
-| Rendering | Upload to GPU | `upload_dirty_chunks` | `world::plugin` |
+| Rendering | Upload pixels + heat to GPU | `upload_dirty_chunks` | `world::plugin` |
 | Persistence | Queue chunks | `process_pending_save_requests` | `world::persistence_systems` |
 | Persistence | Queue bodies | `save_pixel_bodies_on_request` | `world::persistence_systems` |
 | Persistence | Flush to disk | `flush_persistence_queue` | `world::persistence_systems` |
@@ -354,6 +366,12 @@ block-beta
 
 Tiles of the same phase are never adjacent, guaranteeing thread-safe read/write access within each phase. See [Scheduling](simulation/scheduling.md) for details.
 
+After the 4-phase CA, `simulate_tick` runs heat and burning sub-steps:
+
+1. **`process_burning`** (every tick, per chunk) — spreads fire to flammable neighbors with per-neighbor probability (`ignite_spread_chance`), transforms fully-burned pixels to ash
+2. **`propagate_heat`** (every `heat_tick_interval` ticks) — accumulates heat from burning pixels, diffuses across the 16×16 heat grid with a `cooling_factor`, and propagates heat across chunk boundaries
+3. **`ignite_from_heat`** (immediately after `propagate_heat`) — ignites flammable pixels when their heat cell meets or exceeds the material's `ignition_threshold`
+
 ### Design Decisions
 
 **Clear-then-blit separation:**
@@ -386,6 +404,9 @@ Tiles of the same phase are never adjacent, guaranteeing thread-safe read/write 
 | `ShapeMaskModified` | `detect_external_erasure`, `apply_readback_changes` | `split_pixel_bodies` | Present when shape mask was modified this frame |
 | `NeedsColliderRegen` | `detect_external_erasure`, `apply_readback_changes` | `spawn_pending_pixel_bodies` | Present when collider needs regeneration |
 | `Canvas` | `simulate_tick` | `simulate_tick` (internal) | Temporary view over seeded chunks |
+| `HeatConfig` | User code / default | `propagate_heat`, `ignite_from_heat`, `process_burning` | Configuration resource, not mutated at runtime |
+| `Chunk::heat` | `propagate_heat` | `ignite_from_heat`, `upload_dirty_chunks` | 16×16 heat grid per chunk (4×4 pixel cells), ephemeral (not persisted) |
+| `PixelFlags::BURNING` | `ignite_from_heat`, `process_burning` | `propagate_heat`, `process_burning`, `readback_pixel_bodies` | Set on actively burning pixels |
 
 ---
 
@@ -700,6 +721,15 @@ flowchart LR
 ---
 
 ## Tradeoffs and Design Rationale
+
+### Heat Propagation
+
+**Chosen:** Coarse heat grid with throttled diffusion, per-tick burning
+
+**Rationale:**
+- **Coarse heat grid (4×4 pixel cells):** 16×16 grid per chunk reduces computation and memory. Bilinear GPU sampling of the R8Unorm heat texture smooths the visual output without per-pixel cost
+- **Tick interval throttling:** Heat diffuses every 6th tick (`heat_tick_interval`) to reduce cost without visible quality loss. Burning propagation runs every tick for responsiveness
+- **Heat is ephemeral:** Not persisted to save files. Burning pixels re-emit heat naturally on load, so the heat field reconstructs itself within a few ticks
 
 ### Clear-Blit Separation vs In-Place Update
 
