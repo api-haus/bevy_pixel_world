@@ -99,26 +99,25 @@ impl TestHarness {
 
 struct GremlinState {
   rng: StdRng,
-  camera_velocity: Vec2,
-  target_velocity: Vec2,
   idle_until: Option<Instant>,
   tick: u64,
   total_distance: f32,
+  // Spiraloid path parameters
+  time: f32,
+  phase_offset: f32,
 }
 
 impl GremlinState {
   fn new(seed: u64) -> Self {
     let mut rng = StdRng::seed_from_u64(seed);
-    let angle = rng.gen_range(0.0..std::f32::consts::TAU);
-    let speed = rng.gen_range(8.0..15.0f32);
-    let initial_velocity = Vec2::new(angle.cos(), angle.sin()) * speed;
+    let phase_offset = rng.gen_range(0.0..std::f32::consts::TAU);
     Self {
       rng,
-      camera_velocity: initial_velocity,
-      target_velocity: initial_velocity,
       idle_until: None,
       tick: 0,
       total_distance: 0.0,
+      time: 0.0,
+      phase_offset,
     }
   }
 
@@ -127,23 +126,34 @@ impl GremlinState {
   }
 
   fn maybe_start_idle(&mut self) {
-    // 10% chance to enter idle period
-    if self.rng.gen_ratio(1, 10) {
-      let duration_ms = self.rng.gen_range(500..=2000);
+    // 5% chance to enter idle period (reduced from 10%)
+    if self.rng.gen_ratio(1, 20) {
+      let duration_ms = self.rng.gen_range(200..=800);
       self.idle_until = Some(Instant::now() + Duration::from_millis(duration_ms));
     }
   }
 
-  fn update_velocity(&mut self) {
-    // 15% chance to pick a new target velocity (more frequent direction changes)
-    if self.rng.gen_ratio(3, 20) {
-      let angle = self.rng.gen_range(0.0..std::f32::consts::TAU);
-      let speed = self.rng.gen_range(8.0..20.0f32);
-      self.target_velocity = Vec2::new(angle.cos(), angle.sin()) * speed;
-    }
+  /// Rose curve / rhodonea path that returns to origin periodically
+  /// r = max_radius * |sin(k * theta)|, with theta advancing over time
+  /// k=3 gives a 3-petal rose that passes through origin 6 times per cycle
+  fn compute_target_position(&self) -> Vec2 {
+    let theta = self.time + self.phase_offset;
+    let k = 3.0; // 3-petal rose
+    let max_radius = 2000.0; // Max distance from origin
 
-    // Smooth interpolation toward target (creates fluid, sweeping motions)
-    self.camera_velocity = self.camera_velocity.lerp(self.target_velocity, 0.15);
+    // Rose curve: r = max_radius * |sin(k * theta)|
+    // This creates petals that sweep out from and return to origin
+    let r = max_radius * (k * theta).sin().abs();
+
+    Vec2::new(r * theta.cos(), r * theta.sin())
+  }
+
+  /// Advance time parameter for smooth, fast movement
+  fn advance_time(&mut self) {
+    // Speed: complete roughly 2 full rose cycles in 15 seconds at ~300 ticks
+    // Each cycle = 2*PI, so 4*PI total / 300 ticks ≈ 0.042 per tick
+    // Bump it up for more aggressive movement
+    self.time += 0.08;
   }
 }
 
@@ -300,16 +310,20 @@ fn run_gremlins_with_seed(seed: u64, duration_secs: u64) {
   let mut state = GremlinState::new(seed);
   let deadline = Instant::now() + Duration::from_secs(duration_secs);
 
-  while Instant::now() < deadline {
-    // Apply continuous camera movement with smooth velocity changes
-    let current_pos = harness.camera_position();
-    let delta = state.camera_velocity.extend(0.0);
-    let new_pos = current_pos + delta;
-    harness.move_camera(new_pos);
-    state.total_distance += delta.length();
+  let mut last_pos = harness.camera_position().truncate();
 
-    // Update velocity (smooth interpolation toward changing targets)
-    state.update_velocity();
+  while Instant::now() < deadline {
+    // Compute target position on spiraloid path
+    let target_pos = state.compute_target_position();
+    harness.move_camera(target_pos.extend(0.0));
+
+    // Track distance
+    let distance_this_tick = (target_pos - last_pos).length();
+    state.total_distance += distance_this_tick;
+    last_pos = target_pos;
+
+    // Advance along the path
+    state.advance_time();
 
     // Check if in idle period
     if state.is_idle() {
