@@ -61,6 +61,9 @@ name = "gremlins_stress"
 name = "submergence_e2e"
 required-features = ["avian2d"]
 
+[[test]]
+name = "material_config_roundtrip"
+
 [features]
 default = []
 dev = ["bevy/dynamic_linking"]

@@ -48,7 +48,7 @@ pub use coords::{
 pub use creative_mode::CreativeModePlugins;
 pub use debug_camera::{CameraZoom, PixelDebugControllerCameraPlugin};
 pub use debug_controller::{BrushState, PixelDebugControllerPlugin, UiPointerState};
-pub use material::{Material, Materials, PhysicsState, ids as material_ids};
+pub use material::{Material, Materials, MaterialsConfig, PhysicsState, ids as material_ids};
 pub use persistence::{PixelBodyRecord, WorldSave, WorldSaveResource};
 pub use pixel::{Pixel, PixelFlags, PixelSurface};
 pub use pixel_awareness::GridSampleConfig;
