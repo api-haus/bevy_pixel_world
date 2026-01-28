@@ -100,6 +100,7 @@ impl TestHarness {
 struct GremlinState {
   rng: StdRng,
   camera_velocity: Vec2,
+  target_velocity: Vec2,
   idle_until: Option<Instant>,
   tick: u64,
 }
@@ -108,10 +109,12 @@ impl GremlinState {
   fn new(seed: u64) -> Self {
     let mut rng = StdRng::seed_from_u64(seed);
     let angle = rng.gen_range(0.0..std::f32::consts::TAU);
-    let camera_velocity = Vec2::new(angle.cos(), angle.sin()) * 3.0;
+    let speed = rng.gen_range(8.0..15.0f32);
+    let initial_velocity = Vec2::new(angle.cos(), angle.sin()) * speed;
     Self {
       rng,
-      camera_velocity,
+      camera_velocity: initial_velocity,
+      target_velocity: initial_velocity,
       idle_until: None,
       tick: 0,
     }
@@ -129,13 +132,16 @@ impl GremlinState {
     }
   }
 
-  fn maybe_change_velocity(&mut self) {
-    // 5% chance to change camera velocity direction
-    if self.rng.gen_ratio(1, 20) {
+  fn update_velocity(&mut self) {
+    // 15% chance to pick a new target velocity (more frequent direction changes)
+    if self.rng.gen_ratio(3, 20) {
       let angle = self.rng.gen_range(0.0..std::f32::consts::TAU);
-      let speed = self.rng.gen_range(2.0..5.0f32);
-      self.camera_velocity = Vec2::new(angle.cos(), angle.sin()) * speed;
+      let speed = self.rng.gen_range(8.0..20.0f32);
+      self.target_velocity = Vec2::new(angle.cos(), angle.sin()) * speed;
     }
+
+    // Smooth interpolation toward target (creates fluid, sweeping motions)
+    self.camera_velocity = self.camera_velocity.lerp(self.target_velocity, 0.15);
   }
 }
 
@@ -273,8 +279,15 @@ fn gremlin_paint_heat(harness: &mut TestHarness, rng: &mut StdRng) {
   }
 }
 
-#[test]
-fn gremlins() {
+const SEEDS: [u64; 5] = [
+  0xDEAD_BEEF,
+  0xCAFE_BABE,
+  0xFEED_FACE,
+  0xBADC_0FFE,
+  0x1337_C0DE,
+];
+
+fn run_gremlins_with_seed(seed: u64, duration_secs: u64) {
   let temp_dir = TempDir::new().unwrap();
   let save_path = temp_dir.path().join("gremlins.save");
 
@@ -282,17 +295,17 @@ fn gremlins() {
   harness.move_camera(Vec3::ZERO);
   harness.run_until_seeded();
 
-  let mut state = GremlinState::new(0xDEAD_BEEF);
-  let deadline = Instant::now() + Duration::from_secs(30);
+  let mut state = GremlinState::new(seed);
+  let deadline = Instant::now() + Duration::from_secs(duration_secs);
 
   while Instant::now() < deadline {
-    // Apply continuous camera movement
+    // Apply continuous camera movement with smooth velocity changes
     let current_pos = harness.camera_position();
     let new_pos = current_pos + state.camera_velocity.extend(0.0);
     harness.move_camera(new_pos);
 
-    // Maybe change camera direction
-    state.maybe_change_velocity();
+    // Update velocity (smooth interpolation toward changing targets)
+    state.update_velocity();
 
     // Check if in idle period
     if state.is_idle() {
@@ -320,6 +333,23 @@ fn gremlins() {
     harness.app.update();
     state.tick += 1;
   }
-  eprintln!("gremlins: completed {} ticks in 30s", state.tick);
+  eprintln!(
+    "gremlins: seed {:#X} completed {} ticks in {}s",
+    seed, state.tick, duration_secs
+  );
+}
+
+#[test]
+fn gremlins() {
+  // Run multiple iterations with different seeds to increase coverage
+  for (i, &seed) in SEEDS.iter().enumerate() {
+    eprintln!(
+      "gremlins: starting run {}/{} with seed {:#X}",
+      i + 1,
+      SEEDS.len(),
+      seed
+    );
+    run_gremlins_with_seed(seed, 15);
+  }
   // If we got here without panicking, the test passes.
 }
