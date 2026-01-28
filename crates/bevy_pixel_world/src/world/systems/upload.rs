@@ -10,6 +10,7 @@ use super::super::{PixelWorld, SlotIndex};
 use crate::render::{ChunkMaterial, upload_heat, upload_pixels};
 
 /// Collects dirty, seeded slots that need GPU upload.
+#[allow(clippy::type_complexity)]
 fn collect_dirty_slots(
   world: &PixelWorld,
 ) -> Vec<(
@@ -51,10 +52,10 @@ fn upload_slot_to_gpu(
     upload_pixels(&slot.chunk.pixels, image);
   }
 
-  if let Some(heat_handle) = heat_texture_handle {
-    if let Some(image) = images.get_mut(heat_handle) {
-      upload_heat(&slot.chunk.heat, image);
-    }
+  if let Some(heat_handle) = heat_texture_handle
+    && let Some(image) = images.get_mut(heat_handle)
+  {
+    upload_heat(&slot.chunk.heat, image);
   }
 
   // Touch material to force bind group refresh (Bevy workaround)

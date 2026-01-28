@@ -16,6 +16,7 @@ impl NoiseNode {
   }
 
   /// Generate noise values on a uniform 2D grid.
+  #[allow(clippy::too_many_arguments)]
   pub fn gen_uniform_grid_2d(
     &self,
     output: &mut [f32],
@@ -30,11 +31,6 @@ impl NoiseNode {
     self
       .inner
       .gen_uniform_grid_2d(output, x_off, y_off, x_cnt, y_cnt, x_step, y_step, seed);
-  }
-
-  /// Generate a single noise value at the given position.
-  pub fn gen_single_2d(&self, x: f32, y: f32, seed: i32) -> f32 {
-    self.inner.gen_single_2d(x, y, seed)
   }
 }
 

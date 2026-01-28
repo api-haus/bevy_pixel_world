@@ -37,7 +37,7 @@ impl GizmosParam<'_> {
   /// Extracts gizmos as `DebugGizmos` for passing to functions.
   pub fn get(&self) -> DebugGizmos<'_> {
     match &self.inner {
-      Some(res) => DebugGizmos(Some(&*res)),
+      Some(res) => DebugGizmos(Some(res)),
       None => DebugGizmos(None),
     }
   }

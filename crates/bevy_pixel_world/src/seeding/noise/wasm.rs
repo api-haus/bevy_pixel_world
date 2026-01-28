@@ -64,14 +64,6 @@ impl NoiseNode {
     );
     result.copy_to(output);
   }
-
-  /// Generate a single noise value at the given position.
-  pub fn gen_single_2d(&self, x: f32, y: f32, seed: i32) -> f32 {
-    let mut output = [0.0f32; 1];
-    let result = s2d_gen_2d(self.handle, x, y, 1, 1, 1.0, 1.0, seed);
-    result.copy_to(&mut output);
-    output[0]
-  }
 }
 
 impl Drop for NoiseNode {

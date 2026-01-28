@@ -127,11 +127,11 @@ pub fn check_bomb_ignition(mut query: Query<(&mut Bomb, &PixelBody, &BombShellMa
       }
       let x = (i % w) as u32;
       let y = (i / w) as u32;
-      if let Some(pixel) = body.get_pixel(x, y) {
-        if pixel.flags.contains(PixelFlags::BURNING) {
-          bomb.detonated = true;
-          break;
-        }
+      if let Some(pixel) = body.get_pixel(x, y)
+        && pixel.flags.contains(PixelFlags::BURNING)
+      {
+        bomb.detonated = true;
+        break;
       }
     }
   }
@@ -184,7 +184,7 @@ pub fn process_detonations(
 
       // 90% void, 10% ash
       let roll = hash41uu64(0xB00B, pos.x as u64, pos.y as u64, 0xDEAD);
-      let new_pixel = if roll % 10 == 0 {
+      let new_pixel = if roll.is_multiple_of(10) {
         let color_idx = (roll / 10 % 256) as u8;
         Pixel {
           material: crate::material::ids::ASH,

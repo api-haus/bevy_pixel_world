@@ -106,7 +106,7 @@ pub fn simulate_tick(
   }
 
   // Heat propagation + ignition (every Nth tick)
-  if tick % heat_config.heat_tick_interval as u64 == 0 {
+  if tick.is_multiple_of(heat_config.heat_tick_interval as u64) {
     heat::propagate_heat(&chunk_access, &chunk_positions, materials, heat_config);
     heat::ignite_from_heat(&chunk_access, &chunk_positions, materials);
   }

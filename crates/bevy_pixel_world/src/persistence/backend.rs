@@ -54,7 +54,7 @@ impl From<BackendError> for io::Error {
     match err {
       BackendError::Io(e) => e,
       BackendError::NotFound => io::Error::new(io::ErrorKind::NotFound, "not found"),
-      BackendError::Other(e) => io::Error::new(io::ErrorKind::Other, e),
+      BackendError::Other(e) => io::Error::other(e),
     }
   }
 }
@@ -73,6 +73,11 @@ pub trait StorageFile: Send + Sync {
 
   /// Returns the current file size in bytes.
   fn len(&self) -> BoxFuture<'_, Result<u64, BackendError>>;
+
+  /// Returns true if the file is empty.
+  fn is_empty(&self) -> BoxFuture<'_, Result<bool, BackendError>> {
+    Box::pin(async { Ok(self.len().await? == 0) })
+  }
 
   /// Truncates or extends the file to `size` bytes.
   fn set_len(&self, size: u64) -> BoxFuture<'_, Result<(), BackendError>>;

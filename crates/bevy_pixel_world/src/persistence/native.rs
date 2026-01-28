@@ -31,12 +31,10 @@ impl NativeFile {
 impl StorageFile for NativeFile {
   fn read_at(&self, offset: u64, buf: &mut [u8]) -> BoxFuture<'_, Result<(), BackendError>> {
     let result = (|| {
-      let mut file = self.file.lock().map_err(|_| {
-        BackendError::Io(std::io::Error::new(
-          std::io::ErrorKind::Other,
-          "lock poisoned",
-        ))
-      })?;
+      let mut file = self
+        .file
+        .lock()
+        .map_err(|_| BackendError::Io(std::io::Error::other("lock poisoned")))?;
       file.seek(SeekFrom::Start(offset))?;
       file.read_exact(buf)?;
       Ok(())
@@ -46,12 +44,10 @@ impl StorageFile for NativeFile {
 
   fn write_at(&self, offset: u64, data: &[u8]) -> BoxFuture<'_, Result<(), BackendError>> {
     let result = (|| {
-      let mut file = self.file.lock().map_err(|_| {
-        BackendError::Io(std::io::Error::new(
-          std::io::ErrorKind::Other,
-          "lock poisoned",
-        ))
-      })?;
+      let mut file = self
+        .file
+        .lock()
+        .map_err(|_| BackendError::Io(std::io::Error::other("lock poisoned")))?;
       file.seek(SeekFrom::Start(offset))?;
       file.write_all(data)?;
       Ok(())
@@ -61,12 +57,10 @@ impl StorageFile for NativeFile {
 
   fn len(&self) -> BoxFuture<'_, Result<u64, BackendError>> {
     let result = (|| {
-      let file = self.file.lock().map_err(|_| {
-        BackendError::Io(std::io::Error::new(
-          std::io::ErrorKind::Other,
-          "lock poisoned",
-        ))
-      })?;
+      let file = self
+        .file
+        .lock()
+        .map_err(|_| BackendError::Io(std::io::Error::other("lock poisoned")))?;
       Ok(file.metadata()?.len())
     })();
     Box::pin(std::future::ready(result))
@@ -74,12 +68,10 @@ impl StorageFile for NativeFile {
 
   fn set_len(&self, size: u64) -> BoxFuture<'_, Result<(), BackendError>> {
     let result = (|| {
-      let file = self.file.lock().map_err(|_| {
-        BackendError::Io(std::io::Error::new(
-          std::io::ErrorKind::Other,
-          "lock poisoned",
-        ))
-      })?;
+      let file = self
+        .file
+        .lock()
+        .map_err(|_| BackendError::Io(std::io::Error::other("lock poisoned")))?;
       file.set_len(size)?;
       Ok(())
     })();
@@ -88,12 +80,10 @@ impl StorageFile for NativeFile {
 
   fn sync(&self) -> BoxFuture<'_, Result<(), BackendError>> {
     let result = (|| {
-      let file = self.file.lock().map_err(|_| {
-        BackendError::Io(std::io::Error::new(
-          std::io::ErrorKind::Other,
-          "lock poisoned",
-        ))
-      })?;
+      let file = self
+        .file
+        .lock()
+        .map_err(|_| BackendError::Io(std::io::Error::other("lock poisoned")))?;
       file.sync_all()?;
       Ok(())
     })();
@@ -155,6 +145,7 @@ impl StorageFs for NativeFs {
         .read(true)
         .write(true)
         .create(true)
+        .truncate(false)
         .open(path)?;
       Ok(Box::new(NativeFile::new(file)) as Box<dyn StorageFile>)
     })();
