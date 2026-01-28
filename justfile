@@ -22,3 +22,7 @@ test-pixel-world:
 
 game:
     cargo run -p game
+
+# Serve game with trunk (WASM dev server)
+serve:
+    cd crates/game && trunk serve
