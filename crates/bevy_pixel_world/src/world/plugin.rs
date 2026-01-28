@@ -5,9 +5,7 @@
 use bevy::prelude::*;
 
 use super::PixelWorld;
-use super::control::{
-  PersistenceComplete, PersistenceControl, RequestPersistence, SimulationState,
-};
+use super::control::{PersistenceComplete, RequestPersistence, SimulationState};
 use super::persistence_systems::{
   flush_persistence_queue, handle_persistence_messages, notify_persistence_complete,
   process_pending_save_requests,
@@ -50,7 +48,6 @@ impl Plugin for PixelWorldStreamingPlugin {
       .init_resource::<UnloadingChunks>()
       .init_resource::<SeededChunks>()
       .init_resource::<SimulationState>()
-      .init_resource::<PersistenceControl>()
       .init_resource::<crate::diagnostics::SimulationMetrics>()
       .init_resource::<HeatConfig>()
       .add_message::<RequestPersistence>()

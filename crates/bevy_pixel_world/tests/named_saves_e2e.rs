@@ -508,13 +508,12 @@ fn delete_nonexistent_returns_error() {
 }
 
 #[test]
-fn save_path_correct() {
-  let mut harness = NamedSavesHarness::new("world");
-
-  let path = harness.persistence_control().save_path("test");
-  let expected = harness.temp_dir.path().join("test.save");
-
-  assert_eq!(path, expected, "save_path should return correct path");
+fn save_file_name_correct() {
+  let file_name = bevy_pixel_world::PersistenceControl::save_file_name("test");
+  assert_eq!(
+    file_name, "test.save",
+    "save_file_name should return correct name"
+  );
 }
 
 // =============================================================================

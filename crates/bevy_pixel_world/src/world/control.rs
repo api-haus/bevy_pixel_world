@@ -6,11 +6,12 @@
 //! - Managing named saves
 
 use std::io;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use bevy::prelude::*;
+
+use crate::persistence::backend::StorageFs;
 
 /// Controls whether world simulation is running or paused.
 ///
@@ -81,8 +82,8 @@ impl SimulationState {
 /// Resource for persistence control and named save management.
 #[derive(Resource)]
 pub struct PersistenceControl {
-  /// Base directory for saves.
-  pub(crate) base_dir: PathBuf,
+  /// Storage filesystem backend.
+  pub(crate) fs: Box<dyn StorageFs>,
   /// Currently loaded save name.
   pub(crate) current_save: String,
   /// Counter for generating unique request IDs.
@@ -91,23 +92,12 @@ pub struct PersistenceControl {
   pub(crate) pending_requests: Vec<PersistenceRequestInner>,
 }
 
-impl Default for PersistenceControl {
-  fn default() -> Self {
-    Self {
-      base_dir: crate::persistence::default_save_dir(crate::persistence::DEFAULT_APP_NAME),
-      current_save: "world".to_string(),
-      next_request_id: 1,
-      pending_requests: Vec::new(),
-    }
-  }
-}
-
 impl PersistenceControl {
-  /// Creates a new persistence control with the given base directory and save
+  /// Creates a new persistence control with the given storage backend and save
   /// name.
-  pub fn new(base_dir: PathBuf, current_save: String) -> Self {
+  pub fn new(fs: Box<dyn StorageFs>, current_save: String) -> Self {
     Self {
-      base_dir,
+      fs,
       current_save,
       next_request_id: 1,
       pending_requests: Vec::new(),
@@ -119,9 +109,9 @@ impl PersistenceControl {
     &self.current_save
   }
 
-  /// Returns the base directory for saves.
-  pub fn base_dir(&self) -> &PathBuf {
-    &self.base_dir
+  /// Returns a reference to the storage filesystem backend.
+  pub fn fs(&self) -> &dyn StorageFs {
+    &*self.fs
   }
 
   /// Saves to a named save file.
@@ -172,26 +162,19 @@ impl PersistenceControl {
     PersistenceHandle { id, completed }
   }
 
-  /// Returns the path for a named save file.
-  pub fn save_path(&self, name: &str) -> PathBuf {
-    self.base_dir.join(format!("{}.save", name))
+  /// Returns the file name for a named save.
+  pub fn save_file_name(name: &str) -> String {
+    format!("{}.save", name)
   }
 
-  /// Lists all save files in the base directory.
+  /// Lists all save files in the storage backend.
   pub fn list_saves(&self) -> io::Result<Vec<String>> {
-    let mut saves = Vec::new();
+    let all_files = crate::persistence::block_on(self.fs.list()).map_err(io::Error::from)?;
 
-    for entry in std::fs::read_dir(&self.base_dir)? {
-      let entry = entry?;
-      let path = entry.path();
-
-      if path.extension().is_some_and(|ext| ext == "save")
-        && let Some(stem) = path.file_stem()
-        && let Some(name) = stem.to_str()
-      {
-        saves.push(name.to_string());
-      }
-    }
+    let mut saves: Vec<String> = all_files
+      .into_iter()
+      .filter_map(|name| name.strip_suffix(".save").map(String::from))
+      .collect();
 
     saves.sort();
     Ok(saves)
@@ -199,8 +182,8 @@ impl PersistenceControl {
 
   /// Deletes a save file.
   pub fn delete_save(&self, name: &str) -> io::Result<()> {
-    let path = self.save_path(name);
-    std::fs::remove_file(path)
+    let file_name = Self::save_file_name(name);
+    crate::persistence::block_on(self.fs.delete(&file_name)).map_err(io::Error::from)
   }
 }
 

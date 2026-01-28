@@ -116,7 +116,7 @@ fn flush_chunk_saves(
       task.storage_type,
     );
 
-    if let Err(e) = write_chunk_data(&save.path, save.data_write_pos, &task.data) {
+    if let Err(e) = save.write_chunk_data(save.data_write_pos, &task.data) {
       warn!("Failed to save chunk {:?}: {}", task.pos, e);
       continue;
     }
@@ -187,7 +187,7 @@ pub(crate) fn flush_persistence_queue(
     .map(|req| req.target_save.clone());
 
   if let Some(new_save_name) = target_save {
-    let new_path = persistence_control.save_path(&new_save_name);
+    let new_file_name = crate::world::control::PersistenceControl::save_file_name(&new_save_name);
 
     let Ok(mut save) = save_resource.save.write() else {
       warn!("Failed to acquire save lock for copy");
@@ -195,12 +195,12 @@ pub(crate) fn flush_persistence_queue(
       return;
     };
 
-    match save.copy_to(&new_path) {
+    match save.copy_to(persistence_control.fs(), &new_file_name) {
       Ok(new_save) => {
         info!(
           "Copied save from {:?} to {:?}",
-          save.path(),
-          new_save.path()
+          save.name(),
+          new_save.name()
         );
         *save = new_save;
         persistence_control.current_save = new_save_name;
@@ -458,19 +458,4 @@ pub(crate) fn notify_persistence_complete(
       error: None,
     });
   }
-}
-
-/// Writes chunk data to the save file at the given offset.
-fn write_chunk_data(path: &std::path::Path, offset: u64, data: &[u8]) -> std::io::Result<()> {
-  use std::io::{Seek, SeekFrom, Write};
-
-  let mut file = std::fs::File::options().write(true).open(path)?;
-  file.seek(SeekFrom::Start(offset))?;
-
-  // Write size prefix
-  let size_bytes = (data.len() as u32).to_le_bytes();
-  file.write_all(&size_bytes)?;
-  file.write_all(data)?;
-
-  Ok(())
 }
