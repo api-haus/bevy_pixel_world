@@ -34,22 +34,24 @@
 
 ## Git Worktrees
 
-**MANDATORY**: Always work in a dedicated worktree, never directly in main.
+Worktrees are **opt-in**. Only create or enter a worktree when the user explicitly asks at the beginning of the conversation. Do not proactively create worktrees.
 
-### First Step: Establish Worktree
+### If a Worktree Is Requested
 
-Before doing ANY other work, you MUST establish a worktree:
+1. Establish the worktree before any other work:
+   ```bash
+   git worktree list
+   git worktree add ../sim2d-<descriptive-name> -b <type>/<description>
+   cd ../sim2d-<descriptive-name>
+   ```
 
-```bash
-# 1. Check existing worktrees
-git worktree list
+2. **Carry the working directory through the entire session** — all plans, file reads, edits, and commands must use the worktree path, not the main repo path.
 
-# 2. Either cd to a matching worktree, or create one:
-git worktree add ../sim2d-<descriptive-name> -b <type>/<description>
-cd ../sim2d-<descriptive-name>
-```
-
-Do not read files, do not explore the codebase, do not make plans—establish your worktree FIRST.
+3. Plans must include a Working Directory header:
+   ```markdown
+   ## Working Directory
+   `/home/midori/_dev/sim2d-<suffix>` (branch: `<type>/<description>`)
+   ```
 
 ### Matching Task to Worktree
 
@@ -81,24 +83,6 @@ cp -r target/ ../sim2d-<suffix>/target/
 - **Descriptive names**: `../sim2d-physics-desync-fix` not `../sim2d-fix`
 - **Branch naming**: `<type>/<description>`
 - **Cleanup**: `git worktree remove ../sim2d-<suffix>` when merged
-
-### Why This Is Mandatory
-
-- You cannot know if other agents are running
-- Main worktree may have uncommitted changes from other work
-- Each worktree has independent staging area and HEAD
-- sccache shares compiled artifacts (no rebuild penalty)
-
-### Plans Must Include Worktree Context
-
-When writing implementation plans, always include the working directory at the top:
-
-```markdown
-## Working Directory
-`/home/midori/_dev/sim2d-fix` (branch: `fix/physics-desync-on-load`)
-```
-
-This ensures agents implementing the plan across context boundaries know which worktree to use.
 
 ## References
 
