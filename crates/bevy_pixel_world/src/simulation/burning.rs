@@ -4,7 +4,7 @@
 //! probabilistically transform into ash.
 
 use crate::coords::{CHUNK_SIZE, ChunkPos, ColorIndex, WorldPos};
-use crate::material::{Materials, ids as material_ids};
+use crate::material::Materials;
 use crate::pixel::{Pixel, PixelFlags};
 use crate::scheduling::blitter::Canvas;
 use crate::simulation::SimContext;
@@ -51,24 +51,32 @@ pub fn process_burning(
       let world_y = base_y + ly as i64;
       let mat = materials.get(pixel.material);
 
-      // Burn-to-ash check
-      if mat.burn_ash_chance > 0.0 {
+      // Burn effect check
+      if let Some((effect, chance)) = mat.effects.on_burn {
         let ash_hash = hash41uu64(ctx.seed ^ CH_ASH, ctx.tick, world_x as u64, world_y as u64);
         let ash_roll = (ash_hash & 0xFFFF) as f32 / 65535.0;
-        if ash_roll < mat.burn_ash_chance {
-          // Transform to ash
+        if ash_roll < chance {
+          use crate::material::PixelEffect;
           if let Some(c) = canvas.get_mut(chunk_pos) {
-            let color_hash = hash41uu64(ctx.seed, world_x as u64, world_y as u64, 0xA5A5);
-            let color_idx = (color_hash % 256) as u8;
-            c.pixels[(lx, ly)] = Pixel {
-              material: material_ids::ASH,
-              color: ColorIndex(color_idx),
-              damage: 0,
-              flags: PixelFlags::DIRTY | PixelFlags::SOLID,
-            };
+            match effect {
+              PixelEffect::Transform(target) => {
+                let color_hash = hash41uu64(ctx.seed, world_x as u64, world_y as u64, 0xA5A5);
+                let color_idx = (color_hash % 256) as u8;
+                c.pixels[(lx, ly)] = Pixel {
+                  material: target,
+                  color: ColorIndex(color_idx),
+                  damage: 0,
+                  flags: PixelFlags::DIRTY | PixelFlags::SOLID,
+                };
+              }
+              PixelEffect::Destroy => {
+                c.pixels[(lx, ly)] = Pixel::VOID;
+              }
+              PixelEffect::Resist => {}
+            }
             c.mark_pixel_dirty(lx, ly);
           }
-          continue; // Already transformed, skip spread
+          continue;
         }
       }
 

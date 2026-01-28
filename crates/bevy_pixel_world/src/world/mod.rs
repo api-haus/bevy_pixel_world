@@ -9,7 +9,10 @@
 //! Sub-modules split `PixelWorld` methods by responsibility:
 //! - [`pixel_access`] — world-coordinate pixel read/write/swap
 //! - [`blit`] — parallel blit orchestration
+//! - [`blast`] — radial ray-cast destruction + heat injection
 
+mod blast;
+pub use blast::{BlastHit, BlastParams};
 mod blit;
 pub(crate) mod body_loader;
 mod bundle;

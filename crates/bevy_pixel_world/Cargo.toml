@@ -55,6 +55,9 @@ name = "body_rapier2d_e2e"
 required-features = ["rapier2d"]
 
 [[test]]
+name = "gremlins_stress"
+
+[[test]]
 name = "submergence_e2e"
 required-features = ["avian2d"]
 

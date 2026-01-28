@@ -29,7 +29,7 @@ use bevy_pixel_world::visual_debug::{
   SettingsPersistence, VisualDebugSettings, visual_debug_checkboxes,
 };
 use bevy_pixel_world::{
-  CreativeModePlugins, MaterialSeeder, Materials, PixelBody, PixelFlags, PixelWorld,
+  Bomb, CreativeModePlugins, MaterialSeeder, Materials, PixelBody, PixelFlags, PixelWorld,
   PixelWorldFullBundle, SpawnPixelWorld, WorldPos, material_ids,
 };
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
@@ -311,7 +311,20 @@ impl Plugin for PhysicsPlugin {
     }
 
     #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
-    _app.add_systems(Update, spawn_pixel_body);
+    _app.add_systems(Update, (spawn_pixel_body, tag_new_bodies_as_bombs));
+  }
+}
+
+/// Tags newly spawned pixel bodies as bombs.
+#[cfg(any(feature = "avian2d", feature = "rapier2d"))]
+fn tag_new_bodies_as_bombs(mut commands: Commands, new_bodies: Query<Entity, Added<PixelBody>>) {
+  for entity in &new_bodies {
+    commands.entity(entity).insert(Bomb {
+      shell_depth: 0,
+      blast_radius: 120.0,
+      blast_strength: 60.0,
+      detonated: false,
+    });
   }
 }
 
