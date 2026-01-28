@@ -405,6 +405,143 @@ fn run_gremlins_with_seed(seed: u64, duration_secs: u64) {
   );
 }
 
+/// Insane mode parameters for maximum chaos
+struct InsaneConfig {
+  /// Time increment per tick (higher = faster movement)
+  time_step: f32,
+  /// Max radius from origin
+  max_radius: f32,
+  /// Rose curve petal count
+  petals: f32,
+  /// Actions per tick range
+  actions_min: usize,
+  actions_max: usize,
+  /// Chance to teleport randomly (0.0 - 1.0)
+  teleport_chance: f32,
+  /// Teleport range
+  teleport_range: f32,
+}
+
+impl Default for InsaneConfig {
+  fn default() -> Self {
+    Self {
+      time_step: 0.08,
+      max_radius: 2000.0,
+      petals: 3.0,
+      actions_min: 1,
+      actions_max: 3,
+      teleport_chance: 0.0,
+      teleport_range: 0.0,
+    }
+  }
+}
+
+impl InsaneConfig {
+  fn insane() -> Self {
+    Self {
+      time_step: 0.25,    // 3x faster
+      max_radius: 5000.0, // 2.5x larger area
+      petals: 5.0,        // More petals = more origin passes
+      actions_min: 4,     // Way more actions
+      actions_max: 10,
+      teleport_chance: 0.08,  // 8% chance to teleport randomly
+      teleport_range: 3000.0, // Can teleport far
+    }
+  }
+}
+
+fn run_gremlins_insane(seed: u64, duration_secs: u64, config: &InsaneConfig) {
+  let temp_dir = TempDir::new().unwrap();
+  let save_path = temp_dir.path().join("gremlins.save");
+
+  let mut harness = TestHarness::new(&save_path);
+  harness.move_camera(Vec3::ZERO);
+  harness.run_until_seeded();
+
+  let mut state = GremlinState::new(seed);
+  let deadline = Instant::now() + Duration::from_secs(duration_secs);
+
+  let mut last_pos = harness.camera_position().truncate();
+
+  while Instant::now() < deadline {
+    // Compute target position on spiraloid path with config
+    let theta = state.time + state.phase_offset;
+    let r = config.max_radius * (config.petals * theta).sin().abs();
+    let mut target_pos = Vec2::new(r * theta.cos(), r * theta.sin());
+
+    // Random teleport for extra chaos
+    if state.rng.gen_bool(config.teleport_chance as f64) {
+      let tx = state
+        .rng
+        .gen_range(-config.teleport_range..config.teleport_range);
+      let ty = state
+        .rng
+        .gen_range(-config.teleport_range..config.teleport_range);
+      target_pos = Vec2::new(tx, ty);
+    }
+
+    harness.move_camera(target_pos.extend(0.0));
+
+    // Track distance and chunks visited
+    let distance_this_tick = (target_pos - last_pos).length();
+    state.total_distance += distance_this_tick;
+    state.track_chunk_at(target_pos);
+    last_pos = target_pos;
+
+    // Advance along the path (configurable speed)
+    state.time += config.time_step;
+
+    // NO idle periods in insane mode - pure chaos
+
+    // Run MANY random actions
+    let action_count = state.rng.gen_range(config.actions_min..=config.actions_max);
+    for _ in 0..action_count {
+      match state.rng.gen_range(0..6u32) {
+        0 => {
+          if gremlin_spawn_body(&mut harness, &mut state.rng) {
+            state.bodies_spawned += 1;
+          }
+        }
+        1 => {
+          if gremlin_destroy_body(&mut harness, &mut state.rng) {
+            state.bodies_destroyed += 1;
+          }
+        }
+        2 => gremlin_pan_camera(&mut harness, &mut state.rng),
+        3 => gremlin_paint_material(&mut harness, &mut state.rng),
+        4 => gremlin_paint_void(&mut harness, &mut state.rng),
+        5 => gremlin_paint_heat(&mut harness, &mut state.rng),
+        _ => unreachable!(),
+      }
+    }
+    harness.app.update();
+    state.tick += 1;
+  }
+
+  // Count remaining bodies
+  let final_body_count: usize = harness
+    .app
+    .world_mut()
+    .query_filtered::<Entity, With<PixelBody>>()
+    .iter(harness.app.world())
+    .count();
+
+  let final_pos = harness.camera_position();
+  eprintln!(
+    "gremlins: seed {:#X} | {} ticks | dist: {:.0} | chunks: {} | bodies: +{} -{} (={}) | pos: \
+     ({:.0}, {:.0})",
+    seed,
+    state.tick,
+    state.total_distance,
+    state.chunks_visited.len(),
+    state.bodies_spawned,
+    state.bodies_destroyed,
+    final_body_count,
+    final_pos.x,
+    final_pos.y
+  );
+}
+
 #[test]
 fn gremlins() {
   // Run multiple iterations with different seeds to increase coverage
@@ -418,4 +555,32 @@ fn gremlins() {
     run_gremlins_with_seed(seed, 15);
   }
   // If we got here without panicking, the test passes.
+}
+
+/// Insane mode: 60 seconds of maximum chaos per seed
+#[test]
+#[ignore] // Run with: cargo test -p bevy_pixel_world gremlins_insane -- --ignored --nocapture
+fn gremlins_insane() {
+  let config = InsaneConfig::insane();
+  eprintln!("gremlins_insane: INSANE MODE ENGAGED");
+  eprintln!(
+    "  config: time_step={}, radius={}, petals={}, actions={}-{}, teleport={}%",
+    config.time_step,
+    config.max_radius,
+    config.petals,
+    config.actions_min,
+    config.actions_max,
+    (config.teleport_chance * 100.0) as u32
+  );
+
+  for (i, &seed) in SEEDS.iter().enumerate() {
+    eprintln!(
+      "gremlins_insane: starting run {}/{} with seed {:#X} (60s)",
+      i + 1,
+      SEEDS.len(),
+      seed
+    );
+    run_gremlins_insane(seed, 60, &config);
+  }
+  eprintln!("gremlins_insane: ALL SEEDS SURVIVED");
 }
