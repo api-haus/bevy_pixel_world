@@ -17,6 +17,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      RUSTC_WRAPPER: ""  # Disable sccache (not installed in CI)
     steps:
       - uses: actions/checkout@v4
 
