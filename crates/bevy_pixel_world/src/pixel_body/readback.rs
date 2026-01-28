@@ -159,10 +159,8 @@ pub fn sync_simulation_to_bodies(
   };
 
   for (mut body, blitted) in bodies.iter_mut() {
-    let mut modified = false;
-
-    for &(pos, lx, ly) in &blitted.written_positions {
-      let Some(world_pixel) = world.get_pixel(pos) else {
+    for wp in &blitted.written_positions {
+      let Some(world_pixel) = world.get_pixel(wp.world_pos) else {
         continue;
       };
 
@@ -171,7 +169,7 @@ pub fn sync_simulation_to_bodies(
         continue;
       }
 
-      let Some(body_pixel) = body.get_pixel(lx, ly) else {
+      let Some(body_pixel) = body.get_pixel(wp.local_x, wp.local_y) else {
         continue;
       };
 
@@ -187,23 +185,10 @@ pub fn sync_simulation_to_bodies(
         // (it's a canvas-only flag, not stored in body surface)
         let mut synced = *world_pixel;
         synced.flags.remove(PixelFlags::PIXEL_BODY);
-        body.surface[(lx, ly)] = synced;
-        modified = true;
-      }
-    }
+        body.surface[(wp.local_x, wp.local_y)] = synced;
 
-    // If material changed to void-like (ash is powder, not solid), update shape
-    // mask
-    if modified {
-      // Recompute shape mask from surface for changed pixels
-      let w = body.width();
-      let h = body.height();
-      for y in 0..h {
-        for x in 0..w {
-          let pixel = body.surface[(x, y)];
-          let should_be_solid = !pixel.is_void();
-          body.set_solid(x, y, should_be_solid);
-        }
+        // Update shape mask for this pixel (e.g. material became void-like)
+        body.set_solid(wp.local_x, wp.local_y, !synced.is_void());
       }
     }
   }

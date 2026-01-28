@@ -13,6 +13,54 @@ use crate::simulation::hash::hash41uu64;
 /// Cardinal neighbor offsets.
 const CARDINAL: [(i64, i64); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
 
+/// Attempts to spread fire from a burning pixel to its cardinal neighbors.
+fn try_spread_fire(
+  canvas: &Canvas<'_>,
+  world_x: i64,
+  world_y: i64,
+  ctx: SimContext,
+  materials: &Materials,
+  ignite_spread_chance: f32,
+) {
+  const CH_SPREAD: u64 = 0xdead_beef_cafe_babe;
+
+  for &(dx, dy) in &CARDINAL {
+    let nx = world_x + dx;
+    let ny = world_y + dy;
+
+    let spread_hash = hash41uu64(ctx.seed ^ CH_SPREAD, ctx.tick, nx as u64, ny as u64);
+    let spread_roll = (spread_hash & 0xFFFF) as f32 / 65535.0;
+    if spread_roll >= ignite_spread_chance {
+      continue;
+    }
+
+    let target = WorldPos::new(nx, ny);
+    let (target_chunk_pos, target_local) = target.to_chunk_and_local();
+    let tlx = target_local.x as u32;
+    let tly = target_local.y as u32;
+
+    let Some(target_chunk) = canvas.get(target_chunk_pos) else {
+      continue;
+    };
+
+    let neighbor = target_chunk.pixels[(tlx, tly)];
+    if neighbor.is_void() || neighbor.flags.contains(PixelFlags::BURNING) {
+      continue;
+    }
+
+    let neighbor_mat = materials.get(neighbor.material);
+    if neighbor_mat.ignition_threshold == 0 {
+      continue;
+    }
+
+    if let Some(tc) = canvas.get_mut(target_chunk_pos) {
+      let p = &mut tc.pixels[(tlx, tly)];
+      p.flags.insert(PixelFlags::BURNING | PixelFlags::DIRTY);
+      tc.mark_pixel_dirty(tlx, tly);
+    }
+  }
+}
+
 /// Runs burning propagation and ash transformation for a single chunk.
 ///
 /// For each burning pixel:
@@ -36,8 +84,6 @@ pub fn process_burning(
     return;
   };
 
-  // Hash channel for fire spread randomness
-  const CH_SPREAD: u64 = 0xdead_beef_cafe_babe;
   const CH_ASH: u64 = 0x1234_5678_9abc_def0;
 
   for ly in 0..CHUNK_SIZE {
@@ -72,43 +118,14 @@ pub fn process_burning(
         }
       }
 
-      // Fire spread to cardinal neighbors
-      for &(dx, dy) in &CARDINAL {
-        let nx = world_x + dx;
-        let ny = world_y + dy;
-
-        let spread_hash = hash41uu64(ctx.seed ^ CH_SPREAD, ctx.tick, nx as u64, ny as u64);
-        let spread_roll = (spread_hash & 0xFFFF) as f32 / 65535.0;
-        if spread_roll >= ignite_spread_chance {
-          continue;
-        }
-
-        let target = WorldPos::new(nx, ny);
-        let (target_chunk_pos, target_local) = target.to_chunk_and_local();
-        let tlx = target_local.x as u32;
-        let tly = target_local.y as u32;
-
-        let Some(target_chunk) = canvas.get(target_chunk_pos) else {
-          continue;
-        };
-
-        let neighbor = target_chunk.pixels[(tlx, tly)];
-        if neighbor.is_void() || neighbor.flags.contains(PixelFlags::BURNING) {
-          continue;
-        }
-
-        let neighbor_mat = materials.get(neighbor.material);
-        if neighbor_mat.ignition_threshold == 0 {
-          continue;
-        }
-
-        // Ignite neighbor
-        if let Some(tc) = canvas.get_mut(target_chunk_pos) {
-          let p = &mut tc.pixels[(tlx, tly)];
-          p.flags.insert(PixelFlags::BURNING | PixelFlags::DIRTY);
-          tc.mark_pixel_dirty(tlx, tly);
-        }
-      }
+      try_spread_fire(
+        canvas,
+        world_x,
+        world_y,
+        ctx,
+        materials,
+        ignite_spread_chance,
+      );
     }
   }
 }

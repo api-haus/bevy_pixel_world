@@ -49,6 +49,14 @@ use crate::material::{Materials, PhysicsState, ids as material_ids};
 use crate::pixel::{Pixel, PixelFlags};
 use crate::world::PixelWorld;
 
+/// A pixel position written during a blit operation.
+#[derive(Clone, Copy)]
+pub struct WrittenPixel {
+  pub world_pos: WorldPos,
+  pub local_x: u32,
+  pub local_y: u32,
+}
+
 /// Stores the transform and positions from the last blit operation.
 ///
 /// This allows the clear system to remove pixels from the correct positions
@@ -59,10 +67,9 @@ use crate::world::PixelWorld;
 pub struct LastBlitTransform {
   /// The affine transform used during the last blit.
   pub transform: Option<GlobalTransform>,
-  /// Positions that were successfully written during the last blit.
-  /// Each entry is (world_pos, local_x, local_y) to allow mapping back to
-  /// the body's shape mask during readback.
-  pub written_positions: Vec<(WorldPos, u32, u32)>,
+  /// Positions that were successfully written during the last blit,
+  /// mapping world positions back to body-local coordinates for readback.
+  pub written_positions: Vec<WrittenPixel>,
 }
 
 /// Clears and blits all pixel bodies with proper per-body displacement.
@@ -236,7 +243,7 @@ pub(super) fn blit_single_body(
   mut displacement_targets: Option<&mut Vec<WorldPos>>,
   materials: &Materials,
   debug_gizmos: crate::debug_shim::DebugGizmos<'_>,
-) -> Vec<(WorldPos, u32, u32)> {
+) -> Vec<WrittenPixel> {
   let mut written_positions = Vec::new();
   let mut pixels_to_blit = Vec::new();
 
@@ -261,7 +268,11 @@ pub(super) fn blit_single_body(
     let mut pixel_with_flag = pixel;
     pixel_with_flag.flags.insert(PixelFlags::PIXEL_BODY);
     if world.set_pixel(pos, pixel_with_flag, debug_gizmos) {
-      written_positions.push((pos, lx, ly));
+      written_positions.push(WrittenPixel {
+        world_pos: pos,
+        local_x: lx,
+        local_y: ly,
+      });
     }
   }
 
@@ -277,13 +288,14 @@ pub(super) fn blit_single_body(
 /// bodies from clearing each other's pixels.
 pub(super) fn clear_body_pixels(
   world: &mut PixelWorld,
-  written_positions: &[(WorldPos, u32, u32)],
+  written_positions: &[WrittenPixel],
   mut cleared_positions: Option<&mut Vec<WorldPos>>,
   debug_gizmos: crate::debug_shim::DebugGizmos<'_>,
 ) {
   let void = Pixel::new(material_ids::VOID, crate::coords::ColorIndex(0));
 
-  for &(pos, _, _) in written_positions {
+  for wp in written_positions {
+    let pos = wp.world_pos;
     let Some(existing) = world.get_pixel(pos) else {
       continue;
     };
@@ -306,19 +318,19 @@ pub(super) fn clear_body_pixels(
 /// local coordinates for shape mask updates.
 pub fn detect_destroyed_from_written(
   world: &PixelWorld,
-  written_positions: &[(WorldPos, u32, u32)],
+  written_positions: &[WrittenPixel],
 ) -> Vec<(u32, u32)> {
   let mut destroyed = Vec::new();
 
-  for &(pos, lx, ly) in written_positions {
-    let is_destroyed = match world.get_pixel(pos) {
+  for wp in written_positions {
+    let is_destroyed = match world.get_pixel(wp.world_pos) {
       Some(pixel) => pixel.is_void() || !pixel.flags.contains(PixelFlags::PIXEL_BODY),
       // Chunk not loaded — skip, don't treat as destroyed
       None => false,
     };
 
     if is_destroyed {
-      destroyed.push((lx, ly));
+      destroyed.push((wp.local_x, wp.local_y));
     }
   }
 

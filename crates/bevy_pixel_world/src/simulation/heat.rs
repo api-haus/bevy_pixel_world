@@ -7,7 +7,7 @@
 use crate::coords::ChunkPos;
 use crate::material::Materials;
 use crate::pixel::PixelFlags;
-use crate::primitives::{HEAT_CELL_SIZE, HEAT_GRID_SIZE};
+use crate::primitives::{Chunk, HEAT_CELL_SIZE, HEAT_GRID_SIZE};
 use crate::scheduling::blitter::Canvas;
 
 /// Configuration for heat simulation.
@@ -36,6 +36,93 @@ impl Default for HeatConfig {
   }
 }
 
+/// Accumulates heat from pixel sources within a single heat cell's 4x4 region.
+fn accumulate_cell_heat_sources(
+  chunk: &Chunk,
+  hx: u32,
+  hy: u32,
+  materials: &Materials,
+  burning_heat: u8,
+) -> u32 {
+  let px_base_x = hx * HEAT_CELL_SIZE;
+  let px_base_y = hy * HEAT_CELL_SIZE;
+  let mut source: u32 = 0;
+
+  for dy in 0..HEAT_CELL_SIZE {
+    for dx in 0..HEAT_CELL_SIZE {
+      let pixel = chunk.pixels[(px_base_x + dx, px_base_y + dy)];
+      if pixel.is_void() {
+        continue;
+      }
+      let mat = materials.get(pixel.material);
+      source += mat.base_temperature as u32;
+      if pixel.flags.contains(PixelFlags::BURNING) {
+        source += burning_heat as u32;
+      }
+    }
+  }
+
+  source
+}
+
+/// Cardinal offsets for heat neighbor sampling: (dx, dy).
+const HEAT_CARDINAL: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+
+/// Samples heat from cardinal neighbors, handling both interior and cross-chunk
+/// boundaries. Returns `(neighbor_sum, neighbor_count)`.
+fn sample_heat_neighbors(
+  hx: u32,
+  hy: u32,
+  chunk: &Chunk,
+  canvas: &Canvas<'_>,
+  chunk_pos: ChunkPos,
+) -> (u32, u32) {
+  let mut sum: u32 = 0;
+  let mut count: u32 = 0;
+
+  for (dx, dy) in HEAT_CARDINAL {
+    let nx = hx as i32 + dx;
+    let ny = hy as i32 + dy;
+
+    let heat = if nx >= 0 && nx < HEAT_GRID_SIZE as i32 && ny >= 0 && ny < HEAT_GRID_SIZE as i32 {
+      // Interior neighbor
+      chunk.heat_cell(nx as u32, ny as u32)
+    } else {
+      // Cross-chunk neighbor
+      let neighbor_chunk_pos = ChunkPos::new(
+        chunk_pos.x
+          + if nx < 0 {
+            -1
+          } else if nx >= HEAT_GRID_SIZE as i32 {
+            1
+          } else {
+            0
+          },
+        chunk_pos.y
+          + if ny < 0 {
+            -1
+          } else if ny >= HEAT_GRID_SIZE as i32 {
+            1
+          } else {
+            0
+          },
+      );
+      let Some(n) = canvas.get(neighbor_chunk_pos) else {
+        continue;
+      };
+      n.heat_cell(
+        nx.rem_euclid(HEAT_GRID_SIZE as i32) as u32,
+        ny.rem_euclid(HEAT_GRID_SIZE as i32) as u32,
+      )
+    };
+
+    sum += heat as u32;
+    count += 1;
+  }
+
+  (sum, count)
+}
+
 /// Propagates heat across all chunks accessible through the canvas.
 ///
 /// For each heat cell: accumulate source heat from pixels, diffuse with
@@ -58,73 +145,11 @@ pub fn propagate_heat(
 
     for hy in 0..HEAT_GRID_SIZE {
       for hx in 0..HEAT_GRID_SIZE {
-        let px_base_x = hx * HEAT_CELL_SIZE;
-        let px_base_y = hy * HEAT_CELL_SIZE;
-        let mut source: u32 = 0;
+        let source = accumulate_cell_heat_sources(chunk, hx, hy, materials, config.burning_heat);
 
-        // Scan the 4×4 pixel region for heat sources
-        for dy in 0..HEAT_CELL_SIZE {
-          for dx in 0..HEAT_CELL_SIZE {
-            let pixel = chunk.pixels[(px_base_x + dx, px_base_y + dy)];
-            if pixel.is_void() {
-              continue;
-            }
-            let mat = materials.get(pixel.material);
-            source += mat.base_temperature as u32;
-            if pixel.flags.contains(PixelFlags::BURNING) {
-              source += config.burning_heat as u32;
-            }
-          }
-        }
-
-        // Neighbor diffusion: average of cardinal neighbors
         let self_heat = chunk.heat_cell(hx, hy) as u32;
-        let mut neighbor_sum: u32 = 0;
-        let mut neighbor_count: u32 = 0;
-
-        // Interior neighbors
-        if hx > 0 {
-          neighbor_sum += chunk.heat_cell(hx - 1, hy) as u32;
-          neighbor_count += 1;
-        }
-        if hx + 1 < HEAT_GRID_SIZE {
-          neighbor_sum += chunk.heat_cell(hx + 1, hy) as u32;
-          neighbor_count += 1;
-        }
-        if hy > 0 {
-          neighbor_sum += chunk.heat_cell(hx, hy - 1) as u32;
-          neighbor_count += 1;
-        }
-        if hy + 1 < HEAT_GRID_SIZE {
-          neighbor_sum += chunk.heat_cell(hx, hy + 1) as u32;
-          neighbor_count += 1;
-        }
-
-        // Cross-chunk neighbors at edges
-        if hx == 0 {
-          if let Some(n) = canvas.get(ChunkPos::new(chunk_pos.x - 1, chunk_pos.y)) {
-            neighbor_sum += n.heat_cell(HEAT_GRID_SIZE - 1, hy) as u32;
-            neighbor_count += 1;
-          }
-        }
-        if hx == HEAT_GRID_SIZE - 1 {
-          if let Some(n) = canvas.get(ChunkPos::new(chunk_pos.x + 1, chunk_pos.y)) {
-            neighbor_sum += n.heat_cell(0, hy) as u32;
-            neighbor_count += 1;
-          }
-        }
-        if hy == 0 {
-          if let Some(n) = canvas.get(ChunkPos::new(chunk_pos.x, chunk_pos.y - 1)) {
-            neighbor_sum += n.heat_cell(hx, HEAT_GRID_SIZE - 1) as u32;
-            neighbor_count += 1;
-          }
-        }
-        if hy == HEAT_GRID_SIZE - 1 {
-          if let Some(n) = canvas.get(ChunkPos::new(chunk_pos.x, chunk_pos.y + 1)) {
-            neighbor_sum += n.heat_cell(hx, 0) as u32;
-            neighbor_count += 1;
-          }
-        }
+        let (neighbor_sum, neighbor_count) =
+          sample_heat_neighbors(hx, hy, chunk, canvas, chunk_pos);
 
         let neighbor_avg = if neighbor_count > 0 {
           neighbor_sum / neighbor_count

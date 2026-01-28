@@ -34,7 +34,7 @@ mod spawn;
 mod split;
 
 use bevy::prelude::*;
-pub use blit::{LastBlitTransform, update_pixel_bodies};
+pub use blit::{LastBlitTransform, WrittenPixel, update_pixel_bodies};
 pub(crate) use blit::{compute_transformed_aabb, compute_world_aabb};
 pub use collider::generate_collider;
 pub use displacement::DisplacementState;
