@@ -244,27 +244,59 @@ impl Plugin for PixelWorldPlugin {
     // Store culling config
     app.insert_resource(self.culling.clone());
 
-    // Initialize persistence control with named save info
+    // Initialize storage backend and persistence control
     let base_dir = self.persistence.save_dir();
-    let current_save = self.persistence.effective_save_name().to_string();
-    app.insert_resource(PersistenceControl::new(base_dir, current_save));
+    // When an explicit path is set, derive save name from the filename.
+    // e.g., "/tmp/test.save" -> save name "test", file name "test.save"
+    let (current_save, save_file_name) = if let Some(ref explicit) = self.persistence.save_path {
+      let file_name = explicit
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or("world.save")
+        .to_string();
+      let save_name = file_name
+        .strip_suffix(".save")
+        .unwrap_or(&file_name)
+        .to_string();
+      (save_name, file_name)
+    } else {
+      let save_name = self.persistence.effective_save_name().to_string();
+      let file_name = PersistenceControl::save_file_name(&save_name);
+      (save_name, file_name)
+    };
+
+    let native_fs = match persistence::native::NativeFs::new(base_dir.clone()) {
+      Ok(fs) => fs,
+      Err(e) => {
+        error!(
+          "Failed to create save directory {:?}: {}. Persistence disabled.",
+          base_dir, e
+        );
+        app.add_plugins(world::plugin::PixelWorldStreamingPlugin);
+        if app.is_plugin_added::<bevy::render::RenderPlugin>() {
+          app.add_plugins(visual_debug::VisualDebugPlugin);
+        }
+        return;
+      }
+    };
 
     // Initialize world save if persistence is enabled
     if self.persistence.enabled {
-      let save_path = self.persistence.effective_path();
-      match WorldSave::open_or_create(&save_path, self.persistence.world_seed) {
+      match WorldSave::open_or_create(&native_fs, &save_file_name, self.persistence.world_seed) {
         Ok(save) => {
-          info!("Opened world save at {:?}", save_path);
+          info!("Opened world save {:?} in {:?}", save_file_name, base_dir);
           app.insert_resource(WorldSaveResource::new(save));
         }
         Err(e) => {
           error!(
-            "Failed to open world save at {:?}: {}. Persistence disabled.",
-            save_path, e
+            "Failed to open world save {:?}: {}. Persistence disabled.",
+            save_file_name, e
           );
         }
       }
     }
+
+    app.insert_resource(PersistenceControl::new(Box::new(native_fs), current_save));
 
     // Add world streaming systems
     app.add_plugins(world::plugin::PixelWorldStreamingPlugin);

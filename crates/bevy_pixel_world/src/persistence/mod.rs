@@ -6,16 +6,18 @@
 //!
 //! See `docs/architecture/chunk-persistence.md` for the full specification.
 
+pub mod backend;
 pub mod compression;
 pub mod format;
 pub mod index;
+pub mod native;
 pub mod pixel_body;
 
-use std::fs::{self, File};
-use std::io::{self, BufReader, Read, Seek, SeekFrom, Write};
-use std::path::{Path, PathBuf};
+use std::io::{self, Cursor};
+use std::path::PathBuf;
 use std::sync::Arc;
 
+use backend::{StorageFile, StorageFs};
 use bevy::prelude::*;
 use compression::{
   apply_delta, compute_delta, decode_delta, decode_full, encode_delta, encode_full,
@@ -45,12 +47,47 @@ pub fn default_save_dir(app_name: &str) -> PathBuf {
     .join("saves")
 }
 
+/// Polls a future that is expected to be immediately ready.
+///
+/// All native backend futures resolve on first poll. This helper avoids
+/// pulling in a full async runtime for what is synchronous I/O.
+pub(crate) fn block_on<T>(
+  fut: std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send + '_>>,
+) -> T {
+  use std::task::{Context, Poll, Wake, Waker};
+
+  struct NoopWaker;
+  impl Wake for NoopWaker {
+    fn wake(self: Arc<Self>) {}
+  }
+
+  let waker = Waker::from(Arc::new(NoopWaker));
+  let mut cx = Context::from_waker(&waker);
+  let mut fut = fut;
+
+  // For native backend, futures resolve on first poll.
+  // Loop handles edge cases where a backend needs multiple polls.
+  loop {
+    match fut.as_mut().poll(&mut cx) {
+      Poll::Ready(val) => return val,
+      Poll::Pending => {
+        // Yield and try again — should not happen with native backend
+        std::thread::yield_now();
+      }
+    }
+  }
+}
+
 /// World save file handle with runtime index.
 ///
 /// Holds the open save file and in-memory index for O(1) chunk lookups.
+/// I/O is performed through a [`StorageFile`] trait object, allowing
+/// different backends (native filesystem, OPFS, etc.).
 pub struct WorldSave {
-  /// Path to the save file.
-  pub(crate) path: PathBuf,
+  /// The file name (e.g., "world.save").
+  pub(crate) name: String,
+  /// Open file handle via the storage backend.
+  pub(crate) file: Box<dyn StorageFile>,
   /// File header.
   pub(crate) header: Header,
   /// Runtime index mapping positions to page table entries.
@@ -64,28 +101,22 @@ pub struct WorldSave {
 }
 
 impl WorldSave {
-  /// Creates a new save file at the given path.
-  ///
-  /// Creates the parent directory if it doesn't exist.
-  pub fn create(path: impl AsRef<Path>, world_seed: u64) -> io::Result<Self> {
-    let path = path.as_ref().to_path_buf();
-
-    // Create parent directory
-    if let Some(parent) = path.parent() {
-      fs::create_dir_all(parent)?;
-    }
+  /// Creates a new save file with the given name via a storage backend.
+  pub fn create(fs: &dyn StorageFs, name: &str, world_seed: u64) -> io::Result<Self> {
+    let file = block_on(fs.create(name)).map_err(io::Error::from)?;
 
     let header = Header::new(world_seed);
-    // Data starts right after header (64 bytes)
     let data_write_pos = Header::SIZE as u64;
 
-    // Write initial header
-    let mut file = File::create(&path)?;
-    header.write_to(&mut file)?;
-    file.sync_all()?;
+    // Serialize and write initial header
+    let mut buf = Vec::new();
+    header.write_to(&mut buf)?;
+    block_on(file.write_at(0, &buf)).map_err(io::Error::from)?;
+    block_on(file.sync()).map_err(io::Error::from)?;
 
     Ok(Self {
-      path,
+      name: name.to_string(),
+      file,
       header,
       index: ChunkIndex::new(),
       body_index: PixelBodyIndex::new(),
@@ -94,36 +125,51 @@ impl WorldSave {
     })
   }
 
-  /// Opens an existing save file.
-  pub fn open(path: impl AsRef<Path>) -> Result<Self, OpenError> {
-    let path = path.as_ref().to_path_buf();
-    let mut file = BufReader::new(File::open(&path)?);
+  /// Opens an existing save file via a storage backend.
+  pub fn open(fs: &dyn StorageFs, name: &str) -> Result<Self, OpenError> {
+    let file = block_on(fs.open(name)).map_err(|e| OpenError::Io(io::Error::from(e)))?;
 
-    // Read and validate header
-    let header = Header::read_from(&mut file)?;
+    // Read header
+    let mut header_buf = [0u8; Header::SIZE];
+    block_on(file.read_at(0, &mut header_buf)).map_err(|e| OpenError::Io(io::Error::from(e)))?;
+    let header = Header::read_from(&mut Cursor::new(&header_buf))?;
     header.validate()?;
 
-    // Page table is at data_region_ptr (end of data)
-    file.seek(SeekFrom::Start(header.data_region_ptr))?;
-
     // Read page table
-    let index = ChunkIndex::read_from(&mut file, header.chunk_count as usize)?;
+    let page_table_size = header.chunk_count as usize * PageTableEntry::SIZE;
+    let mut page_table_buf = vec![0u8; page_table_size];
+    block_on(file.read_at(header.data_region_ptr, &mut page_table_buf))
+      .map_err(|e| OpenError::Io(io::Error::from(e)))?;
+    let index = ChunkIndex::read_from(
+      &mut Cursor::new(&page_table_buf),
+      header.chunk_count as usize,
+    )?;
 
     // Read entity section if present
     let body_index = if header.entity_section_ptr != 0 {
-      file.seek(SeekFrom::Start(header.entity_section_ptr))?;
-      let entity_header = EntitySectionHeader::read_from(&mut file)?;
-      PixelBodyIndex::read_from(&mut file, entity_header.entity_count as usize)?
+      let mut entity_header_buf = [0u8; EntitySectionHeader::SIZE];
+      block_on(file.read_at(header.entity_section_ptr, &mut entity_header_buf))
+        .map_err(|e| OpenError::Io(io::Error::from(e)))?;
+      let entity_header = EntitySectionHeader::read_from(&mut Cursor::new(&entity_header_buf))?;
+
+      let body_index_size = entity_header.entity_count as usize * PixelBodyIndexEntry::SIZE;
+      let mut body_index_buf = vec![0u8; body_index_size];
+      let body_data_offset = header.entity_section_ptr + EntitySectionHeader::SIZE as u64;
+      block_on(file.read_at(body_data_offset, &mut body_index_buf))
+        .map_err(|e| OpenError::Io(io::Error::from(e)))?;
+      PixelBodyIndex::read_from(
+        &mut Cursor::new(&body_index_buf),
+        entity_header.entity_count as usize,
+      )?
     } else {
       PixelBodyIndex::new()
     };
 
-    // Data write position is where the page table currently is
-    // (page table will be rewritten on flush)
     let data_write_pos = header.data_region_ptr;
 
     Ok(Self {
-      path,
+      name: name.to_string(),
+      file,
       header,
       index,
       body_index,
@@ -133,18 +179,22 @@ impl WorldSave {
   }
 
   /// Opens an existing save file or creates a new one.
-  pub fn open_or_create(path: impl AsRef<Path>, world_seed: u64) -> Result<Self, OpenError> {
-    let path = path.as_ref();
-    if path.exists() {
-      Self::open(path)
+  pub fn open_or_create(
+    fs: &dyn StorageFs,
+    name: &str,
+    world_seed: u64,
+  ) -> Result<Self, OpenError> {
+    let exists = block_on(fs.exists(name)).map_err(|e| OpenError::Io(io::Error::from(e)))?;
+    if exists {
+      Self::open(fs, name)
     } else {
-      Ok(Self::create(path, world_seed)?)
+      Ok(Self::create(fs, name, world_seed)?)
     }
   }
 
-  /// Returns the save file path.
-  pub fn path(&self) -> &Path {
-    &self.path
+  /// Returns the save file name.
+  pub fn name(&self) -> &str {
+    &self.name
   }
 
   /// Returns the world seed.
@@ -193,9 +243,10 @@ impl WorldSave {
     &self,
     entry: &PixelBodyIndexEntry,
   ) -> Result<PixelBodyRecord, PixelBodyReadError> {
-    let mut file = BufReader::new(File::open(&self.path)?);
-    file.seek(SeekFrom::Start(entry.data_offset))?;
-    PixelBodyRecord::read_from(&mut file)
+    let mut buf = vec![0u8; entry.data_size as usize];
+    block_on(self.file.read_at(entry.data_offset, &mut buf))
+      .map_err(|e| PixelBodyReadError::Io(io::Error::from(e)))?;
+    PixelBodyRecord::read_from(&mut Cursor::new(&buf))
   }
 
   /// Saves a pixel body to the file.
@@ -204,14 +255,8 @@ impl WorldSave {
     let mut buf = Vec::new();
     record.write_to(&mut buf)?;
 
-    // Open file for append
-    let mut file = File::options().write(true).open(&self.path)?;
-
-    // Seek to write position
-    file.seek(SeekFrom::Start(self.data_write_pos))?;
-
-    // Write record data
-    file.write_all(&buf)?;
+    // Write record data at current write position
+    block_on(self.file.write_at(self.data_write_pos, &buf)).map_err(io::Error::from)?;
 
     // Create index entry
     let entry = PixelBodyIndexEntry {
@@ -254,23 +299,9 @@ impl WorldSave {
   pub fn load_chunk<S: ChunkSeeder>(&self, pos: ChunkPos, _seeder: &S) -> Option<LoadedChunk> {
     let entry = self.index.get(pos)?;
 
-    // Open file and seek to data
-    let mut file = match File::open(&self.path) {
-      Ok(f) => BufReader::new(f),
-      Err(e) => {
-        warn!("Failed to open save file for chunk {:?}: {}", pos, e);
-        return None;
-      }
-    };
-
-    if let Err(e) = file.seek(SeekFrom::Start(entry.data_offset)) {
-      warn!("Failed to seek to chunk {:?}: {}", pos, e);
-      return None;
-    }
-
     // Read compressed data
     let mut data = vec![0u8; entry.data_size as usize];
-    if let Err(e) = file.read_exact(&mut data) {
+    if let Err(e) = block_on(self.file.read_at(entry.data_offset, &mut data)) {
       warn!("Failed to read chunk {:?}: {}", pos, e);
       return None;
     }
@@ -300,16 +331,12 @@ impl WorldSave {
       (StorageType::Full, encode_full(chunk))
     };
 
-    // Open file for append
-    let mut file = File::options().write(true).open(&self.path)?;
-
-    // Seek to write position
-    file.seek(SeekFrom::Start(self.data_write_pos))?;
-
-    // Write entry size prefix (for forward iteration during recovery)
+    // Write size prefix + data
     let size_bytes = (data.len() as u32).to_le_bytes();
-    file.write_all(&size_bytes)?;
-    file.write_all(&data)?;
+    let mut write_buf = Vec::with_capacity(4 + data.len());
+    write_buf.extend_from_slice(&size_bytes);
+    write_buf.extend_from_slice(&data);
+    block_on(self.file.write_at(self.data_write_pos, &write_buf)).map_err(io::Error::from)?;
 
     // Create page table entry
     let entry = PageTableEntry::new(
@@ -328,24 +355,26 @@ impl WorldSave {
     Ok(())
   }
 
-  /// Copies this save file to a new path, returning a new `WorldSave` handle.
-  ///
-  /// This flushes any pending changes to ensure consistency, then copies
-  /// the entire file to the new location.
-  pub fn copy_to(&mut self, new_path: &Path) -> io::Result<WorldSave> {
+  /// Writes chunk data at the given offset (used by persistence systems).
+  pub(crate) fn write_chunk_data(&self, offset: u64, data: &[u8]) -> io::Result<()> {
+    let size_bytes = (data.len() as u32).to_le_bytes();
+    let mut write_buf = Vec::with_capacity(4 + data.len());
+    write_buf.extend_from_slice(&size_bytes);
+    write_buf.extend_from_slice(data);
+    block_on(self.file.write_at(offset, &write_buf)).map_err(io::Error::from)
+  }
+
+  /// Copies this save to a new name via the storage backend, returning a new
+  /// `WorldSave` handle.
+  pub fn copy_to(&mut self, fs: &dyn StorageFs, new_name: &str) -> io::Result<WorldSave> {
     // Ensure current file is consistent
     self.flush()?;
 
-    // Create parent directory if needed
-    if let Some(parent) = new_path.parent() {
-      fs::create_dir_all(parent)?;
-    }
-
     // Copy file
-    fs::copy(&self.path, new_path)?;
+    block_on(fs.copy(&self.name, new_name)).map_err(io::Error::from)?;
 
     // Open new handle
-    WorldSave::open(new_path).map_err(|e| match e {
+    WorldSave::open(fs, new_name).map_err(|e| match e {
       OpenError::Io(io_err) => io_err,
       OpenError::Header(h) => io::Error::new(io::ErrorKind::InvalidData, h.to_string()),
     })
@@ -361,8 +390,6 @@ impl WorldSave {
       return Ok(());
     }
 
-    let mut file = File::options().read(true).write(true).open(&self.path)?;
-
     // Update header timestamps
     self.header.modified_time = std::time::SystemTime::now()
       .duration_since(std::time::UNIX_EPOCH)
@@ -374,9 +401,10 @@ impl WorldSave {
     // Page table goes after data region
     self.header.data_region_ptr = self.data_write_pos;
 
-    // Write page table at end of data region
-    file.seek(SeekFrom::Start(self.data_write_pos))?;
-    self.index.write_to(&mut file)?;
+    // Serialize page table
+    let mut page_table_buf = Vec::new();
+    self.index.write_to(&mut page_table_buf)?;
+    block_on(self.file.write_at(self.data_write_pos, &page_table_buf)).map_err(io::Error::from)?;
 
     // Entity section goes after page table
     let entity_section_start = self.data_write_pos + self.index.serialized_size() as u64;
@@ -388,24 +416,24 @@ impl WorldSave {
 
     // Write entity section if we have bodies
     if !self.body_index.is_empty() {
-      file.seek(SeekFrom::Start(entity_section_start))?;
-
-      // Write entity section header
       let entity_header = EntitySectionHeader {
         entity_count: self.body_index.len() as u32,
         _reserved: 0,
       };
-      entity_header.write_to(&mut file)?;
 
-      // Write entity index
-      self.body_index.write_to(&mut file)?;
+      let mut entity_buf = Vec::new();
+      entity_header.write_to(&mut entity_buf)?;
+      self.body_index.write_to(&mut entity_buf)?;
+
+      block_on(self.file.write_at(entity_section_start, &entity_buf)).map_err(io::Error::from)?;
     }
 
     // Write updated header
-    file.seek(SeekFrom::Start(0))?;
-    self.header.write_to(&mut file)?;
+    let mut header_buf = Vec::new();
+    self.header.write_to(&mut header_buf)?;
+    block_on(self.file.write_at(0, &header_buf)).map_err(io::Error::from)?;
 
-    file.sync_all()?;
+    block_on(self.file.sync()).map_err(io::Error::from)?;
     self.dirty = false;
     Ok(())
   }

@@ -9,6 +9,7 @@
 
 use std::sync::{Arc, RwLock};
 
+use bevy_pixel_world::persistence::native::NativeFs;
 use bevy_pixel_world::{
   CHUNK_SIZE, Chunk, ChunkPos, ChunkSeeder, ColorIndex, PersistenceSeeder, Pixel, WorldSave,
   material_ids,
@@ -34,10 +35,10 @@ impl ChunkSeeder for NoopSeeder {
 fn chunk_roundtrip_preserves_painted_pixels() {
   // 1. Create temp save file
   let temp_dir = TempDir::new().expect("Failed to create temp dir");
-  let save_path = temp_dir.path().join("test.save");
+  let fs = NativeFs::new(temp_dir.path().to_path_buf()).unwrap();
 
   // 2. Create WorldSave and a chunk with painted pixels
-  let mut save = WorldSave::create(&save_path, 42).expect("Failed to create save");
+  let mut save = WorldSave::create(&fs, "test.save", 42).expect("Failed to create save");
 
   let mut chunk = Chunk::new(CHUNK_SIZE, CHUNK_SIZE);
   chunk.set_pos(ChunkPos::new(0, 0));
@@ -98,9 +99,9 @@ fn chunk_roundtrip_preserves_painted_pixels() {
 fn unpersisted_chunk_uses_fallback_seeder() {
   // Create save file with no chunks
   let temp_dir = TempDir::new().expect("Failed to create temp dir");
-  let save_path = temp_dir.path().join("empty.save");
+  let fs = NativeFs::new(temp_dir.path().to_path_buf()).unwrap();
 
-  let save = WorldSave::create(&save_path, 42).expect("Failed to create save");
+  let save = WorldSave::create(&fs, "empty.save", 42).expect("Failed to create save");
   let save_arc = Arc::new(RwLock::new(save));
 
   // Seeder that fills with stone
