@@ -1,5 +1,9 @@
 //! Material definitions and registry.
 
+use std::collections::HashMap;
+
+use serde::{Deserialize, Serialize};
+
 use crate::coords::{ColorIndex, MaterialId};
 use crate::render::{Rgba, rgb};
 
@@ -25,7 +29,8 @@ pub struct MaterialEffects {
 }
 
 /// Physics state determines movement behavior.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum PhysicsState {
   /// Does not move.
   Solid,
@@ -282,5 +287,176 @@ impl Materials {
 impl Default for Materials {
   fn default() -> Self {
     Self::new()
+  }
+}
+
+// ─── Serializable config types ───────────────────────────────────────────────
+
+/// Burn behavior in config form, using material names instead of IDs.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BurnEffectConfig {
+  Destroy,
+  Transform(String),
+}
+
+/// Per-material burn configuration.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BurnConfig {
+  pub effect: BurnEffectConfig,
+  pub chance: f32,
+}
+
+/// Per-material effects configuration.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct EffectsConfig {
+  #[serde(default)]
+  pub on_burn: Option<BurnConfig>,
+  #[serde(default)]
+  pub blast_resistance: f32,
+}
+
+/// A single material definition in config form.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MaterialConfig {
+  pub name: String,
+  /// 8 RGBA colors, each as `[r, g, b, a]`.
+  pub palette: Vec<[u8; 4]>,
+  pub state: PhysicsState,
+  #[serde(default)]
+  pub density: u8,
+  #[serde(default)]
+  pub dispersion: u8,
+  #[serde(default)]
+  pub air_resistance: u8,
+  #[serde(default)]
+  pub air_drift: u8,
+  #[serde(default)]
+  pub ignition_threshold: u8,
+  #[serde(default)]
+  pub base_temperature: u8,
+  #[serde(default)]
+  pub effects: Option<EffectsConfig>,
+}
+
+/// Format-agnostic materials configuration. Deserialize from TOML, JSON, YAML,
+/// etc.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MaterialsConfig {
+  pub materials: Vec<MaterialConfig>,
+}
+
+impl MaterialsConfig {
+  /// Returns the built-in default materials as a config struct.
+  pub fn builtin() -> Self {
+    let defaults = Materials::new();
+    let mut materials = Vec::with_capacity(defaults.len());
+    for entry in &defaults.entries {
+      let palette: Vec<[u8; 4]> = entry
+        .palette
+        .iter()
+        .map(|c| [c.red, c.green, c.blue, c.alpha])
+        .collect();
+
+      let on_burn = entry.effects.on_burn.map(|(effect, chance)| {
+        let effect = match effect {
+          PixelEffect::Destroy => BurnEffectConfig::Destroy,
+          PixelEffect::Transform(id) => {
+            BurnEffectConfig::Transform(defaults.get(id).name.to_string())
+          }
+          PixelEffect::Resist => BurnEffectConfig::Destroy, // shouldn't appear in burn config
+        };
+        BurnConfig { effect, chance }
+      });
+
+      let effects = if on_burn.is_some() || entry.effects.blast_resistance != 0.0 {
+        Some(EffectsConfig {
+          on_burn,
+          blast_resistance: entry.effects.blast_resistance,
+        })
+      } else {
+        None
+      };
+
+      materials.push(MaterialConfig {
+        name: entry.name.to_string(),
+        palette,
+        state: entry.state,
+        density: entry.density,
+        dispersion: entry.dispersion,
+        air_resistance: entry.air_resistance,
+        air_drift: entry.air_drift,
+        ignition_threshold: entry.ignition_threshold,
+        base_temperature: entry.base_temperature,
+        effects,
+      });
+    }
+    Self { materials }
+  }
+}
+
+impl From<MaterialsConfig> for Materials {
+  fn from(config: MaterialsConfig) -> Self {
+    // Build name → index map for resolving cross-references.
+    let name_to_index: HashMap<String, u8> = config
+      .materials
+      .iter()
+      .enumerate()
+      .map(|(i, m)| (m.name.clone(), i as u8))
+      .collect();
+
+    let entries = config
+      .materials
+      .into_iter()
+      .map(|mc| {
+        let mut palette = [Rgba::new(0, 0, 0, 0); 8];
+        for (i, rgba) in mc.palette.iter().enumerate().take(8) {
+          palette[i] = Rgba::new(rgba[0], rgba[1], rgba[2], rgba[3]);
+        }
+
+        let effects = match mc.effects {
+          Some(ec) => {
+            let on_burn = ec.on_burn.map(|bc| {
+              let effect = match bc.effect {
+                BurnEffectConfig::Destroy => PixelEffect::Destroy,
+                BurnEffectConfig::Transform(ref name) => {
+                  let idx = name_to_index
+                    .get(name)
+                    .unwrap_or_else(|| panic!("unknown material in burn transform: {name:?}"));
+                  PixelEffect::Transform(MaterialId(*idx))
+                }
+              };
+              (effect, bc.chance)
+            });
+            MaterialEffects {
+              on_burn,
+              blast_resistance: ec.blast_resistance,
+            }
+          }
+          None => MaterialEffects {
+            on_burn: None,
+            blast_resistance: 0.0,
+          },
+        };
+
+        // Leak name to get &'static str (one-time allocation per material).
+        let name: &'static str = Box::leak(mc.name.into_boxed_str());
+
+        Material {
+          name,
+          palette,
+          state: mc.state,
+          density: mc.density,
+          dispersion: mc.dispersion,
+          air_resistance: mc.air_resistance,
+          air_drift: mc.air_drift,
+          ignition_threshold: mc.ignition_threshold,
+          base_temperature: mc.base_temperature,
+          effects,
+        }
+      })
+      .collect();
+
+    Self { entries }
   }
 }
