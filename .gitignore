@@ -23,3 +23,4 @@ Thumbs.db
 .env.local
 rustc-ice-*.txt
 /*.json.gz
+dist/
