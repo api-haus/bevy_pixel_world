@@ -3,6 +3,27 @@
 use crate::coords::{ColorIndex, MaterialId};
 use crate::render::{Rgba, rgb};
 
+/// What happens to a pixel under a given effect (burning, detonation, etc.).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum PixelEffect {
+  /// Pixel is destroyed (set to VOID).
+  Destroy,
+  /// Pixel transforms into another material.
+  Transform(MaterialId),
+  /// Pixel resists the effect (no change).
+  Resist,
+}
+
+/// Per-material effect responses.
+#[derive(Clone, Copy, Debug)]
+pub struct MaterialEffects {
+  /// Burning effect: (effect, per-tick chance). None = no burn transformation.
+  pub on_burn: Option<(PixelEffect, f32)>,
+  /// How much blast strength this material absorbs per pixel.
+  /// Higher = harder to blast through. 0 = no resistance (void/air).
+  pub blast_resistance: f32,
+}
+
 /// Physics state determines movement behavior.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PhysicsState {
@@ -35,8 +56,8 @@ pub struct Material {
   pub ignition_threshold: u8,
   /// Heat emitted to the heat layer by this material (0 = none).
   pub base_temperature: u8,
-  /// Per-tick probability that a burning pixel transforms to ash (0.0 = never).
-  pub burn_ash_chance: f32,
+  /// Per-material effect responses (burning, detonation, etc.).
+  pub effects: MaterialEffects,
 }
 
 impl Material {
@@ -59,6 +80,8 @@ pub mod ids {
   pub const ASH: MaterialId = MaterialId(6);
 }
 
+use ids::*;
+
 /// Material registry with built-in definitions.
 #[derive(bevy::prelude::Resource)]
 pub struct Materials {
@@ -80,7 +103,10 @@ impl Materials {
           air_drift: 0,
           ignition_threshold: 0,
           base_temperature: 0,
-          burn_ash_chance: 0.0,
+          effects: MaterialEffects {
+            on_burn: None,
+            blast_resistance: 0.0,
+          },
         },
         // SOIL (brown gradient) - powder that falls and piles
         Material {
@@ -102,7 +128,10 @@ impl Materials {
           air_drift: 6,
           ignition_threshold: 0,
           base_temperature: 0,
-          burn_ash_chance: 0.0,
+          effects: MaterialEffects {
+            on_burn: None,
+            blast_resistance: 0.5,
+          },
         },
         // STONE (gray gradient) - solid, does not move
         Material {
@@ -124,7 +153,10 @@ impl Materials {
           air_drift: 0,
           ignition_threshold: 0,
           base_temperature: 0,
-          burn_ash_chance: 0.0,
+          effects: MaterialEffects {
+            on_burn: None,
+            blast_resistance: 5.0,
+          },
         },
         // SAND (tan/yellow gradient) - powder that falls and piles
         Material {
@@ -146,7 +178,10 @@ impl Materials {
           air_drift: 4,      // blown around by wind
           ignition_threshold: 0,
           base_temperature: 0,
-          burn_ash_chance: 0.0,
+          effects: MaterialEffects {
+            on_burn: None,
+            blast_resistance: 0.3,
+          },
         },
         // WATER (blue gradient) - liquid that flows
         Material {
@@ -168,7 +203,10 @@ impl Materials {
           air_drift: 12,
           ignition_threshold: 0,
           base_temperature: 0,
-          burn_ash_chance: 0.0,
+          effects: MaterialEffects {
+            on_burn: None,
+            blast_resistance: 0.1,
+          },
         },
         // WOOD (brown gradient) - solid, does not move
         Material {
@@ -190,7 +228,10 @@ impl Materials {
           air_drift: 0,
           ignition_threshold: 40,
           base_temperature: 0,
-          burn_ash_chance: 0.005,
+          effects: MaterialEffects {
+            on_burn: Some((PixelEffect::Transform(ASH), 0.005)),
+            blast_resistance: 1.0,
+          },
         },
         // ASH (gray powder) - product of burning
         Material {
@@ -212,7 +253,10 @@ impl Materials {
           air_drift: 3,
           ignition_threshold: 0,
           base_temperature: 0,
-          burn_ash_chance: 0.0,
+          effects: MaterialEffects {
+            on_burn: None,
+            blast_resistance: 0.1,
+          },
         },
       ],
     }
