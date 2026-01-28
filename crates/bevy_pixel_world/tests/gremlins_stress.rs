@@ -103,6 +103,7 @@ struct GremlinState {
   target_velocity: Vec2,
   idle_until: Option<Instant>,
   tick: u64,
+  total_distance: f32,
 }
 
 impl GremlinState {
@@ -117,6 +118,7 @@ impl GremlinState {
       target_velocity: initial_velocity,
       idle_until: None,
       tick: 0,
+      total_distance: 0.0,
     }
   }
 
@@ -301,8 +303,10 @@ fn run_gremlins_with_seed(seed: u64, duration_secs: u64) {
   while Instant::now() < deadline {
     // Apply continuous camera movement with smooth velocity changes
     let current_pos = harness.camera_position();
-    let new_pos = current_pos + state.camera_velocity.extend(0.0);
+    let delta = state.camera_velocity.extend(0.0);
+    let new_pos = current_pos + delta;
     harness.move_camera(new_pos);
+    state.total_distance += delta.length();
 
     // Update velocity (smooth interpolation toward changing targets)
     state.update_velocity();
@@ -333,9 +337,10 @@ fn run_gremlins_with_seed(seed: u64, duration_secs: u64) {
     harness.app.update();
     state.tick += 1;
   }
+  let final_pos = harness.camera_position();
   eprintln!(
-    "gremlins: seed {:#X} completed {} ticks in {}s",
-    seed, state.tick, duration_secs
+    "gremlins: seed {:#X} | {} ticks | distance: {:.0} | final pos: ({:.0}, {:.0})",
+    seed, state.tick, state.total_distance, final_pos.x, final_pos.y
   );
 }
 
