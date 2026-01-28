@@ -3,7 +3,7 @@
 //! Run: cargo test -p bevy_pixel_world gremlins_stress
 
 use std::path::Path;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use bevy::app::{TaskPoolOptions, TaskPoolPlugin};
 use bevy::prelude::*;
@@ -86,6 +86,57 @@ impl TestHarness {
       .unwrap();
     *global = GlobalTransform::from(Transform::from_translation(position));
   }
+
+  fn camera_position(&self) -> Vec3 {
+    self
+      .app
+      .world()
+      .get::<Transform>(self.camera)
+      .unwrap()
+      .translation
+  }
+}
+
+struct GremlinState {
+  rng: StdRng,
+  camera_velocity: Vec2,
+  idle_until: Option<Instant>,
+  tick: u64,
+}
+
+impl GremlinState {
+  fn new(seed: u64) -> Self {
+    let mut rng = StdRng::seed_from_u64(seed);
+    let angle = rng.gen_range(0.0..std::f32::consts::TAU);
+    let camera_velocity = Vec2::new(angle.cos(), angle.sin()) * 3.0;
+    Self {
+      rng,
+      camera_velocity,
+      idle_until: None,
+      tick: 0,
+    }
+  }
+
+  fn is_idle(&self) -> bool {
+    self.idle_until.is_some_and(|t| Instant::now() < t)
+  }
+
+  fn maybe_start_idle(&mut self) {
+    // 10% chance to enter idle period
+    if self.rng.gen_ratio(1, 10) {
+      let duration_ms = self.rng.gen_range(500..=2000);
+      self.idle_until = Some(Instant::now() + Duration::from_millis(duration_ms));
+    }
+  }
+
+  fn maybe_change_velocity(&mut self) {
+    // 5% chance to change camera velocity direction
+    if self.rng.gen_ratio(1, 20) {
+      let angle = self.rng.gen_range(0.0..std::f32::consts::TAU);
+      let speed = self.rng.gen_range(2.0..5.0f32);
+      self.camera_velocity = Vec2::new(angle.cos(), angle.sin()) * speed;
+    }
+  }
 }
 
 const MATERIALS: [bevy_pixel_world::MaterialId; 4] = [
@@ -130,13 +181,23 @@ fn gremlin_spawn_body(harness: &mut TestHarness, rng: &mut StdRng) {
   ));
 }
 
-fn gremlin_pan_camera(harness: &mut TestHarness, rng: &mut StdRng) {
-  let current = harness
+fn gremlin_destroy_body(harness: &mut TestHarness, rng: &mut StdRng) {
+  let bodies: Vec<Entity> = harness
     .app
-    .world()
-    .get::<Transform>(harness.camera)
-    .unwrap()
-    .translation;
+    .world_mut()
+    .query_filtered::<Entity, With<PixelBody>>()
+    .iter(harness.app.world())
+    .collect();
+
+  if !bodies.is_empty() {
+    let idx = rng.gen_range(0..bodies.len());
+    let entity = bodies[idx];
+    harness.app.world_mut().despawn(entity);
+  }
+}
+
+fn gremlin_pan_camera(harness: &mut TestHarness, rng: &mut StdRng) {
+  let current = harness.camera_position();
   let dx = rng.gen_range(-20.0..20.0f32);
   let dy = rng.gen_range(-20.0..20.0f32);
   harness.move_camera(current + Vec3::new(dx, dy, 0.0));
@@ -221,25 +282,44 @@ fn gremlins() {
   harness.move_camera(Vec3::ZERO);
   harness.run_until_seeded();
 
-  let mut rng = StdRng::seed_from_u64(0xDEAD_BEEF);
-  let deadline = Instant::now() + std::time::Duration::from_secs(10);
+  let mut state = GremlinState::new(0xDEAD_BEEF);
+  let deadline = Instant::now() + Duration::from_secs(30);
 
-  let mut tick = 0u64;
   while Instant::now() < deadline {
-    let action_count = rng.gen_range(1..=3usize);
+    // Apply continuous camera movement
+    let current_pos = harness.camera_position();
+    let new_pos = current_pos + state.camera_velocity.extend(0.0);
+    harness.move_camera(new_pos);
+
+    // Maybe change camera direction
+    state.maybe_change_velocity();
+
+    // Check if in idle period
+    if state.is_idle() {
+      harness.app.update();
+      state.tick += 1;
+      continue;
+    }
+
+    // Maybe start idle period
+    state.maybe_start_idle();
+
+    // Run random actions
+    let action_count = state.rng.gen_range(1..=3usize);
     for _ in 0..action_count {
-      match rng.gen_range(0..5u32) {
-        0 => gremlin_spawn_body(&mut harness, &mut rng),
-        1 => gremlin_pan_camera(&mut harness, &mut rng),
-        2 => gremlin_paint_material(&mut harness, &mut rng),
-        3 => gremlin_paint_void(&mut harness, &mut rng),
-        4 => gremlin_paint_heat(&mut harness, &mut rng),
+      match state.rng.gen_range(0..6u32) {
+        0 => gremlin_spawn_body(&mut harness, &mut state.rng),
+        1 => gremlin_destroy_body(&mut harness, &mut state.rng),
+        2 => gremlin_pan_camera(&mut harness, &mut state.rng),
+        3 => gremlin_paint_material(&mut harness, &mut state.rng),
+        4 => gremlin_paint_void(&mut harness, &mut state.rng),
+        5 => gremlin_paint_heat(&mut harness, &mut state.rng),
         _ => unreachable!(),
       }
     }
     harness.app.update();
-    tick += 1;
+    state.tick += 1;
   }
-  eprintln!("gremlins: completed {tick} ticks in 10s");
+  eprintln!("gremlins: completed {} ticks in 30s", state.tick);
   // If we got here without panicking, the test passes.
 }
