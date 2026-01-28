@@ -53,6 +53,8 @@ pub struct ChunkSlot {
   pub texture: Option<Handle<Image>>,
   /// Material handle (for bind group refresh workaround).
   pub material: Option<Handle<ChunkMaterial>>,
+  /// Heat texture handle for GPU upload.
+  pub heat_texture: Option<Handle<Image>>,
 }
 
 impl ChunkSlot {
@@ -68,6 +70,7 @@ impl ChunkSlot {
       entity: None,
       texture: None,
       material: None,
+      heat_texture: None,
     }
   }
 
@@ -102,6 +105,7 @@ impl ChunkSlot {
     let needs_save = self.needs_save();
     self.chunk.clear_pos();
     self.chunk.pixels.as_slice_mut().fill(Pixel::VOID);
+    self.chunk.reset_heat();
     self.lifecycle = ChunkLifecycle::InPool;
     self.pos = None;
     self.dirty = false;

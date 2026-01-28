@@ -19,6 +19,11 @@ pub struct ChunkMaterial {
   #[texture(1)]
   #[sampler(2)]
   pub palette_texture: Option<Handle<Image>>,
+
+  /// Heat layer texture (128x128 R8Unorm, bilinear sampled)
+  #[texture(3)]
+  #[sampler(4)]
+  pub heat_texture: Option<Handle<Image>>,
 }
 
 impl Material2d for ChunkMaterial {

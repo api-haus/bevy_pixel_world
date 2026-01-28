@@ -2,13 +2,16 @@
 //!
 //! Implements falling sand physics using checkerboard scheduling.
 
+pub mod burning;
 pub mod hash;
+pub mod heat;
 pub(crate) mod physics;
 
 use std::collections::HashSet;
 use std::sync::Mutex;
 
 use hash::hash21uu64;
+pub use heat::HeatConfig;
 
 use crate::coords::{
   ChunkPos, Phase, TILE_SIZE, TILES_PER_CHUNK, TilePos, WINDOW_HEIGHT, WINDOW_WIDTH, WorldRect,
@@ -37,7 +40,12 @@ pub struct SimContext {
 /// of that phase in parallel, which are never adjacent, ensuring thread-safe
 /// access.
 #[cfg_attr(feature = "tracy", tracing::instrument(skip_all, fields(tick = world.tick())))]
-pub fn simulate_tick(world: &mut PixelWorld, materials: &Materials, debug_gizmos: DebugGizmos<'_>) {
+pub fn simulate_tick(
+  world: &mut PixelWorld,
+  materials: &Materials,
+  debug_gizmos: DebugGizmos<'_>,
+  heat_config: &HeatConfig,
+) {
   // Get context before borrowing chunks
   let center = world.center();
   let tick = world.tick();
@@ -84,6 +92,33 @@ pub fn simulate_tick(world: &mut PixelWorld, materials: &Materials, debug_gizmos
     ctx.tick,
     (jitter_x, jitter_y),
   );
+
+  // Burning propagation + ash transformation (every tick)
+  let chunk_positions: Vec<ChunkPos> = chunk_access.positions().collect();
+  for &cpos in &chunk_positions {
+    burning::process_burning(
+      &chunk_access,
+      cpos,
+      materials,
+      ctx,
+      heat_config.ignite_spread_chance,
+    );
+  }
+
+  // Heat propagation + ignition (every Nth tick)
+  if tick % heat_config.heat_tick_interval as u64 == 0 {
+    heat::propagate_heat(&chunk_access, &chunk_positions, materials, heat_config);
+    heat::ignite_from_heat(&chunk_access, &chunk_positions, materials);
+  }
+
+  // Collect all dirty chunks (burning/heat mark all touched chunks dirty)
+  {
+    let mut d = dirty.lock().unwrap();
+    d.extend(chunk_positions.iter().copied());
+  }
+
+  // Drop canvas before using world again
+  drop(chunk_access);
 
   // Mark dirty chunks for GPU upload
   for pos in dirty.into_inner().unwrap() {

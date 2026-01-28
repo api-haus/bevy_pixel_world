@@ -7,6 +7,7 @@ use super::PixelWorld;
 use crate::coords::WorldPos;
 use crate::debug_shim::{self, DebugGizmos};
 use crate::pixel::Pixel;
+use crate::primitives::HEAT_CELL_SIZE;
 
 impl PixelWorld {
   /// Returns a reference to the pixel at the given world position.
@@ -124,6 +125,40 @@ impl PixelWorld {
     if let Some(idx) = self.pool.index_for(pos) {
       self.pool.get_mut(idx).dirty = true;
     }
+  }
+
+  /// Returns the heat value at the given world position.
+  ///
+  /// Maps the pixel position to its heat cell (4x4 downsampling).
+  /// Returns None if the chunk is not loaded or not yet seeded.
+  pub fn get_heat_at(&self, pos: WorldPos) -> Option<u8> {
+    let (chunk_pos, local_pos) = pos.to_chunk_and_local();
+    let idx = self.pool.index_for(chunk_pos)?;
+    let slot = self.pool.get(idx);
+    if !slot.is_seeded() {
+      return None;
+    }
+    let hx = local_pos.x as u32 / HEAT_CELL_SIZE;
+    let hy = local_pos.y as u32 / HEAT_CELL_SIZE;
+    Some(slot.chunk.heat_cell(hx, hy))
+  }
+
+  /// Sets the heat value at the given world position's heat cell.
+  ///
+  /// Returns true if the heat was set, false if the chunk is not loaded.
+  pub fn set_heat_at(&mut self, pos: WorldPos, heat: u8) -> bool {
+    let (chunk_pos, local_pos) = pos.to_chunk_and_local();
+    let Some(idx) = self.pool.index_for(chunk_pos) else {
+      return false;
+    };
+    let slot = self.pool.get_mut(idx);
+    if !slot.is_seeded() {
+      return false;
+    }
+    let hx = local_pos.x as u32 / HEAT_CELL_SIZE;
+    let hy = local_pos.y as u32 / HEAT_CELL_SIZE;
+    *slot.chunk.heat_cell_mut(hx, hy) = heat;
+    true
   }
 
   /// Marks a world position as simulation-dirty.

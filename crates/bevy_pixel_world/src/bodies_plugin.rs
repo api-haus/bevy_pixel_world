@@ -15,7 +15,8 @@ use crate::collision::{
 };
 use crate::pixel_body::{
   PixelBodyIdGenerator, apply_readback_changes, detect_external_erasure,
-  finalize_pending_pixel_bodies, readback_pixel_bodies, split_pixel_bodies, update_pixel_bodies,
+  finalize_pending_pixel_bodies, readback_pixel_bodies, split_pixel_bodies,
+  sync_simulation_to_bodies, update_pixel_bodies,
 };
 use crate::schedule::{PixelWorldSet, SimulationPhase};
 use crate::world::body_loader::spawn_pending_pixel_bodies;
@@ -88,6 +89,7 @@ impl Plugin for PixelBodiesPlugin {
     app.add_systems(
       Update,
       (
+        sync_simulation_to_bodies,
         readback_pixel_bodies,
         apply_readback_changes,
         split_pixel_bodies,

@@ -12,6 +12,7 @@ use rayon::prelude::*;
 use super::blit::detect_destroyed_from_written;
 use super::{LastBlitTransform, NeedsColliderRegen, PixelBody, ShapeMaskModified};
 use crate::collision::Stabilizing;
+use crate::pixel::PixelFlags;
 use crate::world::PixelWorld;
 
 /// Stores pixels detected as destroyed.
@@ -141,6 +142,70 @@ pub fn readback_pixel_bodies(
     commands
       .entity(entity)
       .insert(DestroyedPixels(all_destroyed));
+  }
+}
+
+/// Syncs simulation-driven changes (burning, material transformation) from
+/// the world back into pixel body surfaces.
+///
+/// Without this, each frame the body would overwrite simulation state with
+/// its stored pixels, preventing fire from persisting on bodies.
+pub fn sync_simulation_to_bodies(
+  worlds: Query<&PixelWorld>,
+  mut bodies: Query<(&mut PixelBody, &LastBlitTransform)>,
+) {
+  let Ok(world) = worlds.single() else {
+    return;
+  };
+
+  for (mut body, blitted) in bodies.iter_mut() {
+    let mut modified = false;
+
+    for &(pos, lx, ly) in &blitted.written_positions {
+      let Some(world_pixel) = world.get_pixel(pos) else {
+        continue;
+      };
+
+      // Skip pixels that lost their PIXEL_BODY flag (handled by destruction readback)
+      if !world_pixel.flags.contains(PixelFlags::PIXEL_BODY) {
+        continue;
+      }
+
+      let Some(body_pixel) = body.get_pixel(lx, ly) else {
+        continue;
+      };
+
+      // Sync BURNING flag
+      let body_burning = body_pixel.flags.contains(PixelFlags::BURNING);
+      let world_burning = world_pixel.flags.contains(PixelFlags::BURNING);
+
+      // Sync material changes (e.g. wood → ash from burn-to-ash)
+      let material_changed = body_pixel.material != world_pixel.material;
+
+      if body_burning != world_burning || material_changed {
+        // Copy the world pixel's state back, stripping the PIXEL_BODY flag
+        // (it's a canvas-only flag, not stored in body surface)
+        let mut synced = *world_pixel;
+        synced.flags.remove(PixelFlags::PIXEL_BODY);
+        body.surface[(lx, ly)] = synced;
+        modified = true;
+      }
+    }
+
+    // If material changed to void-like (ash is powder, not solid), update shape
+    // mask
+    if modified {
+      // Recompute shape mask from surface for changed pixels
+      let w = body.width();
+      let h = body.height();
+      for y in 0..h {
+        for x in 0..w {
+          let pixel = body.surface[(x, y)];
+          let should_be_solid = !pixel.is_void();
+          body.set_solid(x, y, should_be_solid);
+        }
+      }
+    }
   }
 }
 

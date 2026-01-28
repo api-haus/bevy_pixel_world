@@ -21,6 +21,7 @@ impl Plugin for PixelDebugControllerPlugin {
         (
           input_system,
           paint_system.after(input_system),
+          heat_paint_system.after(input_system),
           update_collision_query_point.after(input_system),
         ),
       );
@@ -36,6 +37,10 @@ pub struct BrushState {
   pub world_pos_f32: Option<Vec2>,
   pub material: MaterialId,
   pub spawn_requested: bool,
+  /// When true, LMB paints heat values instead of materials.
+  pub heat_painting: bool,
+  /// Heat value to paint (0-255).
+  pub heat_value: u8,
 }
 
 impl Default for BrushState {
@@ -48,6 +53,8 @@ impl Default for BrushState {
       world_pos_f32: None,
       material: material_ids::SAND,
       spawn_requested: false,
+      heat_painting: false,
+      heat_value: 100,
     }
   }
 }
@@ -105,6 +112,12 @@ fn paint_system(
     return;
   }
 
+  // Skip material painting when in heat painting mode (heat paint system handles
+  // it)
+  if brush.heat_painting && brush.painting {
+    return;
+  }
+
   if !brush.painting && !brush.erasing {
     return;
   }
@@ -145,6 +158,39 @@ fn paint_system(
     },
     gizmos.get(),
   );
+}
+
+fn heat_paint_system(
+  brush: Res<BrushState>,
+  ui_over: Option<Res<UiPointerState>>,
+  mut worlds: Query<&mut crate::PixelWorld>,
+) {
+  if !brush.heat_painting || !brush.painting {
+    return;
+  }
+  if ui_over.is_some_and(|s| s.pointer_over_ui) {
+    return;
+  }
+  let Some((center_x, center_y)) = brush.world_pos else {
+    return;
+  };
+  let Ok(mut world) = worlds.single_mut() else {
+    return;
+  };
+
+  let radius = brush.radius as i64;
+  let radius_sq = (radius * radius) as f32;
+  let heat = brush.heat_value;
+
+  for dy in -radius..=radius {
+    for dx in -radius..=radius {
+      let dist_sq = (dx * dx + dy * dy) as f32;
+      if dist_sq <= radius_sq {
+        let pos = crate::WorldPos::new(center_x + dx, center_y + dy);
+        world.set_heat_at(pos, heat);
+      }
+    }
+  }
 }
 
 fn update_collision_query_point(

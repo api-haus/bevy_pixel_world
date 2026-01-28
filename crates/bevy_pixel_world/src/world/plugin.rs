@@ -27,6 +27,7 @@ use crate::persistence::PersistenceTasks;
 use crate::render::{create_chunk_quad, create_palette_texture, upload_palette};
 use crate::schedule::{PixelWorldSet, SimulationPhase};
 use crate::simulation;
+use crate::simulation::HeatConfig;
 
 /// Marker resource indicating rendering infrastructure is available.
 /// Inserted by PixelWorldPlugin when RenderPlugin is detected.
@@ -51,6 +52,7 @@ impl Plugin for PixelWorldStreamingPlugin {
       .init_resource::<SimulationState>()
       .init_resource::<PersistenceControl>()
       .init_resource::<crate::diagnostics::SimulationMetrics>()
+      .init_resource::<HeatConfig>()
       .add_message::<RequestPersistence>()
       .add_message::<PersistenceComplete>();
 
@@ -180,6 +182,7 @@ fn initialize_palette(
 fn run_simulation(
   mut worlds: Query<&mut PixelWorld>,
   mat_registry: Option<Res<Materials>>,
+  heat_config: Res<HeatConfig>,
   gizmos: debug_shim::GizmosParam,
   mut sim_metrics: ResMut<crate::diagnostics::SimulationMetrics>,
 ) {
@@ -192,7 +195,7 @@ fn run_simulation(
   let start = std::time::Instant::now();
 
   for mut world in worlds.iter_mut() {
-    simulation::simulate_tick(&mut world, &materials, debug_gizmos);
+    simulation::simulate_tick(&mut world, &materials, debug_gizmos, &heat_config);
   }
 
   let elapsed_ms = start.elapsed().as_secs_f32() * 1000.0;

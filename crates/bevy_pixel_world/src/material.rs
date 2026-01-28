@@ -31,6 +31,12 @@ pub struct Material {
   pub air_resistance: u8,
   /// Air drift: 1/N chance to drift horizontally while falling (0 = disabled).
   pub air_drift: u8,
+  /// Heat level at which this material ignites (0 = non-flammable).
+  pub ignition_threshold: u8,
+  /// Heat emitted to the heat layer by this material (0 = none).
+  pub base_temperature: u8,
+  /// Per-tick probability that a burning pixel transforms to ash (0.0 = never).
+  pub burn_ash_chance: f32,
 }
 
 impl Material {
@@ -50,6 +56,7 @@ pub mod ids {
   pub const SAND: MaterialId = MaterialId(3);
   pub const WATER: MaterialId = MaterialId(4);
   pub const WOOD: MaterialId = MaterialId(5);
+  pub const ASH: MaterialId = MaterialId(6);
 }
 
 /// Material registry with built-in definitions.
@@ -71,6 +78,9 @@ impl Materials {
           dispersion: 0,
           air_resistance: 0,
           air_drift: 0,
+          ignition_threshold: 0,
+          base_temperature: 0,
+          burn_ash_chance: 0.0,
         },
         // SOIL (brown gradient) - powder that falls and piles
         Material {
@@ -90,6 +100,9 @@ impl Materials {
           dispersion: 0,
           air_resistance: 12, // heavier, less floaty
           air_drift: 6,
+          ignition_threshold: 0,
+          base_temperature: 0,
+          burn_ash_chance: 0.0,
         },
         // STONE (gray gradient) - solid, does not move
         Material {
@@ -109,6 +122,9 @@ impl Materials {
           dispersion: 0,
           air_resistance: 0,
           air_drift: 0,
+          ignition_threshold: 0,
+          base_temperature: 0,
+          burn_ash_chance: 0.0,
         },
         // SAND (tan/yellow gradient) - powder that falls and piles
         Material {
@@ -128,6 +144,9 @@ impl Materials {
           dispersion: 0,
           air_resistance: 8, // light particles float a bit
           air_drift: 4,      // blown around by wind
+          ignition_threshold: 0,
+          base_temperature: 0,
+          burn_ash_chance: 0.0,
         },
         // WATER (blue gradient) - liquid that flows
         Material {
@@ -147,6 +166,9 @@ impl Materials {
           dispersion: 5,      // flows horizontally
           air_resistance: 16, // subtle splash effect
           air_drift: 12,
+          ignition_threshold: 0,
+          base_temperature: 0,
+          burn_ash_chance: 0.0,
         },
         // WOOD (brown gradient) - solid, does not move
         Material {
@@ -166,6 +188,31 @@ impl Materials {
           dispersion: 0,
           air_resistance: 0,
           air_drift: 0,
+          ignition_threshold: 40,
+          base_temperature: 0,
+          burn_ash_chance: 0.005,
+        },
+        // ASH (gray powder) - product of burning
+        Material {
+          name: "Ash",
+          palette: [
+            rgb(180, 175, 170), // surface - light gray
+            rgb(165, 160, 155),
+            rgb(150, 145, 140),
+            rgb(140, 135, 130),
+            rgb(130, 125, 120),
+            rgb(120, 115, 110),
+            rgb(110, 105, 100),
+            rgb(100, 95, 90), // deep - darker gray
+          ],
+          state: PhysicsState::Powder,
+          density: 60,
+          dispersion: 0,
+          air_resistance: 4, // light, floaty
+          air_drift: 3,
+          ignition_threshold: 0,
+          base_temperature: 0,
+          burn_ash_chance: 0.0,
         },
       ],
     }

@@ -62,6 +62,11 @@ impl<'a> Canvas<'a> {
       .map(|cell| unsafe { &mut **cell.get() })
   }
 
+  /// Returns an iterator over all chunk positions in this canvas.
+  pub fn positions(&self) -> impl Iterator<Item = ChunkPos> + '_ {
+    self.chunks.keys().copied()
+  }
+
   /// Gets mutable references to two different chunks.
   ///
   /// Returns None if either chunk is not found. Panics if `a == b`

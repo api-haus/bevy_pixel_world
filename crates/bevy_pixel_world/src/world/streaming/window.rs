@@ -9,7 +9,8 @@ use crate::coords::{CHUNK_SIZE, ChunkPos, WorldPos, WorldRect};
 use crate::persistence::PersistenceTasks;
 use crate::persistence::compression::compress_lz4;
 use crate::persistence::format::StorageType;
-use crate::render::{ChunkMaterial, create_pixel_texture};
+use crate::primitives::HEAT_GRID_SIZE;
+use crate::render::{ChunkMaterial, create_heat_texture, create_pixel_texture};
 use crate::world::{PixelWorld, SlotIndex};
 
 /// Marker component for the main camera that controls streaming.
@@ -115,49 +116,59 @@ fn spawn_chunk_entity(
     0.0,
   );
 
-  let (entity, texture, material) = if let (Some(images), Some(materials)) = (images, materials) {
-    let slot = world.slot_mut(slot_idx);
+  let (entity, texture, material, heat_tex) =
+    if let (Some(images), Some(materials)) = (images, materials) {
+      let slot = world.slot_mut(slot_idx);
 
-    // Create or reuse pixel texture (Rgba8Uint for raw pixel data)
-    let texture = if let Some(tex) = slot.texture.take() {
-      tex
+      // Create or reuse pixel texture (Rgba8Uint for raw pixel data)
+      let texture = if let Some(tex) = slot.texture.take() {
+        tex
+      } else {
+        create_pixel_texture(images, CHUNK_SIZE, CHUNK_SIZE)
+      };
+
+      // Create or reuse heat texture (R8Unorm for bilinear sampling)
+      let heat_tex = if let Some(tex) = slot.heat_texture.take() {
+        tex
+      } else {
+        create_heat_texture(images, HEAT_GRID_SIZE, HEAT_GRID_SIZE)
+      };
+
+      // Create or reuse material
+      let material = if let Some(mat) = slot.material.take() {
+        mat
+      } else {
+        materials.add(ChunkMaterial {
+          pixel_texture: Some(texture.clone()),
+          palette_texture: palette_handle.clone(),
+          heat_texture: Some(heat_tex.clone()),
+        })
+      };
+
+      // Update material textures if reusing
+      if let Some(mat) = materials.get_mut(&material) {
+        mat.pixel_texture = Some(texture.clone());
+        mat.palette_texture = palette_handle;
+        mat.heat_texture = Some(heat_tex.clone());
+      }
+
+      let mesh = world.mesh().clone();
+      let entity = commands
+        .spawn((
+          Mesh2d(mesh),
+          transform,
+          Visibility::default(),
+          MeshMaterial2d(material.clone()),
+        ))
+        .id();
+
+      (entity, Some(texture), Some(material), Some(heat_tex))
     } else {
-      create_pixel_texture(images, CHUNK_SIZE, CHUNK_SIZE)
+      let entity = commands.spawn(transform).id();
+      (entity, None, None, None)
     };
 
-    // Create or reuse material
-    let material = if let Some(mat) = slot.material.take() {
-      mat
-    } else {
-      materials.add(ChunkMaterial {
-        pixel_texture: Some(texture.clone()),
-        palette_texture: palette_handle.clone(),
-      })
-    };
-
-    // Update material textures if reusing
-    if let Some(mat) = materials.get_mut(&material) {
-      mat.pixel_texture = Some(texture.clone());
-      mat.palette_texture = palette_handle;
-    }
-
-    let mesh = world.mesh().clone();
-    let entity = commands
-      .spawn((
-        Mesh2d(mesh),
-        transform,
-        Visibility::default(),
-        MeshMaterial2d(material.clone()),
-      ))
-      .id();
-
-    (entity, Some(texture), Some(material))
-  } else {
-    let entity = commands.spawn(transform).id();
-    (entity, None, None)
-  };
-
-  world.register_slot_entity(slot_idx, entity, texture, material);
+  world.register_slot_entity(slot_idx, entity, texture, material, heat_tex);
 }
 
 /// System: Updates simulation bounds from camera viewport.

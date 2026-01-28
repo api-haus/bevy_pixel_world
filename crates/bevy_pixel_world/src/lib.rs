@@ -66,7 +66,7 @@ pub use render::{
 };
 pub use schedule::{PixelWorldSet, SimulationPhase};
 pub use seeding::{ChunkSeeder, MaterialSeeder, NoiseSeeder, PersistenceSeeder};
-pub use simulation::simulate_tick;
+pub use simulation::{HeatConfig, simulate_tick};
 pub use text::{CpuFont, TextMask, TextStyle, draw_text, rasterize_text, stamp_text};
 #[cfg(feature = "tracy")]
 pub use tracy_init::init_tracy;

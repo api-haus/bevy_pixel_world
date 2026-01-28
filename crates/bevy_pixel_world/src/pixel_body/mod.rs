@@ -39,7 +39,9 @@ pub(crate) use blit::{compute_transformed_aabb, compute_world_aabb};
 pub use collider::generate_collider;
 pub use displacement::DisplacementState;
 pub use loader::PixelBodyLoader;
-pub use readback::{apply_readback_changes, detect_external_erasure, readback_pixel_bodies};
+pub use readback::{
+  apply_readback_changes, detect_external_erasure, readback_pixel_bodies, sync_simulation_to_bodies,
+};
 pub use spawn::{
   PendingPixelBody, PixelBodyIdGenerator, SpawnPixelBody, SpawnPixelBodyFromImage,
   finalize_pending_pixel_bodies,

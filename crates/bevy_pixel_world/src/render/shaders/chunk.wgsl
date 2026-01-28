@@ -5,6 +5,8 @@
 @group(#{MATERIAL_BIND_GROUP}) @binding(0) var pixel_texture: texture_2d<u32>;
 @group(#{MATERIAL_BIND_GROUP}) @binding(1) var palette_texture: texture_2d<f32>;
 @group(#{MATERIAL_BIND_GROUP}) @binding(2) var palette_sampler: sampler;
+@group(#{MATERIAL_BIND_GROUP}) @binding(3) var heat_texture: texture_2d<f32>;
+@group(#{MATERIAL_BIND_GROUP}) @binding(4) var heat_sampler: sampler;
 
 @fragment
 fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
@@ -21,5 +23,14 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     let palette_idx = material_id * 8u + (color_index * 7u / 255u);
     let palette_uv = vec2<f32>(f32(palette_idx) + 0.5, 0.5) / vec2<f32>(256.0, 1.0);
 
-    return textureSample(palette_texture, palette_sampler, palette_uv);
+    var color = textureSample(palette_texture, palette_sampler, palette_uv);
+
+    // Sample heat layer (bilinearly interpolated) and blend as red hue
+    let heat = textureSample(heat_texture, heat_sampler, mesh.uv).r;
+    if heat > 0.0 {
+        let intensity = heat;
+        color = mix(color, vec4<f32>(1.0, 0.1, 0.0, 1.0), intensity * 0.6);
+    }
+
+    return color;
 }

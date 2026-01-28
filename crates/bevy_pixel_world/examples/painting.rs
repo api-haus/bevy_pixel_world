@@ -110,6 +110,8 @@ fn ui_system(
             material_ids::STONE,
             material_ids::SAND,
             material_ids::WATER,
+            material_ids::WOOD,
+            material_ids::ASH,
           ] {
             let mat = materials.get(id);
             if ui
@@ -127,6 +129,15 @@ fn ui_system(
             egui::Slider::new(&mut radius, MIN_RADIUS as f32..=MAX_RADIUS as f32).text("Size"),
           );
           brush.radius = radius as u32;
+
+          ui.separator();
+
+          ui.checkbox(&mut brush.heat_painting, "Heat brush");
+          if brush.heat_painting {
+            let mut heat = brush.heat_value as f32;
+            ui.add(egui::Slider::new(&mut heat, 0.0..=255.0).text("Heat"));
+            brush.heat_value = heat as u8;
+          }
         });
 
       // Camera section
@@ -209,6 +220,18 @@ fn ui_system(
 
               ui.separator();
               ui.label(format!("Raw flags: 0b{:08b}", flags.bits()));
+
+              if let Some((x, y)) = brush.world_pos {
+                if let Ok(world) = worlds.single() {
+                  let heat = world.get_heat_at(WorldPos::new(x, y)).unwrap_or(0);
+                  let color = if heat > 0 {
+                    egui::Color32::from_rgb(255, (255 - heat) / 2, 0)
+                  } else {
+                    egui::Color32::GRAY
+                  };
+                  ui.colored_label(color, format!("Heat: {}", heat));
+                }
+              }
             } else {
               ui.label("(no pixel data)");
             }

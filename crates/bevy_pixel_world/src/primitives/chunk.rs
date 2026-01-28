@@ -6,8 +6,15 @@
 //! organization. See `docs/architecture/chunk-pooling.md` for the pooling
 //! lifecycle.
 
-use crate::coords::{ChunkPos, TILE_SIZE, TILES_PER_CHUNK};
+use crate::coords::{CHUNK_SIZE, ChunkPos, TILE_SIZE, TILES_PER_CHUNK};
 use crate::pixel::PixelSurface;
+
+/// Pixels per heat cell edge.
+pub const HEAT_CELL_SIZE: u32 = 4;
+/// Number of heat cells per chunk edge.
+pub const HEAT_GRID_SIZE: u32 = CHUNK_SIZE / HEAT_CELL_SIZE;
+/// Total heat cells per chunk.
+const HEAT_CELL_COUNT: usize = (HEAT_GRID_SIZE * HEAT_GRID_SIZE) as usize;
 
 /// Number of tiles per chunk (16x16 = 256).
 const TILE_COUNT: usize = (TILES_PER_CHUNK * TILES_PER_CHUNK) as usize;
@@ -139,6 +146,8 @@ pub struct Chunk {
   /// True if this chunk was loaded from persistence (not procedurally
   /// generated).
   pub from_persistence: bool,
+  /// Downsampled heat layer (128×128, ephemeral, not persisted).
+  pub heat: Box<[u8]>,
 }
 
 impl Chunk {
@@ -150,6 +159,7 @@ impl Chunk {
       tile_dirty_rects: vec![TileDirtyRect::empty(); TILE_COUNT].into_boxed_slice(),
       tile_collision_dirty: vec![true; TILE_COUNT].into_boxed_slice(),
       from_persistence: false,
+      heat: vec![0u8; HEAT_CELL_COUNT].into_boxed_slice(),
     }
   }
 
@@ -250,6 +260,23 @@ impl Chunk {
     for flag in self.tile_collision_dirty.iter_mut() {
       *flag = dirty;
     }
+  }
+
+  /// Returns the heat value at heat cell (hx, hy).
+  #[inline]
+  pub fn heat_cell(&self, hx: u32, hy: u32) -> u8 {
+    self.heat[(hy * HEAT_GRID_SIZE + hx) as usize]
+  }
+
+  /// Returns a mutable reference to the heat value at heat cell (hx, hy).
+  #[inline]
+  pub fn heat_cell_mut(&mut self, hx: u32, hy: u32) -> &mut u8 {
+    &mut self.heat[(hy * HEAT_GRID_SIZE + hx) as usize]
+  }
+
+  /// Zeros all heat cells (called when chunk returns to pool).
+  pub fn reset_heat(&mut self) {
+    self.heat.fill(0);
   }
 
   /// Returns an iterator over (tx, ty) pairs for tiles with dirty collision.

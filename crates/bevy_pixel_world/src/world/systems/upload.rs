@@ -5,12 +5,17 @@
 use bevy::prelude::*;
 
 use super::super::{PixelWorld, SlotIndex};
-use crate::render::{ChunkMaterial, upload_pixels};
+use crate::render::{ChunkMaterial, upload_heat, upload_pixels};
 
 /// Collects dirty, seeded slots that need GPU upload.
 fn collect_dirty_slots(
   world: &PixelWorld,
-) -> Vec<(SlotIndex, Handle<Image>, Handle<ChunkMaterial>)> {
+) -> Vec<(
+  SlotIndex,
+  Handle<Image>,
+  Handle<ChunkMaterial>,
+  Option<Handle<Image>>,
+)> {
   world
     .active_chunks()
     .filter_map(|(_, idx)| {
@@ -18,7 +23,12 @@ fn collect_dirty_slots(
       if !slot.dirty || !slot.is_seeded() {
         return None;
       }
-      Some((idx, slot.texture.clone()?, slot.material.clone()?))
+      Some((
+        idx,
+        slot.texture.clone()?,
+        slot.material.clone()?,
+        slot.heat_texture.clone(),
+      ))
     })
     .collect()
 }
@@ -29,6 +39,7 @@ fn upload_slot_to_gpu(
   idx: SlotIndex,
   texture_handle: &Handle<Image>,
   material_handle: &Handle<ChunkMaterial>,
+  heat_texture_handle: Option<&Handle<Image>>,
   images: &mut Assets<Image>,
   materials: &mut Assets<ChunkMaterial>,
 ) {
@@ -36,6 +47,12 @@ fn upload_slot_to_gpu(
 
   if let Some(image) = images.get_mut(texture_handle) {
     upload_pixels(&slot.chunk.pixels, image);
+  }
+
+  if let Some(heat_handle) = heat_texture_handle {
+    if let Some(image) = images.get_mut(heat_handle) {
+      upload_heat(&slot.chunk.heat, image);
+    }
   }
 
   // Touch material to force bind group refresh (Bevy workaround)
@@ -59,12 +76,13 @@ pub(crate) fn upload_dirty_chunks(
   for mut world in worlds.iter_mut() {
     let dirty_slots = collect_dirty_slots(&world);
 
-    for (idx, texture_handle, material_handle) in dirty_slots {
+    for (idx, texture_handle, material_handle, heat_handle) in dirty_slots {
       upload_slot_to_gpu(
         &mut world,
         idx,
         &texture_handle,
         &material_handle,
+        heat_handle.as_ref(),
         &mut images,
         &mut materials,
       );
