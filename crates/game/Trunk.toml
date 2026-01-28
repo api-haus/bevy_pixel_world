@@ -1,0 +1,15 @@
+[build]
+target = "index.html"
+release = true
+no_default_features = true
+
+
+[serve]
+port = 8080
+headers = { "Cross-Origin-Opener-Policy" = "same-origin", "Cross-Origin-Embedder-Policy" = "require-corp" }
+
+# Build sim2d_noise Emscripten module before main build
+[[hooks]]
+stage = "pre_build"
+command = "sh"
+command_arguments = ["-c", "cd ../sim2d_noise && make 2>/dev/null || echo '[sim2d_noise] Skipped (run: source ~/emsdk/emsdk_env.sh)'"]

@@ -3,6 +3,8 @@
 use bevy::math::Vec2;
 use bevy::prelude::*;
 use bevy::tasks::AsyncComputeTaskPool;
+// WASM compat: std::time::Instant panics on wasm32
+use web_time::Instant;
 
 use super::CollisionConfig;
 use super::cache::{CollisionCache, CollisionTasks};
@@ -112,7 +114,7 @@ fn spawn_collision_mesh_task(
   );
 
   let task = task_pool.spawn(async move {
-    let start = std::time::Instant::now();
+    let start = Instant::now();
 
     let contours = marching_squares(&grid, tile_origin);
     let simplified = simplify_polylines(contours, tolerance);

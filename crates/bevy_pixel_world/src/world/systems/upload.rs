@@ -3,6 +3,8 @@
 //! Handles uploading dirty chunk data to GPU textures.
 
 use bevy::prelude::*;
+// WASM compat: std::time::Instant panics on wasm32
+use web_time::Instant;
 
 use super::super::{PixelWorld, SlotIndex};
 use crate::render::{ChunkMaterial, upload_heat, upload_pixels};
@@ -71,7 +73,7 @@ pub(crate) fn upload_dirty_chunks(
   mut materials: ResMut<Assets<ChunkMaterial>>,
   mut sim_metrics: ResMut<crate::diagnostics::SimulationMetrics>,
 ) {
-  let start = std::time::Instant::now();
+  let start = Instant::now();
 
   for mut world in worlds.iter_mut() {
     let dirty_slots = collect_dirty_slots(&world);

@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy_pixel_world::CollisionQueryPoint;
 use bevy_rapier2d::prelude::*;
 
 use super::components::{
@@ -53,6 +54,7 @@ fn spawn_player_entity(commands: &mut Commands, config: &ConfigLoaded, spawn_pos
   commands
     .spawn((
       Player,
+      CollisionQueryPoint, // Required for PixelWorld terrain collision
       Transform::from_translation(spawn_pos),
       Visibility::default(),
       RigidBody::KinematicPositionBased,

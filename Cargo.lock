@@ -1239,6 +1239,7 @@ dependencies = [
  "bitflags 2.10.0",
  "dirs",
  "fastnoise2",
+ "js-sys",
  "lz4_flex",
  "palette",
  "paste",
@@ -1251,6 +1252,8 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tracing-tracy",
+ "wasm-bindgen",
+ "web-time",
 ]
 
 [[package]]
@@ -2879,6 +2882,7 @@ dependencies = [
  "bevy_enhanced_input",
  "bevy_pixel_world",
  "bevy_rapier2d",
+ "console_error_panic_hook",
  "log",
  "rand 0.9.2",
  "rayon",

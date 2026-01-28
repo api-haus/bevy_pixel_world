@@ -75,10 +75,13 @@ pub struct PixelBodyIdGenerator {
 impl Default for PixelBodyIdGenerator {
   fn default() -> Self {
     // Use current time as session seed to avoid ID collisions across sessions
+    #[cfg(not(target_family = "wasm"))]
     let session_seed = std::time::SystemTime::now()
       .duration_since(std::time::UNIX_EPOCH)
       .map(|d| d.as_nanos() as u64)
       .unwrap_or(0);
+    #[cfg(target_family = "wasm")]
+    let session_seed = (js_sys::Date::now() * 1000.0) as u64;
     Self {
       counter: 0,
       session_seed,

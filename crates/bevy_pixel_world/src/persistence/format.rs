@@ -57,10 +57,13 @@ impl Header {
 
   /// Creates a new header with default values.
   pub fn new(world_seed: u64) -> Self {
+    #[cfg(not(target_family = "wasm"))]
     let now = std::time::SystemTime::now()
       .duration_since(std::time::UNIX_EPOCH)
       .map(|d| d.as_secs())
       .unwrap_or(0);
+    #[cfg(target_family = "wasm")]
+    let now = (js_sys::Date::now() / 1000.0) as u64;
 
     Self {
       magic: MAGIC,

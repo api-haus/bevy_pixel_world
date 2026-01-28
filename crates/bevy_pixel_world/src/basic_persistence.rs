@@ -13,8 +13,11 @@ impl Plugin for BasicPersistencePlugin {
 
 fn handle_save_hotkey(
   keys: Res<ButtonInput<KeyCode>>,
-  mut persistence: ResMut<PersistenceControl>,
+  persistence: Option<ResMut<PersistenceControl>>,
 ) {
+  let Some(mut persistence) = persistence else {
+    return;
+  };
   let ctrl_pressed = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
   let s_pressed = keys.just_pressed(KeyCode::KeyS);
 
@@ -27,8 +30,11 @@ fn handle_save_hotkey(
 fn auto_save_system(
   time: Res<Time>,
   mut timer: Local<Option<Timer>>,
-  mut persistence: ResMut<PersistenceControl>,
+  persistence: Option<ResMut<PersistenceControl>>,
 ) {
+  let Some(mut persistence) = persistence else {
+    return;
+  };
   let timer = timer.get_or_insert_with(|| Timer::from_seconds(5.0, TimerMode::Repeating));
   timer.tick(time.delta());
 

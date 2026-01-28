@@ -1,4 +1,5 @@
 use bevy::{camera::ScalingMode, prelude::*};
+use bevy_pixel_world::StreamingCamera;
 
 use crate::config::ConfigLoaded;
 
@@ -24,6 +25,7 @@ impl Default for CameraSmoothness {
 pub fn setup_camera(mut commands: Commands, config: Res<ConfigLoaded>) {
   commands.spawn((
     GameCamera,
+    StreamingCamera, // Required for PixelWorld chunk streaming
     Camera2d,
     Camera {
       order: 0,

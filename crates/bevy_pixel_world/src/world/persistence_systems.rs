@@ -28,8 +28,13 @@ use crate::pixel_body::{LastBlitTransform, Persistable, PixelBody, PixelBodyId};
 /// System: Converts `RequestPersistence` messages into pending save requests.
 pub(crate) fn handle_persistence_messages(
   mut messages: MessageReader<RequestPersistence>,
-  mut persistence: ResMut<PersistenceControl>,
+  persistence: Option<ResMut<PersistenceControl>>,
 ) {
+  let Some(mut persistence) = persistence else {
+    // Drain messages to avoid accumulation
+    for _ in messages.read() {}
+    return;
+  };
   for message in messages.read() {
     let name = persistence.current_save.clone();
     if message.include_bodies {
@@ -46,10 +51,13 @@ pub(crate) fn handle_persistence_messages(
 /// auto-save), this system queues all modified chunks to `PersistenceTasks` so
 /// they get written by `flush_persistence_queue`.
 pub(crate) fn process_pending_save_requests(
-  persistence: Res<PersistenceControl>,
+  persistence: Option<Res<PersistenceControl>>,
   mut persistence_tasks: ResMut<PersistenceTasks>,
   mut worlds: Query<&mut PixelWorld>,
 ) {
+  let Some(persistence) = persistence else {
+    return;
+  };
   if persistence.pending_requests.is_empty() {
     return;
   }
@@ -167,12 +175,17 @@ fn try_flush_to_disk(save: &mut crate::persistence::WorldSave) {
 #[cfg_attr(feature = "tracy", tracing::instrument(skip_all))]
 pub(crate) fn flush_persistence_queue(
   mut persistence_tasks: ResMut<PersistenceTasks>,
-  mut persistence_control: ResMut<PersistenceControl>,
+  persistence_control: Option<ResMut<PersistenceControl>>,
   save_resource: Option<ResMut<WorldSaveResource>>,
 ) {
   if !has_pending_work(&persistence_tasks) {
     return;
   }
+
+  let Some(mut persistence_control) = persistence_control else {
+    discard_queued_operations(&mut persistence_tasks);
+    return;
+  };
 
   let Some(save_resource) = save_resource else {
     discard_queued_operations(&mut persistence_tasks);
@@ -396,7 +409,7 @@ pub(crate) fn save_pixel_bodies_on_chunk_unload(
 #[allow(unused_variables)]
 pub(crate) fn save_pixel_bodies_on_request(
   mut commands: Commands,
-  persistence: Res<PersistenceControl>,
+  persistence: Option<Res<PersistenceControl>>,
   mut persistence_tasks: ResMut<PersistenceTasks>,
   bodies: Query<
     (
@@ -416,6 +429,9 @@ pub(crate) fn save_pixel_bodies_on_request(
     Option<&bevy_rapier2d::prelude::Velocity>,
   >,
 ) {
+  let Some(persistence) = persistence else {
+    return;
+  };
   let save_bodies = persistence
     .pending_requests
     .iter()
@@ -447,9 +463,12 @@ pub(crate) fn save_pixel_bodies_on_request(
 /// Runs after `flush_persistence_queue` to mark handles as complete and emit
 /// messages.
 pub(crate) fn notify_persistence_complete(
-  mut persistence: ResMut<PersistenceControl>,
+  persistence: Option<ResMut<PersistenceControl>>,
   mut complete_messages: MessageWriter<PersistenceComplete>,
 ) {
+  let Some(mut persistence) = persistence else {
+    return;
+  };
   for request in persistence.pending_requests.drain(..) {
     request.completed.store(true, Ordering::Release);
     complete_messages.write(PersistenceComplete {

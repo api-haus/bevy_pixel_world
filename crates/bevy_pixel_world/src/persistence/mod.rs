@@ -40,11 +40,18 @@ pub const DEFAULT_APP_NAME: &str = "pixel_world";
 /// - Linux: `~/.local/share/<app_name>/saves/`
 /// - Windows: `%APPDATA%/<app_name>/saves/`
 /// - macOS: `~/Library/Application Support/<app_name>/saves/`
+#[cfg(feature = "native")]
 pub fn default_save_dir(app_name: &str) -> PathBuf {
   dirs::data_dir()
     .unwrap_or_else(|| PathBuf::from("."))
     .join(app_name)
     .join("saves")
+}
+
+/// WASM: Returns a placeholder path (persistence not yet supported).
+#[cfg(not(feature = "native"))]
+pub fn default_save_dir(_app_name: &str) -> PathBuf {
+  PathBuf::from(".")
 }
 
 /// Polls a future that is expected to be immediately ready.
@@ -391,10 +398,17 @@ impl WorldSave {
     }
 
     // Update header timestamps
-    self.header.modified_time = std::time::SystemTime::now()
-      .duration_since(std::time::UNIX_EPOCH)
-      .map(|d| d.as_secs())
-      .unwrap_or(0);
+    #[cfg(not(target_family = "wasm"))]
+    {
+      self.header.modified_time = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    }
+    #[cfg(target_family = "wasm")]
+    {
+      self.header.modified_time = (js_sys::Date::now() / 1000.0) as u64;
+    }
     self.header.chunk_count = self.index.len() as u32;
     self.header.page_table_size = self.index.serialized_size() as u32;
 

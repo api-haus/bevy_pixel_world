@@ -1,0 +1,137 @@
+[[materials]]
+name = "Void"
+palette = [
+  [135, 206, 235, 0],
+  [135, 206, 235, 0],
+  [135, 206, 235, 0],
+  [135, 206, 235, 0],
+  [135, 206, 235, 0],
+  [135, 206, 235, 0],
+  [135, 206, 235, 0],
+  [135, 206, 235, 0],
+]
+state = "gas"
+
+[[materials]]
+name = "Soil"
+palette = [
+  [139, 90, 43, 255],
+  [130, 82, 38, 255],
+  [121, 74, 33, 255],
+  [112, 66, 28, 255],
+  [103, 58, 23, 255],
+  [94, 50, 18, 255],
+  [85, 42, 13, 255],
+  [76, 34, 8, 255],
+]
+state = "powder"
+density = 150
+air_resistance = 12
+air_drift = 6
+
+[materials.effects]
+blast_resistance = 0.5
+
+[[materials]]
+name = "Stone"
+palette = [
+  [128, 128, 128, 255],
+  [118, 118, 118, 255],
+  [108, 108, 108, 255],
+  [98, 98, 98, 255],
+  [88, 88, 88, 255],
+  [78, 78, 78, 255],
+  [68, 68, 68, 255],
+  [58, 58, 58, 255],
+]
+state = "solid"
+density = 200
+
+[materials.effects]
+blast_resistance = 5.0
+
+[[materials]]
+name = "Sand"
+palette = [
+  [237, 201, 175, 255],
+  [225, 191, 146, 255],
+  [218, 180, 130, 255],
+  [210, 170, 115, 255],
+  [200, 160, 100, 255],
+  [190, 150, 85, 255],
+  [180, 140, 70, 255],
+  [170, 130, 60, 255],
+]
+state = "powder"
+density = 160
+air_resistance = 8
+air_drift = 4
+
+[materials.effects]
+blast_resistance = 0.3
+
+[[materials]]
+name = "Water"
+palette = [
+  [64, 164, 223, 180],
+  [55, 145, 205, 190],
+  [46, 126, 187, 200],
+  [37, 107, 169, 210],
+  [28, 88, 151, 220],
+  [19, 69, 133, 230],
+  [10, 50, 115, 240],
+  [5, 35, 100, 250],
+]
+state = "liquid"
+density = 100
+dispersion = 5
+air_resistance = 16
+air_drift = 12
+
+[materials.effects]
+blast_resistance = 0.1
+
+[[materials]]
+name = "Wood"
+palette = [
+  [205, 170, 125, 255],
+  [185, 145, 100, 255],
+  [165, 120, 80, 255],
+  [145, 100, 65, 255],
+  [130, 85, 50, 255],
+  [110, 70, 40, 255],
+  [90, 55, 30, 255],
+  [70, 45, 25, 255],
+]
+state = "solid"
+density = 80
+ignition_threshold = 40
+
+[materials.effects]
+blast_resistance = 1.0
+
+[materials.effects.on_burn]
+chance = 0.005
+
+[materials.effects.on_burn.effect]
+transform = "Ash"
+
+[[materials]]
+name = "Ash"
+palette = [
+  [180, 175, 170, 255],
+  [165, 160, 155, 255],
+  [150, 145, 140, 255],
+  [140, 135, 130, 255],
+  [130, 125, 120, 255],
+  [120, 115, 110, 255],
+  [110, 105, 100, 255],
+  [100, 95, 90, 255],
+]
+state = "powder"
+density = 60
+air_resistance = 4
+air_drift = 3
+
+[materials.effects]
+blast_resistance = 0.1

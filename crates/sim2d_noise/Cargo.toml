@@ -1,0 +1,19 @@
+[package]
+name = "sim2d_noise"
+version = "0.1.0"
+edition = "2021"
+description = "FastNoise2 native wrapper (Emscripten binary for WASM JS bridge)"
+
+[lib]
+name = "sim2d_noise"
+path = "src/lib.rs"
+
+[[bin]]
+name = "sim2d_noise"
+path = "src/wasm_main.rs"
+
+[dependencies]
+fastnoise2 = { git = "https://github.com/api-haus/fastnoise2-rs", branch = "main", features = ["build-from-source"] }
+
+[features]
+default = []

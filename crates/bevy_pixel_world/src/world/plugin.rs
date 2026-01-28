@@ -3,6 +3,8 @@
 //! Provides automatic chunk streaming, seeding, and GPU upload.
 
 use bevy::prelude::*;
+// WASM compat: std::time::Instant panics on wasm32
+use web_time::Instant;
 
 use super::PixelWorld;
 use super::control::{PersistenceComplete, RequestPersistence, SimulationState};
@@ -189,7 +191,7 @@ fn run_simulation(
 
   let debug_gizmos = gizmos.get();
 
-  let start = std::time::Instant::now();
+  let start = Instant::now();
 
   for mut world in worlds.iter_mut() {
     simulation::simulate_tick(&mut world, &materials, debug_gizmos, &heat_config);

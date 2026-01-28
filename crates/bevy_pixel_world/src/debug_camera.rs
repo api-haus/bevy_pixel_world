@@ -1,9 +1,11 @@
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use bevy::camera::ScalingMode;
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
+// WASM compat: std::time::Instant panics on wasm32
+use web_time::Instant;
 
 use crate::StreamingCamera;
 
@@ -97,9 +99,16 @@ impl Default for CameraPersistence {
 }
 
 pub fn get_camera_settings_path() -> Option<PathBuf> {
-  let data_dir = dirs::data_dir()?;
-  let app_dir = data_dir.join("bevy_pixel_world");
-  Some(app_dir.join(CAMERA_SETTINGS_FILE))
+  #[cfg(feature = "native")]
+  {
+    let data_dir = dirs::data_dir()?;
+    let app_dir = data_dir.join("bevy_pixel_world");
+    Some(app_dir.join(CAMERA_SETTINGS_FILE))
+  }
+  #[cfg(not(feature = "native"))]
+  {
+    None
+  }
 }
 
 fn setup_camera(mut commands: Commands) {

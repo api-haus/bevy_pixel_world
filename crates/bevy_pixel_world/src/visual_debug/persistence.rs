@@ -1,9 +1,11 @@
 //! Persistence for visual debug settings.
 
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use bevy::prelude::*;
+// WASM compat: std::time::Instant panics on wasm32
+use web_time::Instant;
 
 use super::settings::VisualDebugSettings;
 
@@ -41,9 +43,16 @@ impl SettingsPersistence {
 
 /// Returns the path to the settings file.
 fn get_settings_path() -> Option<PathBuf> {
-  let data_dir = dirs::data_dir()?;
-  let app_dir = data_dir.join("bevy_pixel_world");
-  Some(app_dir.join(SETTINGS_FILE))
+  #[cfg(feature = "native")]
+  {
+    let data_dir = dirs::data_dir()?;
+    let app_dir = data_dir.join("bevy_pixel_world");
+    Some(app_dir.join(SETTINGS_FILE))
+  }
+  #[cfg(not(feature = "native"))]
+  {
+    None
+  }
 }
 
 /// Loads settings from disk on startup.
