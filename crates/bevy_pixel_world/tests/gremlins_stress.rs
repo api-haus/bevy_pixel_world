@@ -2,6 +2,7 @@
 //!
 //! Run: cargo test -p bevy_pixel_world gremlins_stress
 
+use std::collections::HashSet;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -105,7 +106,13 @@ struct GremlinState {
   // Spiraloid path parameters
   time: f32,
   phase_offset: f32,
+  // Counters
+  bodies_spawned: u32,
+  bodies_destroyed: u32,
+  chunks_visited: HashSet<(i64, i64)>,
 }
+
+const CHUNK_SIZE: i64 = 64; // Match the actual chunk size
 
 impl GremlinState {
   fn new(seed: u64) -> Self {
@@ -118,7 +125,16 @@ impl GremlinState {
       total_distance: 0.0,
       time: 0.0,
       phase_offset,
+      bodies_spawned: 0,
+      bodies_destroyed: 0,
+      chunks_visited: HashSet::new(),
     }
+  }
+
+  fn track_chunk_at(&mut self, pos: Vec2) {
+    let chunk_x = (pos.x as i64).div_euclid(CHUNK_SIZE);
+    let chunk_y = (pos.y as i64).div_euclid(CHUNK_SIZE);
+    self.chunks_visited.insert((chunk_x, chunk_y));
   }
 
   fn is_idle(&self) -> bool {
@@ -164,7 +180,7 @@ const MATERIALS: [bevy_pixel_world::MaterialId; 4] = [
   material_ids::WOOD,
 ];
 
-fn gremlin_spawn_body(harness: &mut TestHarness, rng: &mut StdRng) {
+fn gremlin_spawn_body(harness: &mut TestHarness, rng: &mut StdRng) -> bool {
   let x = rng.gen_range(-200.0..200.0f32);
   let y = rng.gen_range(-200.0..200.0f32);
   let size = rng.gen_range(4..=16u32);
@@ -197,9 +213,10 @@ fn gremlin_spawn_body(harness: &mut TestHarness, rng: &mut StdRng) {
     body_id,
     Persistable,
   ));
+  true
 }
 
-fn gremlin_destroy_body(harness: &mut TestHarness, rng: &mut StdRng) {
+fn gremlin_destroy_body(harness: &mut TestHarness, rng: &mut StdRng) -> bool {
   let bodies: Vec<Entity> = harness
     .app
     .world_mut()
@@ -211,6 +228,9 @@ fn gremlin_destroy_body(harness: &mut TestHarness, rng: &mut StdRng) {
     let idx = rng.gen_range(0..bodies.len());
     let entity = bodies[idx];
     harness.app.world_mut().despawn(entity);
+    true
+  } else {
+    false
   }
 }
 
@@ -317,9 +337,10 @@ fn run_gremlins_with_seed(seed: u64, duration_secs: u64) {
     let target_pos = state.compute_target_position();
     harness.move_camera(target_pos.extend(0.0));
 
-    // Track distance
+    // Track distance and chunks visited
     let distance_this_tick = (target_pos - last_pos).length();
     state.total_distance += distance_this_tick;
+    state.track_chunk_at(target_pos);
     last_pos = target_pos;
 
     // Advance along the path
@@ -339,8 +360,16 @@ fn run_gremlins_with_seed(seed: u64, duration_secs: u64) {
     let action_count = state.rng.gen_range(1..=3usize);
     for _ in 0..action_count {
       match state.rng.gen_range(0..6u32) {
-        0 => gremlin_spawn_body(&mut harness, &mut state.rng),
-        1 => gremlin_destroy_body(&mut harness, &mut state.rng),
+        0 => {
+          if gremlin_spawn_body(&mut harness, &mut state.rng) {
+            state.bodies_spawned += 1;
+          }
+        }
+        1 => {
+          if gremlin_destroy_body(&mut harness, &mut state.rng) {
+            state.bodies_destroyed += 1;
+          }
+        }
         2 => gremlin_pan_camera(&mut harness, &mut state.rng),
         3 => gremlin_paint_material(&mut harness, &mut state.rng),
         4 => gremlin_paint_void(&mut harness, &mut state.rng),
@@ -351,10 +380,28 @@ fn run_gremlins_with_seed(seed: u64, duration_secs: u64) {
     harness.app.update();
     state.tick += 1;
   }
+
+  // Count remaining bodies
+  let final_body_count: usize = harness
+    .app
+    .world_mut()
+    .query_filtered::<Entity, With<PixelBody>>()
+    .iter(harness.app.world())
+    .count();
+
   let final_pos = harness.camera_position();
   eprintln!(
-    "gremlins: seed {:#X} | {} ticks | distance: {:.0} | final pos: ({:.0}, {:.0})",
-    seed, state.tick, state.total_distance, final_pos.x, final_pos.y
+    "gremlins: seed {:#X} | {} ticks | dist: {:.0} | chunks: {} | bodies: +{} -{} (={}) | pos: \
+     ({:.0}, {:.0})",
+    seed,
+    state.tick,
+    state.total_distance,
+    state.chunks_visited.len(),
+    state.bodies_spawned,
+    state.bodies_destroyed,
+    final_body_count,
+    final_pos.x,
+    final_pos.y
   );
 }
 
