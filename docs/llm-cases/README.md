@@ -20,6 +20,13 @@ Build a corpus of concrete examples to inform better methodology for spec-driven
 | [008](008-fix-breaks-unrelated-systems.md) | Fix Breaks Unrelated Systems | Rendering | coordinate change breaks egui |
 | [009](009-manual-verification-loop.md) | Manual Verification Loop | Testing | repeated demo runs instead of tests |
 | [010](010-non-standard-algorithm-approach.md) | Non-Standard Algorithm Approach | Collision | "why are we connecting segments?" |
+| [011](011-hallucinated-api.md) | Hallucinated API | Physics | using non-existent enum variant |
+| [012](012-ignoring-workflow-constraints.md) | Ignoring Workflow Constraints | Git | working in main despite worktree rules |
+| [013](013-documenting-discarded-ideas.md) | Documenting Discarded Ideas | Documentation | presenting exploration as reference |
+| [014](014-design-principle-violation.md) | Design Principle Violation | Persistence | stub fields violating LSP |
+| [015](015-collateral-file-deletion.md) | Collateral File Deletion | Testing | deleting active debug file |
+| [016](016-build-passes-runtime-crashes.md) | Build Passes, Runtime Crashes | Core | "build succeeded" without runtime check |
+| [017](017-deflecting-blame-to-externals.md) | Deflecting Blame to Externals | Physics | "pre-existing bug, not our changes" |
 
 ## Common Signals
 
@@ -61,6 +68,13 @@ Phrases that effectively redirect Claude:
 8. **Cascading Breakage** (#008) - Changing foundational assumptions breaks unrelated systems
 9. **Manual Over Automated** (#009) - Repeated manual verification instead of writing tests
 10. **Reinventing Standard Solutions** (#010) - Novel approach creates problems standard algorithm avoids
+11. **Hallucinated APIs** (#011) - Confidently using APIs that don't exist
+12. **Ignoring Constraints** (#012) - Documented rules overridden by default behavior
+13. **Process as Product** (#013) - Documenting exploration instead of conclusions
+14. **Design Smell Tolerance** (#014) - Adding stubs instead of fixing abstractions
+15. **Collateral Damage** (#015) - Deleting files without checking if they're in use
+16. **Incomplete Verification** (#016) - Declaring success after build without runtime test
+17. **External Attribution** (#017) - Blaming dependencies instead of investigating changes
 
 ## Session Archive
 
