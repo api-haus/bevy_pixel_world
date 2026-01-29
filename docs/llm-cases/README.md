@@ -27,6 +27,10 @@ Build a corpus of concrete examples to inform better methodology for spec-driven
 | [015](015-collateral-file-deletion.md) | Collateral File Deletion | Testing | deleting active debug file |
 | [016](016-build-passes-runtime-crashes.md) | Build Passes, Runtime Crashes | Core | "build succeeded" without runtime check |
 | [017](017-deflecting-blame-to-externals.md) | Deflecting Blame to Externals | Physics | "pre-existing bug, not our changes" |
+| [018](018-losing-track-of-goal.md) | Losing Track of Goal | Persistence | "WASM persistence not yet integrated" (was the task) |
+| [019](019-thrashing-without-methodology.md) | Thrashing Without Methodology | Pixel Bodies | repeated fixes without systematic debugging |
+| [020](020-unwanted-fallback-code.md) | Unwanted Fallback Code | Noise | adding fallbacks instead of fixing primary |
+| [021](021-unexpected-behavior-changes.md) | Unexpected Behavior Changes | Rendering | feature change alters unrelated startup |
 
 ## Common Signals
 
@@ -75,6 +79,10 @@ Phrases that effectively redirect Claude:
 15. **Collateral Damage** (#015) - Deleting files without checking if they're in use
 16. **Incomplete Verification** (#016) - Declaring success after build without runtime test
 17. **External Attribution** (#017) - Blaming dependencies instead of investigating changes
+18. **Goal Amnesia** (#018) - Forgetting the task purpose mid-implementation
+19. **Guess-and-Check** (#019) - Repeated fixes without systematic investigation
+20. **Graceful Degradation Creep** (#020) - Adding fallbacks instead of fixing the real implementation
+21. **Ripple Regressions** (#021) - Feature changes breaking unrelated functionality
 
 ## Session Archive
 
