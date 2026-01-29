@@ -101,38 +101,41 @@ pub fn process_detonations(
     return;
   };
 
-  for &(_entity, radius, strength, center) in &detonations {
-    let params = BlastParams {
+  // Build blast params for all detonations
+  let blast_params: Vec<BlastParams> = detonations
+    .iter()
+    .map(|&(_, radius, strength, center)| BlastParams {
       center,
       strength,
       max_radius: radius,
       heat_radius: radius * 4.0,
+    })
+    .collect();
+
+  // Process all blasts in a single batched operation
+  world.blast_many(&blast_params, |pixel, pos| {
+    let mat = materials.get(pixel.material);
+    let cost = mat.effects.blast_resistance;
+
+    // 90% void, 10% ash
+    let roll = hash41uu64(0xB00B, pos.x as u64, pos.y as u64, 0xDEAD);
+    let new_pixel = if roll.is_multiple_of(10) {
+      let color_idx = (roll / 10 % 256) as u8;
+      Pixel {
+        material: crate::material::ids::ASH,
+        color: ColorIndex(color_idx),
+        damage: 0,
+        flags: PixelFlags::DIRTY | PixelFlags::SOLID | PixelFlags::FALLING,
+      }
+    } else {
+      Pixel::VOID
     };
 
-    world.blast(&params, |pixel, pos| {
-      let mat = materials.get(pixel.material);
-      let cost = mat.effects.blast_resistance;
-
-      // 90% void, 10% ash
-      let roll = hash41uu64(0xB00B, pos.x as u64, pos.y as u64, 0xDEAD);
-      let new_pixel = if roll.is_multiple_of(10) {
-        let color_idx = (roll / 10 % 256) as u8;
-        Pixel {
-          material: crate::material::ids::ASH,
-          color: ColorIndex(color_idx),
-          damage: 0,
-          flags: PixelFlags::DIRTY | PixelFlags::SOLID | PixelFlags::FALLING,
-        }
-      } else {
-        Pixel::VOID
-      };
-
-      BlastHit::Hit {
-        pixel: new_pixel,
-        cost,
-      }
-    });
-  }
+    BlastHit::Hit {
+      pixel: new_pixel,
+      cost,
+    }
+  });
 
   // Chain-detonate nearby bombs
   let centers: Vec<(f32, Vec2)> = detonations.iter().map(|&(_, r, _, c)| (r, c)).collect();
