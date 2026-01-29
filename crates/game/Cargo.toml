@@ -28,6 +28,6 @@ dirs = "6"
 console_error_panic_hook = "0.1"
 
 [features]
-default = ["dev"]
+default = []
 dev = ["bevy/dynamic_linking", "bevy/file_watcher", "editor"]
 editor = ["dep:bevy-yoleck"]
