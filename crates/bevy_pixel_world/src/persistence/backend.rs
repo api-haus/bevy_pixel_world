@@ -10,7 +10,12 @@ use std::pin::Pin;
 use std::{fmt, io};
 
 /// Boxed future type used by all trait methods for object safety.
+#[cfg(not(target_family = "wasm"))]
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
+/// Boxed future type for WASM (single-threaded, no Send required).
+#[cfg(target_family = "wasm")]
+pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + 'a>>;
 
 /// Error type for backend operations.
 #[derive(Debug)]
@@ -54,7 +59,7 @@ impl From<BackendError> for io::Error {
     match err {
       BackendError::Io(e) => e,
       BackendError::NotFound => io::Error::new(io::ErrorKind::NotFound, "not found"),
-      BackendError::Other(e) => io::Error::other(e),
+      BackendError::Other(e) => io::Error::new(io::ErrorKind::Other, e),
     }
   }
 }
@@ -109,4 +114,48 @@ pub trait StorageFs: Send + Sync {
 
   /// Copies a file from one name to another.
   fn copy(&self, from: &str, to: &str) -> BoxFuture<'_, Result<(), BackendError>>;
+}
+
+use std::sync::Arc;
+
+use super::WorldSave;
+
+/// High-level persistence backend trait.
+///
+/// Implementations encapsulate their storage filesystem internally.
+/// Consumers never access the underlying fs directly - all operations
+/// go through this trait.
+///
+/// Both native and WASM implementations are complete - no `Option` wrapping
+/// needed. WASM backend is only inserted after async init completes.
+pub trait PersistenceBackend: Send + Sync {
+  /// Lists all save files (returns names without .save extension).
+  fn list_saves(&self) -> io::Result<Vec<String>>;
+
+  /// Deletes a save file.
+  fn delete_save(&self, name: &str) -> io::Result<()>;
+
+  /// Opens or creates a world save asynchronously.
+  ///
+  /// Native: resolves immediately (sync I/O wrapped in ready future).
+  /// WASM: actual async OPFS operations.
+  fn open_or_create_async<'a>(
+    &'a self,
+    name: &'a str,
+    seed: u64,
+  ) -> BoxFuture<'a, Result<WorldSave, String>>;
+
+  /// Copies a save to a new name (copy-on-write).
+  ///
+  /// The save must be flushed before copying to ensure consistency.
+  /// Returns a new WorldSave handle for the copied file.
+  fn save_copy(&self, save: &mut WorldSave, to_name: &str) -> io::Result<WorldSave>;
+
+  /// Returns a reference to the underlying StorageFs.
+  ///
+  /// Used internally for operations that need direct fs access (like copy_to).
+  fn fs(&self) -> &dyn StorageFs;
+
+  /// Returns an Arc to the underlying StorageFs for shared access.
+  fn fs_arc(&self) -> Arc<dyn StorageFs>;
 }

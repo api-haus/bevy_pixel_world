@@ -541,6 +541,10 @@ fn save_seeded_world_succeeds() {
 fn current_save_tracks_loaded_name() {
   let mut harness = NamedSavesHarness::new("myworld");
 
-  let current = harness.persistence_control().current_save().to_string();
+  let current = harness
+    .persistence_control()
+    .current_save()
+    .expect("save should be loaded")
+    .to_string();
   assert_eq!(current, "myworld", "current_save should match loaded name");
 }

@@ -14,7 +14,7 @@ use bevy::prelude::*;
 pub use gizmos::{ActiveGizmos, GizmoKind, PendingDebugGizmos, PendingGizmo};
 pub use persistence::SettingsPersistence;
 pub use settings::VisualDebugSettings;
-use systems::{draw_pixel_body_centers, render_debug_gizmos};
+use systems::{debug_persistence_keyboard, draw_pixel_body_centers, render_debug_gizmos};
 pub use ui::visual_debug_checkboxes;
 
 /// Plugin that enables visual debug gizmos.
@@ -26,7 +26,14 @@ impl Plugin for VisualDebugPlugin {
       .init_resource::<PendingDebugGizmos>()
       .init_resource::<ActiveGizmos>()
       .add_systems(Startup, persistence::load_settings)
-      .add_systems(Update, (render_debug_gizmos, draw_pixel_body_centers))
+      .add_systems(
+        Update,
+        (
+          render_debug_gizmos,
+          draw_pixel_body_centers,
+          debug_persistence_keyboard,
+        ),
+      )
       .add_systems(
         Update,
         (persistence::save_settings, systems::sync_collision_config)

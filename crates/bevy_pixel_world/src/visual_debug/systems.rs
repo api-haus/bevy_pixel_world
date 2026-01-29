@@ -5,6 +5,9 @@ use bevy::prelude::*;
 use super::gizmos::{ActiveGizmo, ActiveGizmos, PendingDebugGizmos};
 use super::settings::VisualDebugSettings;
 use crate::pixel_body::PixelBody;
+use crate::world::PixelWorld;
+use crate::world::control::PersistenceControl;
+use crate::world::slot::ChunkLifecycle;
 
 /// System that renders debug gizmos.
 ///
@@ -105,5 +108,60 @@ pub fn sync_collision_config(
   let Some(mut config) = config else { return };
   if config.debug_gizmos != settings.show_collision_meshes {
     config.debug_gizmos = settings.show_collision_meshes;
+  }
+}
+
+/// Debug keyboard controls for persistence testing.
+///
+/// - P: Persist all modified chunks to storage
+/// - R: Reload all chunks from storage (re-seed from persisted data)
+pub fn debug_persistence_keyboard(
+  keyboard: Res<ButtonInput<KeyCode>>,
+  mut persistence: Option<ResMut<PersistenceControl>>,
+  mut worlds: Query<&mut PixelWorld>,
+) {
+  // P = Persist all modified chunks
+  if keyboard.just_pressed(KeyCode::KeyP) {
+    if let Some(ref mut persistence) = persistence {
+      if let Some(name) = persistence.save_name().map(String::from) {
+        persistence.save(&name);
+        info!("[Debug] Triggered persistence for all modified chunks");
+      } else {
+        warn!("[Debug] No save loaded - persistence not ready");
+      }
+    } else {
+      warn!("[Debug] No PersistenceControl available - persistence disabled");
+    }
+  }
+
+  // R = Reload all chunks from storage
+  if keyboard.just_pressed(KeyCode::KeyR) {
+    let mut total_reloaded = 0;
+    for mut world in worlds.iter_mut() {
+      // Collect active chunk positions and indices
+      let active: Vec<_> = world.active_chunks().collect();
+
+      for (_pos, idx) in active {
+        let slot = world.slot_mut(idx);
+        // Only reload chunks that are fully active
+        if slot.lifecycle == ChunkLifecycle::Active {
+          // Reset to Loading state so dispatch_chunk_loads sends LoadChunk command.
+          // This is required on WASM where I/O goes through the worker.
+          slot.lifecycle = ChunkLifecycle::Loading;
+          slot.dirty = true; // Force GPU re-upload after reload
+          slot.modified = false;
+          slot.persisted = false;
+          total_reloaded += 1;
+        }
+      }
+    }
+    if total_reloaded > 0 {
+      info!(
+        "[Debug] Queued {} chunks for reload from storage",
+        total_reloaded
+      );
+    } else {
+      warn!("[Debug] No active chunks to reload");
+    }
   }
 }

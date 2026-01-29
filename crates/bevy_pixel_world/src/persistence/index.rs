@@ -14,7 +14,7 @@ use crate::coords::ChunkPos;
 /// Runtime index for chunk positions to page table entries.
 ///
 /// Uses HashMap for O(1) lookups. Serializes to sorted array on disk.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct ChunkIndex {
   entries: HashMap<ChunkPos, PageTableEntry>,
 }
@@ -122,7 +122,7 @@ impl ChunkIndex {
 }
 
 /// Index entry for a persisted pixel body.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PixelBodyIndexEntry {
   /// Stable ID of the pixel body.
   pub stable_id: u64,
@@ -168,7 +168,7 @@ impl PixelBodyIndexEntry {
 ///
 /// Maps chunk positions to the pixel bodies whose centers are in that chunk.
 /// Also maintains a by-ID lookup for deduplication.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct PixelBodyIndex {
   /// Bodies indexed by their stable ID.
   by_id: HashMap<u64, PixelBodyIndexEntry>,

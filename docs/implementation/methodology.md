@@ -173,6 +173,141 @@ app.add_systems(Update, upload_textures);
 
 ---
 
+## Cross-Platform Implementation
+
+When writing code that targets multiple platforms (native + WASM), keep platform differences isolated to trait implementations.
+
+### Uniform Data Structures
+
+**Wrong** — different types per platform:
+
+```rust
+struct Foo {
+    #[cfg(not(target_family = "wasm"))]
+    backend: Arc<dyn Backend>,
+    #[cfg(target_family = "wasm")]
+    backend: Option<Arc<dyn Backend>>,
+}
+```
+
+**Right** — same type everywhere:
+
+```rust
+struct Foo {
+    backend: Option<Arc<dyn Backend>>,
+}
+```
+
+The struct definition should be identical on all platforms. Use `Option` if a field may be absent on some platforms.
+
+### Platform Logic in Trait Implementations Only
+
+**Wrong** — conditional logic in business code:
+
+```rust
+fn is_ready(&self) -> bool {
+    #[cfg(target_family = "wasm")]
+    { self.name.is_some() }
+    #[cfg(not(target_family = "wasm"))]
+    { self.file.is_some() }
+}
+```
+
+**Right** — same logic everywhere:
+
+```rust
+fn is_ready(&self) -> bool {
+    self.name.is_some()
+}
+```
+
+The only places `#[cfg(target_family)]` should appear:
+
+1. Module declarations: `#[cfg(not(target_family = "wasm"))] mod native;`
+2. Trait implementations inside those modules
+
+Business logic should be platform-agnostic.
+
+### The Abstraction Boundary
+
+```
+┌─────────────────────────────────────────┐
+│  Business Logic (platform-agnostic)     │
+│  - No #[cfg(target_family)] here        │
+└─────────────────────────────────────────┘
+                    │
+                    ▼ uses trait
+┌─────────────────────────────────────────┐
+│  Abstraction Layer                      │
+│  - Resource with platform-specific impl │
+│  - Shared command/result types          │
+└─────────────────────────────────────────┘
+                    │
+        ┌───────────┴───────────┐
+        ▼                       ▼
+┌───────────────┐       ┌───────────────┐
+│ native.rs     │       │ wasm.rs       │
+│ #[cfg] here   │       │ #[cfg] here   │
+└───────────────┘       └───────────────┘
+```
+
+`#[cfg]` appears at the leaves, never at the trunk.
+
+### Naming
+
+**Wrong** — implementation detail or platform in name:
+
+```rust
+fn for_io_dispatcher(name: String) -> Self
+fn wasm_with_dispatcher(name: String) -> Self
+```
+
+**Right** — describes behavior:
+
+```rust
+fn with_name_only(name: String) -> Self
+```
+
+API names describe behavior, not implementation details or platform constraints.
+
+### No Platform-Specific Comments on Shared Code
+
+**Wrong:**
+
+```rust
+/// The loaded file. None on WASM (handle is in worker).
+file: Option<Arc<File>>,
+```
+
+**Right:**
+
+```rust
+/// The loaded file.
+file: Option<Arc<File>>,
+```
+
+If a field needs a platform-specific explanation, the abstraction is leaking. Fix the abstraction.
+
+### One Name Per Concept
+
+**Wrong:**
+
+```rust
+save: Option<Arc<WorldSave>>,  // the object
+current_save: Option<String>,  // ...the name? the current one?
+```
+
+**Right:**
+
+```rust
+world_save: Option<Arc<WorldSave>>,  // clearly the object
+save_name: Option<String>,           // clearly just the name
+```
+
+Distinct concepts need distinct, self-explanatory names.
+
+---
+
 ## Documentation
 
 ### Plans Stay High-Level
@@ -213,3 +348,4 @@ of text. Use:
 5. Visual verification is valid verification
 6. Plans describe what, not how
 7. Apply `#[cfg]` at the exact point of divergence
+8. Cross-platform: uniform structs, `#[cfg]` only in trait impls

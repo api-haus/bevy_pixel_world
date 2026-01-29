@@ -10,9 +10,11 @@ use bevy::tasks::{AsyncComputeTaskPool, Task};
 use super::SeededChunks;
 use crate::coords::{CHUNK_SIZE, ChunkPos};
 use crate::debug_shim;
+use crate::persistence::LoadedChunk;
 use crate::primitives::Chunk;
 use crate::world::PixelWorld;
 use crate::world::SlotIndex;
+use crate::world::persistence_systems::LoadedChunkDataStore;
 use crate::world::slot::ChunkLifecycle;
 
 /// Resource holding async seeding tasks.
@@ -37,6 +39,7 @@ pub(super) struct SeedingTask {
 const MAX_SEEDING_TASKS: usize = 2;
 
 /// Creates and seeds a new chunk at the given position.
+#[allow(dead_code)] // Kept for non-persistence code paths
 pub(crate) fn seed_chunk(
   seeder: &(dyn crate::seeding::ChunkSeeder + Send + Sync),
   pos: ChunkPos,
@@ -44,6 +47,42 @@ pub(crate) fn seed_chunk(
   let mut chunk = Chunk::new(CHUNK_SIZE, CHUNK_SIZE);
   chunk.set_pos(pos);
   seeder.seed(pos, &mut chunk);
+  chunk
+}
+
+/// Creates and seeds a new chunk with pre-loaded persistence data.
+///
+/// Applies loaded data directly instead of relying on the seeder's
+/// `seed_with_loaded` method. This ensures loaded data is used regardless
+/// of whether the seeder is wrapped with `PersistenceSeeder`.
+pub(crate) fn seed_chunk_with_loaded(
+  seeder: &(dyn crate::seeding::ChunkSeeder + Send + Sync),
+  pos: ChunkPos,
+  loaded: Option<LoadedChunk>,
+) -> Chunk {
+  let mut chunk = Chunk::new(CHUNK_SIZE, CHUNK_SIZE);
+  chunk.set_pos(pos);
+
+  if let Some(loaded_chunk) = loaded {
+    // Apply loaded data directly
+    if loaded_chunk.seeder_needed {
+      // Delta encoding - seed first, then apply delta
+      seeder.seed(pos, &mut chunk);
+    }
+    if let Err(e) = loaded_chunk.apply_to(&mut chunk) {
+      warn!(
+        "Failed to apply saved chunk at {:?}: {}. Regenerating.",
+        pos, e
+      );
+      seeder.seed(pos, &mut chunk);
+    } else {
+      chunk.from_persistence = true;
+    }
+  } else {
+    // No loaded data, just seed procedurally
+    seeder.seed(pos, &mut chunk);
+  }
+
   chunk
 }
 
@@ -85,7 +124,7 @@ fn collect_in_flight_tasks(
   (count, slots)
 }
 
-/// Spawns an async seeding task for a chunk.
+/// Spawns an async seeding task for a chunk with optional pre-loaded data.
 fn spawn_seeding_task(
   seeding_tasks: &mut SeedingTasks,
   task_pool: &AsyncComputeTaskPool,
@@ -93,9 +132,10 @@ fn spawn_seeding_task(
   world: &PixelWorld,
   pos: ChunkPos,
   slot_idx: SlotIndex,
+  loaded: Option<LoadedChunk>,
 ) {
   let seeder = world.seeder().clone();
-  let task = task_pool.spawn(async move { seed_chunk(seeder.as_ref(), pos) });
+  let task = task_pool.spawn(async move { seed_chunk_with_loaded(seeder.as_ref(), pos, loaded) });
 
   seeding_tasks.tasks.push(SeedingTask {
     world_entity,
@@ -105,15 +145,20 @@ fn spawn_seeding_task(
   });
 }
 
-/// System: Dispatches async seeding tasks for unseeded chunks.
+/// System: Dispatches async seeding tasks for chunks in Seeding state.
 ///
-/// When rendering is absent, all unseeded chunks are dispatched at once
+/// Chunks must be in Seeding state (not Loading or Active) to have tasks
+/// dispatched. Pre-loaded persistence data is passed to the seeder if
+/// available.
+///
+/// When rendering is absent, all seeding chunks are dispatched at once
 /// (no task limit), so `poll_seeding_tasks` can block-complete them in
 /// the same frame.
 #[cfg_attr(feature = "tracy", tracing::instrument(skip_all))]
 pub(crate) fn dispatch_seeding(
   mut seeding_tasks: ResMut<SeedingTasks>,
   mut worlds: Query<(Entity, &mut PixelWorld)>,
+  mut loaded_data: ResMut<LoadedChunkDataStore>,
   rendering: Option<Res<crate::world::plugin::RenderingEnabled>>,
 ) {
   let task_pool = AsyncComputeTaskPool::get();
@@ -137,9 +182,22 @@ pub(crate) fn dispatch_seeding(
       }
 
       let slot = world.slot(slot_idx);
-      if slot.is_seeded() {
+      // Only dispatch for chunks in Seeding state (not Loading or Active)
+      if !slot.is_seeding() {
         continue;
       }
+
+      // Take any pre-loaded data for this chunk
+      let loaded = loaded_data.take(pos);
+
+      info!(
+        "[WASM-DEBUG] dispatch_seeding {:?}: loaded={}",
+        pos,
+        loaded
+          .as_ref()
+          .map(|l| format!("{} bytes", l.data.len()))
+          .unwrap_or_else(|| "None".to_string())
+      );
 
       spawn_seeding_task(
         &mut seeding_tasks,
@@ -148,6 +206,7 @@ pub(crate) fn dispatch_seeding(
         &world,
         pos,
         slot_idx,
+        loaded,
       );
 
       in_flight += 1;
