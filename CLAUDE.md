@@ -81,6 +81,11 @@ cp -r target/ ../sim2d-<suffix>/target/
 
 > **Tip**: Use `cp -r` (not `cp -al`) so each worktree gets independent files. Hard links would cause lock conflicts when compiling multiple worktrees concurrently. sccache still shares cached artifacts across worktrees.
 
+> **Tip**: After copying `target/`, remove stale CMake build artifacts to avoid path mismatch errors:
+> ```bash
+> rm -rf target/debug/build/fastnoise2-sys-*
+> ```
+
 ### Conventions
 
 - **Location**: Sibling directories (`../sim2d-<suffix>`)

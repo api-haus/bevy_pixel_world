@@ -4,7 +4,7 @@ test:
     cargo test -p bevy_pixel_world
 
 dev:
-    cargo run -p game
+    cargo run -p game --features dev
 
 game:
     cargo run -p game --release
