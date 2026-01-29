@@ -5,7 +5,7 @@ no_default_features = true
 
 
 [serve]
-port = 8080
+port = 50080
 headers = { "Cross-Origin-Opener-Policy" = "same-origin", "Cross-Origin-Embedder-Policy" = "require-corp" }
 
 # Build sim2d_noise Emscripten module before main build
