@@ -10,8 +10,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      actions: write  # Required for sccache GHA cache
     env:
-      RUSTC_WRAPPER: ""  # Disable sccache (not installed in CI)
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
     steps:
       - uses: actions/checkout@v4
 
@@ -38,12 +40,16 @@ jobs:
           toolchain: nightly-2025-11-15
           targets: wasm32-unknown-unknown,wasm32-unknown-emscripten
 
-      - name: Cache Rust compilation
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Cache Cargo registry
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
             .
             crates/sim2d_noise
+          cache-on-failure: true
 
       - name: Install Trunk
         run: |
@@ -67,6 +73,9 @@ jobs:
       - name: Build WASM with Trunk
         working-directory: crates/game
         run: trunk build --release
+
+      - name: Show sccache stats
+        run: sccache --show-stats
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
