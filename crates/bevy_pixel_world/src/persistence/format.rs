@@ -242,6 +242,17 @@ fn crc8_update(crc: &mut u8, byte: u8) {
   }
 }
 
+/// Computes CRC8 checksum over multiple byte slices.
+fn checksum_fields(fields: &[&[u8]]) -> u8 {
+  let mut crc: u8 = 0;
+  for field in fields {
+    for &byte in *field {
+      crc8_update(&mut crc, byte);
+    }
+  }
+  crc
+}
+
 impl PageTableEntry {
   /// Entry size in bytes.
   pub const SIZE: usize = 24;
@@ -268,22 +279,13 @@ impl PageTableEntry {
 
   /// Computes CRC8 checksum of the entry (excluding checksum field).
   pub fn compute_checksum(&self) -> u8 {
-    // Simple CRC8 using polynomial 0x07 (CRC-8-CCITT)
-    let mut crc: u8 = 0;
-    for &byte in &self.chunk_x.to_le_bytes() {
-      crc8_update(&mut crc, byte);
-    }
-    for &byte in &self.chunk_y.to_le_bytes() {
-      crc8_update(&mut crc, byte);
-    }
-    for byte in self.data_offset.to_le_bytes() {
-      crc8_update(&mut crc, byte);
-    }
-    for byte in self.data_size.to_le_bytes() {
-      crc8_update(&mut crc, byte);
-    }
-    crc8_update(&mut crc, self.storage_type as u8);
-    crc
+    checksum_fields(&[
+      &self.chunk_x.to_le_bytes(),
+      &self.chunk_y.to_le_bytes(),
+      &self.data_offset.to_le_bytes(),
+      &self.data_size.to_le_bytes(),
+      &[self.storage_type as u8],
+    ])
   }
 
   /// Validates the entry checksum.
@@ -403,26 +405,14 @@ impl PixelBodyRecordHeader {
 
   /// Computes CRC8 checksum of the header (excluding checksum field).
   pub fn compute_checksum(&self) -> u8 {
-    let mut crc: u8 = 0;
-    for &byte in &self.stable_id.to_le_bytes() {
-      crc8_update(&mut crc, byte);
-    }
-    for &byte in &self.position_x.to_le_bytes() {
-      crc8_update(&mut crc, byte);
-    }
-    for &byte in &self.position_y.to_le_bytes() {
-      crc8_update(&mut crc, byte);
-    }
-    for &byte in &self.rotation.to_le_bytes() {
-      crc8_update(&mut crc, byte);
-    }
-    for &byte in &self.width.to_le_bytes() {
-      crc8_update(&mut crc, byte);
-    }
-    for &byte in &self.height.to_le_bytes() {
-      crc8_update(&mut crc, byte);
-    }
-    crc
+    checksum_fields(&[
+      &self.stable_id.to_le_bytes(),
+      &self.position_x.to_le_bytes(),
+      &self.position_y.to_le_bytes(),
+      &self.rotation.to_le_bytes(),
+      &self.width.to_le_bytes(),
+      &self.height.to_le_bytes(),
+    ])
   }
 
   /// Validates the header checksum.
