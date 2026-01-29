@@ -44,121 +44,77 @@ impl OpfsFile {
       handle: Rc::new(RefCell::new(Some(handle))),
     }
   }
+
+  /// Executes a closure with the sync access handle.
+  ///
+  /// Returns an error if the handle has been closed.
+  fn with_handle<T, F>(&self, f: F) -> Result<T, BackendError>
+  where
+    F: FnOnce(&FileSystemSyncAccessHandle) -> Result<T, JsValue>,
+  {
+    let borrowed = self.handle.borrow();
+    let handle = borrowed
+      .as_ref()
+      .ok_or_else(|| BackendError::Other("File handle closed".into()))?;
+    f(handle).map_err(js_to_backend_error)
+  }
 }
 
 impl StorageFile for OpfsFile {
   fn read_at(&self, offset: u64, buf: &mut [u8]) -> BoxFuture<'_, Result<(), BackendError>> {
-    let handle = self.handle.clone();
     let len = buf.len();
-
-    let borrowed = handle.borrow();
-    let Some(h) = borrowed.as_ref() else {
-      return Box::pin(std::future::ready(Err(BackendError::Other(
-        "File handle closed".into(),
-      ))));
-    };
-
-    // Create options with offset
     let options = FileSystemReadWriteOptions::new();
     options.set_at(offset as f64);
 
-    let result = h.read_with_u8_array_and_options(buf, &options);
-    drop(borrowed);
-
-    match result {
-      Ok(bytes_read) => {
-        if bytes_read as usize != len {
-          return Box::pin(std::future::ready(Err(BackendError::Io(
-            std::io::Error::new(
-              std::io::ErrorKind::UnexpectedEof,
-              format!("read {} bytes, expected {}", bytes_read, len),
-            ),
-          ))));
-        }
-        Box::pin(std::future::ready(Ok(())))
+    let result = self.with_handle(|h| {
+      let bytes_read = h.read_with_u8_array_and_options(buf, &options)?;
+      if bytes_read as usize != len {
+        return Err(JsValue::from_str(&format!(
+          "read {} bytes, expected {}",
+          bytes_read, len
+        )));
       }
-      Err(e) => Box::pin(std::future::ready(Err(js_to_backend_error(e)))),
-    }
+      Ok(())
+    });
+
+    // Convert string error to IO error for EOF case
+    let result = result.map_err(|e| {
+      if let BackendError::Other(err) = &e {
+        let msg = err.to_string();
+        if msg.contains("read") && msg.contains("expected") {
+          return BackendError::Io(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, msg));
+        }
+      }
+      e
+    });
+
+    Box::pin(std::future::ready(result))
   }
 
   fn write_at(&self, offset: u64, data: &[u8]) -> BoxFuture<'_, Result<(), BackendError>> {
-    let handle = self.handle.clone();
-
-    let borrowed = handle.borrow();
-    let Some(h) = borrowed.as_ref() else {
-      return Box::pin(std::future::ready(Err(BackendError::Other(
-        "File handle closed".into(),
-      ))));
-    };
-
-    // Create options with offset
     let options = FileSystemReadWriteOptions::new();
     options.set_at(offset as f64);
 
-    let result = h.write_with_u8_array_and_options(data, &options);
-    drop(borrowed);
-
-    match result {
-      Ok(_) => Box::pin(std::future::ready(Ok(()))),
-      Err(e) => Box::pin(std::future::ready(Err(js_to_backend_error(e)))),
-    }
+    let result = self.with_handle(|h| {
+      h.write_with_u8_array_and_options(data, &options)
+        .map(|_| ())
+    });
+    Box::pin(std::future::ready(result))
   }
 
   fn len(&self) -> BoxFuture<'_, Result<u64, BackendError>> {
-    let handle = self.handle.clone();
-
-    let borrowed = handle.borrow();
-    let Some(h) = borrowed.as_ref() else {
-      return Box::pin(std::future::ready(Err(BackendError::Other(
-        "File handle closed".into(),
-      ))));
-    };
-
-    let result = h.get_size();
-    drop(borrowed);
-
-    match result {
-      Ok(size) => Box::pin(std::future::ready(Ok(size as u64))),
-      Err(e) => Box::pin(std::future::ready(Err(js_to_backend_error(e)))),
-    }
+    let result = self.with_handle(|h| h.get_size().map(|s| s as u64));
+    Box::pin(std::future::ready(result))
   }
 
   fn set_len(&self, size: u64) -> BoxFuture<'_, Result<(), BackendError>> {
-    let handle = self.handle.clone();
-
-    let borrowed = handle.borrow();
-    let Some(h) = borrowed.as_ref() else {
-      return Box::pin(std::future::ready(Err(BackendError::Other(
-        "File handle closed".into(),
-      ))));
-    };
-
-    let result = h.truncate_with_u32(size as u32);
-    drop(borrowed);
-
-    match result {
-      Ok(_) => Box::pin(std::future::ready(Ok(()))),
-      Err(e) => Box::pin(std::future::ready(Err(js_to_backend_error(e)))),
-    }
+    let result = self.with_handle(|h| h.truncate_with_u32(size as u32));
+    Box::pin(std::future::ready(result))
   }
 
   fn sync(&self) -> BoxFuture<'_, Result<(), BackendError>> {
-    let handle = self.handle.clone();
-
-    let borrowed = handle.borrow();
-    let Some(h) = borrowed.as_ref() else {
-      return Box::pin(std::future::ready(Err(BackendError::Other(
-        "File handle closed".into(),
-      ))));
-    };
-
-    let result = h.flush();
-    drop(borrowed);
-
-    match result {
-      Ok(_) => Box::pin(std::future::ready(Ok(()))),
-      Err(e) => Box::pin(std::future::ready(Err(js_to_backend_error(e)))),
-    }
+    let result = self.with_handle(|h| h.flush());
+    Box::pin(std::future::ready(result))
   }
 }
 

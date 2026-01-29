@@ -413,6 +413,40 @@ pub(crate) fn notify_persistence_complete(saving: Res<SavingChunks>, tasks: Res<
 
 use crate::persistence::tasks::{LoadingChunks, SavingChunks};
 
+/// Dispatches WriteChunk commands for queued chunks.
+fn dispatch_chunk_writes(tasks: &mut PersistenceTasks, io_dispatcher: &IoDispatcher) {
+  for task in tasks.save_queue.drain(..) {
+    io_dispatcher.send(crate::persistence::IoCommand::WriteChunk {
+      chunk_pos: bevy::math::IVec2::new(task.pos.x, task.pos.y),
+      data: task.data,
+    });
+  }
+}
+
+/// Dispatches SaveBody commands for queued bodies.
+fn dispatch_body_saves(tasks: &mut PersistenceTasks, io_dispatcher: &IoDispatcher) {
+  for task in tasks.body_save_queue.drain(..) {
+    let mut buf = Vec::new();
+    if let Err(e) = task.record.write_to(&mut buf) {
+      warn!("Failed to serialize body {}: {}", task.record.stable_id, e);
+      continue;
+    }
+    io_dispatcher.send(crate::persistence::IoCommand::SaveBody {
+      record_data: buf,
+      stable_id: task.record.stable_id,
+    });
+  }
+}
+
+/// Dispatches RemoveBody commands for queued removals.
+fn dispatch_body_removals(tasks: &mut PersistenceTasks, io_dispatcher: &IoDispatcher) {
+  for task in tasks.body_remove_queue.drain(..) {
+    io_dispatcher.send(crate::persistence::IoCommand::RemoveBody {
+      stable_id: task.stable_id,
+    });
+  }
+}
+
 /// System: Dispatches a batch save task when saves are queued.
 ///
 /// Only one save task runs at a time to prevent write conflicts.
@@ -440,33 +474,9 @@ pub(crate) fn dispatch_save_task(
     return;
   }
 
-  // Send WriteChunk commands for each chunk
-  for task in tasks.save_queue.drain(..) {
-    io_dispatcher.send(crate::persistence::IoCommand::WriteChunk {
-      chunk_pos: bevy::math::IVec2::new(task.pos.x, task.pos.y),
-      data: task.data,
-    });
-  }
-
-  // Send SaveBody commands for each body
-  for task in tasks.body_save_queue.drain(..) {
-    let mut buf = Vec::new();
-    if let Err(e) = task.record.write_to(&mut buf) {
-      warn!("Failed to serialize body {}: {}", task.record.stable_id, e);
-      continue;
-    }
-    io_dispatcher.send(crate::persistence::IoCommand::SaveBody {
-      record_data: buf,
-      stable_id: task.record.stable_id,
-    });
-  }
-
-  // Send RemoveBody commands
-  for task in tasks.body_remove_queue.drain(..) {
-    io_dispatcher.send(crate::persistence::IoCommand::RemoveBody {
-      stable_id: task.stable_id,
-    });
-  }
+  dispatch_chunk_writes(&mut tasks, &io_dispatcher);
+  dispatch_body_saves(&mut tasks, &io_dispatcher);
+  dispatch_body_removals(&mut tasks, &io_dispatcher);
 
   // Send Flush to persist to disk
   io_dispatcher.send(crate::persistence::IoCommand::Flush);
@@ -678,6 +688,90 @@ impl LoadedChunkDataStore {
 
 use crate::persistence::io_worker::{IoDispatcher, IoResult};
 
+/// Handles the Initialized result from the I/O worker.
+fn handle_initialized_result(
+  commands: &mut Commands,
+  io_dispatcher: &IoDispatcher,
+  pending_init: &Option<Res<crate::world::control::PendingPersistenceInit>>,
+  chunk_count: usize,
+  body_count: usize,
+  world_seed: u64,
+) {
+  info!(
+    "I/O Worker initialized: {} chunks, {} bodies, seed {}",
+    chunk_count, body_count, world_seed
+  );
+  io_dispatcher.set_ready(true);
+  io_dispatcher.set_world_seed(world_seed);
+  io_dispatcher.set_init_counts(chunk_count, body_count);
+
+  // Create PersistenceControl now that worker is ready
+  if let Some(pending) = pending_init {
+    commands.insert_resource(PersistenceControl::with_path_only(pending.path.clone()));
+    commands.remove_resource::<crate::world::control::PendingPersistenceInit>();
+  }
+}
+
+/// Handles the ChunkLoaded result from the I/O worker.
+fn handle_chunk_loaded_result(
+  loaded_data: &mut LoadedChunkDataStore,
+  worlds: &mut Query<&mut PixelWorld>,
+  loading: &mut LoadingChunks,
+  chunk_pos: bevy::math::IVec2,
+  data: Option<crate::persistence::io_worker::ChunkLoadData>,
+  bodies: Vec<crate::persistence::io_worker::BodyLoadData>,
+) {
+  let pos = crate::coords::ChunkPos::new(chunk_pos.x, chunk_pos.y);
+
+  // Remove from pending set
+  loading.pending.remove(&pos);
+
+  // Store loaded chunk data if present
+  if let Some(chunk_data) = data {
+    let storage_type = match chunk_data.storage_type {
+      0 => crate::persistence::format::StorageType::Empty,
+      1 => crate::persistence::format::StorageType::Delta,
+      _ => crate::persistence::format::StorageType::Full,
+    };
+    loaded_data.store.insert(
+      pos,
+      crate::persistence::LoadedChunk {
+        storage_type,
+        data: chunk_data.data,
+        pos,
+        seeder_needed: chunk_data.seeder_needed,
+      },
+    );
+  }
+
+  // Store loaded body data for later spawning (when chunk finishes seeding)
+  if !bodies.is_empty() {
+    loaded_data.bodies.insert(pos, bodies);
+  }
+
+  // Transition chunk to Seeding state
+  for mut world in worlds.iter_mut() {
+    if let Some(slot_idx) = world.get_slot_index(pos) {
+      let slot = world.slot_mut(slot_idx);
+      if slot.is_loading() {
+        slot.lifecycle = crate::world::slot::ChunkLifecycle::Seeding;
+      }
+    }
+  }
+}
+
+/// Handles the FlushComplete result from the I/O worker.
+fn handle_flush_complete_result(saving: &mut SavingChunks) {
+  info!("I/O Worker flush complete");
+  // Reset busy flag so new saves can be dispatched
+  saving.busy = false;
+}
+
+/// Handles the Error result from the I/O worker.
+fn handle_error_result(message: &str) {
+  warn!("I/O Worker error: {}", message);
+}
+
 /// System: Polls the I/O worker for results and handles them.
 ///
 /// This system handles:
@@ -708,66 +802,31 @@ pub(crate) fn poll_io_results(
         body_count,
         world_seed,
       } => {
-        info!(
-          "I/O Worker initialized: {} chunks, {} bodies, seed {}",
-          chunk_count, body_count, world_seed
+        handle_initialized_result(
+          &mut commands,
+          &io_dispatcher,
+          &pending_init,
+          chunk_count,
+          body_count,
+          world_seed,
         );
-        io_dispatcher.set_ready(true);
-        io_dispatcher.set_world_seed(world_seed);
-        io_dispatcher.set_init_counts(chunk_count, body_count);
-
-        // Create PersistenceControl now that worker is ready
-        if let Some(ref pending) = pending_init {
-          commands.insert_resource(PersistenceControl::with_path_only(pending.path.clone()));
-          commands.remove_resource::<crate::world::control::PendingPersistenceInit>();
-        }
       }
       IoResult::ChunkLoaded {
         chunk_pos,
         data,
         bodies,
       } => {
-        let pos = crate::coords::ChunkPos::new(chunk_pos.x, chunk_pos.y);
-
-        // Remove from pending set
-        loading.pending.remove(&pos);
-
-        // Store loaded chunk data if present
-        if let Some(chunk_data) = data {
-          let storage_type = match chunk_data.storage_type {
-            0 => crate::persistence::format::StorageType::Empty,
-            1 => crate::persistence::format::StorageType::Delta,
-            _ => crate::persistence::format::StorageType::Full,
-          };
-          loaded_data.store.insert(
-            pos,
-            crate::persistence::LoadedChunk {
-              storage_type,
-              data: chunk_data.data,
-              pos,
-              seeder_needed: chunk_data.seeder_needed,
-            },
-          );
-        }
-
-        // Store loaded body data for later spawning (when chunk finishes seeding)
-        if !bodies.is_empty() {
-          loaded_data.bodies.insert(pos, bodies);
-        }
-
-        // Transition chunk to Seeding state
-        for mut world in worlds.iter_mut() {
-          if let Some(slot_idx) = world.get_slot_index(pos) {
-            let slot = world.slot_mut(slot_idx);
-            if slot.is_loading() {
-              slot.lifecycle = crate::world::slot::ChunkLifecycle::Seeding;
-            }
-          }
-        }
+        handle_chunk_loaded_result(
+          &mut loaded_data,
+          &mut worlds,
+          &mut loading,
+          chunk_pos,
+          data,
+          bodies,
+        );
       }
       IoResult::WriteComplete { chunk_pos: _ } => {
-        // Write completed, nothing to do here
-        // The flush will happen separately
+        // Write completed, nothing to do here - flush happens separately
       }
       IoResult::BodySaveComplete { stable_id: _ } => {
         // Body save completed
@@ -776,12 +835,10 @@ pub(crate) fn poll_io_results(
         // Body removal completed
       }
       IoResult::FlushComplete => {
-        info!("I/O Worker flush complete");
-        // Reset busy flag so new saves can be dispatched
-        saving.busy = false;
+        handle_flush_complete_result(&mut saving);
       }
       IoResult::Error { message } => {
-        warn!("I/O Worker error: {}", message);
+        handle_error_result(&message);
       }
     }
   }

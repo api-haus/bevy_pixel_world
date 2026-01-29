@@ -220,6 +220,38 @@ impl WorldRect {
 
     (min_tx..=max_tx).flat_map(move |tx| (min_ty..=max_ty).map(move |ty| TilePos::new(tx, ty)))
   }
+
+  /// Clips a tile to this rect, returning the valid pixel range within the
+  /// tile.
+  ///
+  /// Returns `(min_dx, max_dx, min_dy, max_dy)` as the inclusive range of
+  /// pixels to iterate, or None if the tile doesn't overlap the rect.
+  pub fn clip_tile(&self, tile: TilePos) -> Option<(u32, u32, u32, u32)> {
+    let tile_size = TILE_SIZE as i64;
+    let tile_x_start = tile.x * tile_size;
+    let tile_y_start = tile.y * tile_size;
+    let tile_x_end = tile_x_start + tile_size;
+    let tile_y_end = tile_y_start + tile_size;
+
+    let rect_x_end = self.x + self.width as i64;
+    let rect_y_end = self.y + self.height as i64;
+
+    // Check for no overlap
+    if tile_x_end <= self.x || tile_x_start >= rect_x_end {
+      return None;
+    }
+    if tile_y_end <= self.y || tile_y_start >= rect_y_end {
+      return None;
+    }
+
+    // Compute clipped range relative to tile origin
+    let min_dx = (self.x - tile_x_start).max(0) as u32;
+    let max_dx = ((rect_x_end - tile_x_start).min(tile_size) - 1) as u32;
+    let min_dy = (self.y - tile_y_start).max(0) as u32;
+    let max_dy = ((rect_y_end - tile_y_start).min(tile_size) - 1) as u32;
+
+    Some((min_dx, max_dx, min_dy, max_dy))
+  }
 }
 
 /// Fragment data for world-space blitting.
