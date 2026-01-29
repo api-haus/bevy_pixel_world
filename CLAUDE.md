@@ -32,6 +32,10 @@
 - Data structure definitions are permitted in plans. Implementation code is not.
 - Use mermaid diagrams for complex systems (state machines, data flow).
 
+## Git
+
+Never push. The user will push manually after reviewing changes.
+
 ## Git Worktrees
 
 Worktrees are **opt-in**. Only create or enter a worktree when the user explicitly asks at the beginning of the conversation. Do not proactively create worktrees.
