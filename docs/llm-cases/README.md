@@ -32,6 +32,14 @@ Build a corpus of concrete examples to inform better methodology for spec-driven
 | [020](020-unwanted-fallback-code.md) | Unwanted Fallback Code | Noise | adding fallbacks instead of fixing primary |
 | [021](021-unexpected-behavior-changes.md) | Unexpected Behavior Changes | Rendering | feature change alters unrelated startup |
 | [022](022-api-scope-over-design.md) | API Scope Over-Design | Persistence | designing "complete" API vs what's needed |
+| [023](023-disaster-feature-removal.md) | Disaster Feature Removal | Rendering | "disaster attempt at stylized rendering" |
+| [024](024-wrong-implementation-approach.md) | Wrong Implementation Approach | Rendering | "that's nonsensical" |
+| [025](025-confusing-naming-conventions.md) | Confusing Naming Conventions | Persistence | two similar names with `#[cfg]` |
+| [026](026-mermaid-diagram-error.md) | Mermaid Diagram Error | Documentation | phases shown parallel when sequential |
+| [027](027-wrong-algorithm-for-problem.md) | Wrong Algorithm for Problem | Collision | "produces no triangles" |
+| [028](028-root-cause-misidentification.md) | Root Cause Misidentification | Persistence | fix didn't work, cause was wrong |
+| [029](029-ignoring-provided-resources.md) | Ignoring Provided Resources | Noise | "use the preset you donkey" |
+| [030](030-introduced-regression-during-fix.md) | Introduced Regression During Fix | Pixel Bodies | "we've introduced a bug" |
 
 ## Common Signals
 
@@ -85,6 +93,14 @@ Phrases that effectively redirect Claude:
 20. **Graceful Degradation Creep** (#020) - Adding fallbacks instead of fixing the real implementation
 21. **Ripple Regressions** (#021) - Feature changes breaking unrelated functionality
 22. **Completionist APIs** (#022) - Designing comprehensive APIs when minimal ones suffice
+23. **Feature Abandonment** (#023) - When an approach becomes unsalvageable, remove entirely
+24. **Approach Mismatch** (#024) - Complex solution when simple one exists
+25. **Naming Confusion** (#025) - Similar names with platform-dependent meanings
+26. **Visual Documentation Errors** (#026) - Diagrams that render incorrectly
+27. **Algorithm Selection Errors** (#027) - Choosing algorithms that don't fit the data
+28. **Wrong Root Cause** (#028) - Fixing the wrong thing based on incorrect diagnosis
+29. **Resource Substitution** (#029) - Inventing alternatives instead of using provided resources
+30. **Feature Regressions** (#030) - New features breaking existing functionality
 
 ## Session Archive
 
