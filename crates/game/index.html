@@ -3,6 +3,20 @@
 <head>
     <meta charset="utf-8">
     <title>sim2d</title>
+    <style>
+        html, body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        #bevy {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+    </style>
     <link data-trunk data-wasm-opt="0" rel="rust"/>
     <link data-trunk href="assets" rel="copy-dir"/>
     <link data-target-path="dist" data-trunk href="../sim2d_noise/dist" rel="copy-dir"/>
@@ -10,6 +24,10 @@
     <link data-trunk href="worker.js" rel="copy-file"/>
 </head>
 <body>
-<canvas id="bevy"></canvas>
+<canvas id="bevy" oncontextmenu="return false"></canvas>
+<script>
+    // Prevent default browser behaviors that interfere with game input
+    document.addEventListener('contextmenu', e => e.preventDefault());
+</script>
 </body>
 </html>

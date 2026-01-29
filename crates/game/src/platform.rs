@@ -20,6 +20,8 @@ pub struct PlatformConfig {
   pub canvas: Option<String>,
   /// Whether to fit canvas to parent element (WASM only).
   pub fit_canvas_to_parent: bool,
+  /// Whether to prevent default browser event handling (context menu, etc).
+  pub prevent_default_event_handling: bool,
   /// Directory for save files.
   pub save_dir: PathBuf,
   /// Whether hot-reload is enabled (native only).
@@ -64,6 +66,12 @@ pub fn init() -> (PlatformConfig, Option<EmbeddedAssets>) {
     fit_canvas_to_parent: true,
     #[cfg(not(target_family = "wasm"))]
     fit_canvas_to_parent: false,
+
+    // Prevent browser context menu on right-click (WASM)
+    #[cfg(target_family = "wasm")]
+    prevent_default_event_handling: true,
+    #[cfg(not(target_family = "wasm"))]
+    prevent_default_event_handling: false,
 
     #[cfg(target_family = "wasm")]
     save_dir: PathBuf::from("."),

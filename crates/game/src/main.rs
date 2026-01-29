@@ -42,8 +42,9 @@ fn main() {
             title: config.window.title.clone(),
             present_mode: platform_config.present_mode,
             mode: platform_config.window_mode,
-            canvas: platform_config.canvas,
+            canvas: platform_config.canvas.clone(),
             fit_canvas_to_parent: platform_config.fit_canvas_to_parent,
+            prevent_default_event_handling: platform_config.prevent_default_event_handling,
             ..default()
           }),
           ..default()
