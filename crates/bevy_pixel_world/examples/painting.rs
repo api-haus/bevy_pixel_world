@@ -323,7 +323,7 @@ impl Plugin for PhysicsPlugin {
 fn tag_new_bodies_as_bombs(mut commands: Commands, new_bodies: Query<Entity, Added<PixelBody>>) {
   for entity in &new_bodies {
     commands.entity(entity).insert(Bomb {
-      shell_depth: 0,
+      damage_threshold: 0.1,
       blast_radius: 120.0,
       blast_strength: 60.0,
       detonated: false,

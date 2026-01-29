@@ -14,9 +14,9 @@ use crate::collision::{
   invalidate_dirty_tiles, poll_collision_tasks,
 };
 use crate::pixel_body::{
-  PixelBodyIdGenerator, apply_readback_changes, check_bomb_ignition, compute_bomb_shell,
-  detect_external_erasure, finalize_pending_pixel_bodies, process_detonations,
-  readback_pixel_bodies, split_pixel_bodies, sync_simulation_to_bodies, update_pixel_bodies,
+  PixelBodyIdGenerator, apply_readback_changes, check_bomb_damage, detect_external_erasure,
+  finalize_pending_pixel_bodies, init_bomb_state, process_detonations, readback_pixel_bodies,
+  split_pixel_bodies, sync_simulation_to_bodies, update_pixel_bodies,
 };
 use crate::schedule::{PixelWorldSet, SimulationPhase};
 use crate::world::body_loader::spawn_pending_pixel_bodies;
@@ -90,8 +90,8 @@ impl Plugin for PixelBodiesPlugin {
       Update,
       (
         sync_simulation_to_bodies,
-        compute_bomb_shell,
-        check_bomb_ignition,
+        init_bomb_state,
+        check_bomb_damage,
         process_detonations,
         readback_pixel_bodies,
         apply_readback_changes,

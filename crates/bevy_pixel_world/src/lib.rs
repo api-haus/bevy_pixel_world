@@ -53,7 +53,7 @@ pub use persistence::{PixelBodyRecord, WorldSave, WorldSaveResource};
 pub use pixel::{Pixel, PixelFlags, PixelSurface};
 pub use pixel_awareness::GridSampleConfig;
 pub use pixel_body::{
-  Bomb, BombShellMask, DisplacementState, LastBlitTransform, PendingPixelBody, Persistable,
+  Bomb, BombInitialState, DisplacementState, LastBlitTransform, PendingPixelBody, Persistable,
   PixelBody, PixelBodyId, PixelBodyIdGenerator, PixelBodyLoader, SpawnPixelBody,
   SpawnPixelBodyFromImage, finalize_pending_pixel_bodies, generate_collider, update_pixel_bodies,
 };
