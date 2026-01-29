@@ -73,4 +73,4 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy crates/game/dist --project-name=sim2d
+          command: pages deploy crates/game/dist --project-name=bevy-pixel-world --commit-dirty=true
