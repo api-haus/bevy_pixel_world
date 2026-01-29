@@ -123,11 +123,11 @@ pub fn debug_persistence_keyboard(
   // P = Persist all modified chunks
   if keyboard.just_pressed(KeyCode::KeyP) {
     if let Some(ref mut persistence) = persistence {
-      if let Some(name) = persistence.save_name().map(String::from) {
-        persistence.save(&name);
+      if persistence.is_active() {
+        persistence.save();
         info!("[Debug] Triggered persistence for all modified chunks");
       } else {
-        warn!("[Debug] No save loaded - persistence not ready");
+        warn!("[Debug] No save loaded - persistence not active");
       }
     } else {
       warn!("[Debug] No PersistenceControl available - persistence disabled");

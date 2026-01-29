@@ -3,16 +3,12 @@
 //! Provides public APIs for:
 //! - Pausing/resuming world simulation and physics
 //! - Triggering on-demand persistence with completion notification
-//! - Managing named saves
 
-use std::io;
+use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, RwLock};
 
 use bevy::prelude::*;
-
-use crate::persistence::WorldSave;
-use crate::persistence::backend::PersistenceBackend;
 
 /// Controls whether world simulation is running or paused.
 ///
@@ -80,15 +76,14 @@ impl SimulationState {
   }
 }
 
-/// Resource for persistence control and named save management.
+/// Resource for persistence control.
+///
+/// Provides methods to save the world to the current file or copy to a new
+/// path.
 #[derive(Resource)]
 pub struct PersistenceControl {
-  /// Persistence backend.
-  backend: Option<Arc<dyn PersistenceBackend>>,
-  /// The loaded WorldSave.
-  world_save: Option<Arc<RwLock<WorldSave>>>,
-  /// Save name without .save extension (e.g., "world").
-  pub(crate) save_name: Option<String>,
+  /// Current save file path.
+  pub(crate) current_path: Option<PathBuf>,
   /// Counter for generating unique request IDs.
   next_request_id: u64,
   /// Pending persistence requests.
@@ -96,105 +91,79 @@ pub struct PersistenceControl {
 }
 
 impl PersistenceControl {
-  /// Creates a new persistence control with the given backend but no loaded
-  /// save.
-  pub fn new(backend: Arc<dyn PersistenceBackend>) -> Self {
+  /// Creates a persistence control that tracks the save file path.
+  ///
+  /// All I/O is handled by IoDispatcher on both native and WASM platforms.
+  pub fn with_path_only(path: PathBuf) -> Self {
     Self {
-      backend: Some(backend),
-      world_save: None,
-      save_name: None,
+      current_path: Some(path),
       next_request_id: 1,
       pending_requests: Vec::new(),
     }
   }
 
-  /// Creates a persistence control with an already-loaded save.
+  /// Returns true if a save file is open and ready for I/O.
   ///
-  /// Used during synchronous native initialization where save is opened
-  /// immediately.
-  pub fn with_save(
-    backend: Arc<dyn PersistenceBackend>,
-    world_save: WorldSave,
-    save_name: String,
-  ) -> Self {
-    Self {
-      backend: Some(backend),
-      world_save: Some(Arc::new(RwLock::new(world_save))),
-      save_name: Some(save_name),
-      next_request_id: 1,
-      pending_requests: Vec::new(),
-    }
+  /// Check this before calling save methods.
+  pub fn is_active(&self) -> bool {
+    self.current_path.is_some()
   }
 
-  /// Creates a persistence control that only tracks the save name.
+  /// Saves all chunks and pixel bodies to the current save file.
   ///
-  /// Used when I/O is handled by IoDispatcher instead of direct file access.
-  pub fn with_name_only(save_name: String) -> Self {
-    Self {
-      backend: None,
-      world_save: None,
-      save_name: Some(save_name),
-      next_request_id: 1,
-      pending_requests: Vec::new(),
-    }
-  }
-
-  /// Returns true if a save file is loaded and ready.
-  pub fn is_ready(&self) -> bool {
-    // current_save is set when initialization completes on both platforms
-    self.save_name.is_some()
-  }
-
-  /// Returns the save name (without .save extension).
-  pub fn save_name(&self) -> Option<&str> {
-    self.save_name.as_deref()
-  }
-
-  /// Returns a reference to the loaded save, if any.
-  pub fn world_save(&self) -> Option<&Arc<RwLock<WorldSave>>> {
-    self.world_save.as_ref()
-  }
-
-  /// Returns a reference to the persistence backend.
+  /// Returns a handle that can be polled to check completion.
   ///
-  /// Returns None on WASM with IoDispatcher (I/O is in worker).
-  pub fn backend(&self) -> Option<&dyn PersistenceBackend> {
-    self.backend.as_ref().map(|b| &**b)
-  }
-
-  /// Saves to a named save file.
-  ///
-  /// If `name` differs from `current_save`, performs a copy-on-write:
-  /// the current save file is copied to the new name before writing.
-  ///
-  /// Returns a handle that can be polled or awaited to check completion.
+  /// # Panics
+  /// Panics if persistence is not active. Check `is_active()` first.
   ///
   /// # Example
   /// ```ignore
-  /// fn exit_game_system(
-  ///     mut persistence: ResMut<PersistenceControl>,
-  ///     mut exit: EventWriter<AppExit>,
-  /// ) {
-  ///     // Save to the current save name
-  ///     let handle = persistence.save("world");
-  ///
-  ///     // Or save to a new slot
-  ///     let handle = persistence.save("backup");
+  /// fn save_system(mut ctrl: ResMut<PersistenceControl>) {
+  ///     if !ctrl.is_active() {
+  ///         return; // No save file open
+  ///     }
+  ///     let handle = ctrl.save();
   /// }
   /// ```
-  pub fn save(&mut self, name: &str) -> PersistenceHandle {
-    self.save_internal(name, true)
+  pub fn save(&mut self) -> PersistenceHandle {
+    assert!(
+      self.is_active(),
+      "save() called when persistence is not active"
+    );
+    self.save_internal(None)
   }
 
-  /// Saves only chunk data to a named save file (no pixel bodies).
+  /// Saves to a new path (copy-on-write).
   ///
-  /// Faster than full save when pixel bodies haven't changed.
-  pub fn save_chunks(&mut self, name: &str) -> PersistenceHandle {
-    self.save_internal(name, false)
+  /// The current save is copied to the new path, then the new path becomes
+  /// the active save file. Use this for "Save As" functionality.
+  ///
+  /// Returns a handle that can be polled to check completion.
+  ///
+  /// # Panics
+  /// Panics if persistence is not active. Check `is_active()` first.
+  ///
+  /// # Example
+  /// ```ignore
+  /// fn save_as_system(mut ctrl: ResMut<PersistenceControl>) {
+  ///     if !ctrl.is_active() {
+  ///         return;
+  ///     }
+  ///     // Copy current save to backup, then continue saving to backup
+  ///     ctrl.save_to("/home/user/saves/backup.save");
+  /// }
+  /// ```
+  pub fn save_to(&mut self, path: impl Into<PathBuf>) -> PersistenceHandle {
+    assert!(
+      self.is_active(),
+      "save_to() called when persistence is not active"
+    );
+    self.save_internal(Some(path.into()))
   }
 
   /// Internal helper for save operations.
-  fn save_internal(&mut self, name: &str, include_bodies: bool) -> PersistenceHandle {
+  fn save_internal(&mut self, _target_path: Option<PathBuf>) -> PersistenceHandle {
+    // TODO: target_path for copy-on-write requires IoDispatcher CopyTo command
     let id = self.next_request_id;
     self.next_request_id += 1;
 
@@ -202,74 +171,18 @@ impl PersistenceControl {
     let request = PersistenceRequestInner {
       id,
       completed: completed.clone(),
-      include_bodies,
-      target_save: name.to_string(),
     };
     self.pending_requests.push(request);
 
     PersistenceHandle { id, completed }
   }
-
-  /// Returns the file name for a named save.
-  pub fn save_file_name(name: &str) -> String {
-    format!("{}.save", name)
-  }
-
-  /// Lists all save files in the storage backend.
-  pub fn list_saves(&self) -> io::Result<Vec<String>> {
-    let backend = self
-      .backend
-      .as_ref()
-      .ok_or_else(|| io::Error::new(io::ErrorKind::Unsupported, "no backend available"))?;
-    backend.list_saves()
-  }
-
-  /// Deletes a save file.
-  pub fn delete_save(&self, name: &str) -> io::Result<()> {
-    let backend = self
-      .backend
-      .as_ref()
-      .ok_or_else(|| io::Error::new(io::ErrorKind::Unsupported, "no backend available"))?;
-    backend.delete_save(name)
-  }
-
-  /// Copies the current save to a new name (copy-on-write for "Save As").
-  ///
-  /// Returns an error if no save is loaded or no backend available.
-  /// Updates the current save to point to the copied file.
-  pub fn copy_to(&mut self, target_name: &str) -> io::Result<()> {
-    let backend = self
-      .backend
-      .as_ref()
-      .ok_or_else(|| io::Error::new(io::ErrorKind::Unsupported, "no backend available"))?;
-
-    let save_arc = self
-      .world_save
-      .as_ref()
-      .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no save loaded"))?;
-
-    let mut save = save_arc
-      .write()
-      .map_err(|_| io::Error::new(io::ErrorKind::Other, "save lock poisoned"))?;
-
-    let new_save = backend.save_copy(&mut save, target_name)?;
-
-    // Replace the current save with the new one
-    drop(save);
-    self.world_save = Some(Arc::new(RwLock::new(new_save)));
-    self.save_name = Some(target_name.to_string());
-
-    Ok(())
-  }
 }
 
 /// Internal representation of a pending persistence request.
+#[allow(dead_code)] // Fields used on native but not WASM
 pub(crate) struct PersistenceRequestInner {
   pub id: u64,
   pub completed: Arc<AtomicBool>,
-  pub include_bodies: bool,
-  /// Target save name for this request.
-  pub target_save: String,
 }
 
 /// Handle to track completion of an on-demand save operation.
@@ -347,14 +260,11 @@ pub struct PersistenceComplete {
 
 /// Message to request an immediate save.
 ///
-/// Alternative to using `PersistenceControl::request_save()`.
+/// Alternative to using `PersistenceControl::save()`.
 /// Useful when you need to trigger a save from a system that doesn't
 /// have mutable access to `PersistenceControl`.
 #[derive(bevy::prelude::Message, Clone, Debug, Default)]
-pub struct RequestPersistence {
-  /// Whether to include pixel bodies in the save.
-  pub include_bodies: bool,
-}
+pub struct RequestPersistence;
 
 /// Marker resource indicating the I/O dispatcher is ready (WASM only).
 ///
@@ -369,24 +279,8 @@ pub struct IoDispatcherReady;
 /// the `PersistenceControl` resource.
 #[derive(Resource)]
 pub struct PendingPersistenceInit {
-  /// Save name that was requested.
-  pub save_name: String,
+  /// Save file path.
+  pub path: PathBuf,
   /// World seed.
   pub world_seed: u64,
-}
-
-impl RequestPersistence {
-  /// Creates a request for a full save (chunks + bodies).
-  pub fn full() -> Self {
-    Self {
-      include_bodies: true,
-    }
-  }
-
-  /// Creates a request for chunk-only save.
-  pub fn chunks_only() -> Self {
-    Self {
-      include_bodies: false,
-    }
-  }
 }

@@ -4,9 +4,8 @@ use std::sync::Arc;
 
 use bevy::prelude::*;
 
-use super::control::PersistenceControl;
 use super::{PixelWorld, PixelWorldConfig};
-use crate::seeding::{ChunkSeeder, PersistenceSeeder};
+use crate::seeding::ChunkSeeder;
 
 /// Bundle for spawning a PixelWorld entity.
 #[derive(Bundle)]
@@ -38,8 +37,8 @@ impl PixelWorldBundle {
 /// Uses the default configuration from `PixelWorldPlugin` unless overridden
 /// with `with_config()`.
 ///
-/// When a `WorldSaveResource` exists (persistence enabled), the seeder is
-/// automatically wrapped with `PersistenceSeeder` to load saved chunks.
+/// Chunk loading from persistence is handled by the streaming system
+/// (`dispatch_chunk_loads` and `seed_chunk_with_loaded`), not the seeder.
 ///
 /// # Example
 /// ```ignore
@@ -85,39 +84,12 @@ impl bevy::ecs::system::Command for SpawnPixelWorld {
         .unwrap_or_default()
     });
 
-    // Wrap seeder with PersistenceSeeder if persistence is ready
-    let seeder: Arc<dyn ChunkSeeder + Send + Sync> =
-      if let Some(persistence) = world.get_resource::<PersistenceControl>() {
-        if let Some(save_arc) = persistence.world_save() {
-          let chunk_count = save_arc.read().map(|s| s.chunk_count()).unwrap_or(0);
-          info!(
-            "PixelWorld spawned with persistence ({} saved chunks)",
-            chunk_count
-          );
-          Arc::new(PersistenceSeeder::new(
-            ArcSeeder(self.seeder),
-            save_arc.clone(),
-          ))
-        } else {
-          self.seeder
-        }
-      } else {
-        self.seeder
-      };
-
+    // Persistence loading is handled by dispatch_chunk_loads and
+    // seed_chunk_with_loaded, so we use the seeder directly without wrapping.
     world.spawn(PixelWorldBundle {
-      world: PixelWorld::with_config(seeder, mesh, config),
+      world: PixelWorld::with_config(self.seeder, mesh, config),
       transform: Transform::default(),
       global_transform: GlobalTransform::default(),
     });
-  }
-}
-
-/// Wrapper to make Arc<dyn ChunkSeeder> implement ChunkSeeder.
-struct ArcSeeder(Arc<dyn ChunkSeeder + Send + Sync>);
-
-impl ChunkSeeder for ArcSeeder {
-  fn seed(&self, pos: crate::ChunkPos, chunk: &mut crate::Chunk) {
-    self.0.seed(pos, chunk);
   }
 }

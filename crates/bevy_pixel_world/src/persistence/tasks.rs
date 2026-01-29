@@ -3,6 +3,7 @@
 //! Provides resources and types for managing async chunk load/save operations
 //! via Bevy's AsyncComputeTaskPool.
 
+#[cfg(not(target_family = "wasm"))]
 use std::collections::HashMap;
 use std::io;
 use std::sync::Arc;
@@ -23,42 +24,22 @@ use crate::coords::ChunkPos;
 /// Multiple load tasks can run concurrently (read-only operations).
 #[derive(Resource, Default)]
 pub struct LoadingChunks {
-  /// Map from chunk position to the async load task (native only).
+  /// Positions currently being loaded.
+  pub pending: std::collections::HashSet<ChunkPos>,
+  /// Native-only: async tasks for in-flight loads.
   #[cfg(not(target_family = "wasm"))]
-  pub tasks: HashMap<ChunkPos, Task<LoadResult>>,
-
-  /// Set of chunk positions being loaded via IoDispatcher (WASM only).
-  #[cfg(target_family = "wasm")]
-  pub pending_positions: std::collections::HashSet<ChunkPos>,
-
-  /// Dummy tasks map for WASM (maintains API compatibility).
-  #[cfg(target_family = "wasm")]
-  pub tasks: HashMap<ChunkPos, ()>,
+  pub(crate) tasks: HashMap<ChunkPos, Task<LoadResult>>,
 }
 
 impl LoadingChunks {
   /// Returns true if there are no in-flight load tasks.
   pub fn is_empty(&self) -> bool {
-    #[cfg(not(target_family = "wasm"))]
-    {
-      self.tasks.is_empty()
-    }
-    #[cfg(target_family = "wasm")]
-    {
-      self.pending_positions.is_empty() && self.tasks.is_empty()
-    }
+    self.pending.is_empty()
   }
 
   /// Returns the number of in-flight load tasks.
   pub fn len(&self) -> usize {
-    #[cfg(not(target_family = "wasm"))]
-    {
-      self.tasks.len()
-    }
-    #[cfg(target_family = "wasm")]
-    {
-      self.pending_positions.len() + self.tasks.len()
-    }
+    self.pending.len()
   }
 }
 
@@ -67,30 +48,17 @@ impl LoadingChunks {
 /// Only one save task runs at a time to prevent write conflicts.
 #[derive(Resource, Default)]
 pub struct SavingChunks {
-  /// The currently running save task, if any (native only).
+  /// Whether a save is currently in progress.
+  pub(crate) busy: bool,
+  /// Native-only: async task for the current save.
   #[cfg(not(target_family = "wasm"))]
-  pub task: Option<Task<SaveResult>>,
-
-  /// Whether WASM save is pending (WASM only).
-  #[cfg(target_family = "wasm")]
-  pub wasm_pending: bool,
-
-  /// Dummy task for WASM (maintains API compatibility).
-  #[cfg(target_family = "wasm")]
-  pub task: Option<()>,
+  pub(crate) task: Option<Task<SaveResult>>,
 }
 
 impl SavingChunks {
   /// Returns true if a save task is in progress.
   pub fn is_busy(&self) -> bool {
-    #[cfg(not(target_family = "wasm"))]
-    {
-      self.task.is_some()
-    }
-    #[cfg(target_family = "wasm")]
-    {
-      self.wasm_pending || self.task.is_some()
-    }
+    self.busy
   }
 }
 

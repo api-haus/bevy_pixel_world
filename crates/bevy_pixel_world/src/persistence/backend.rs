@@ -59,7 +59,7 @@ impl From<BackendError> for io::Error {
     match err {
       BackendError::Io(e) => e,
       BackendError::NotFound => io::Error::new(io::ErrorKind::NotFound, "not found"),
-      BackendError::Other(e) => io::Error::new(io::ErrorKind::Other, e),
+      BackendError::Other(e) => io::Error::other(e),
     }
   }
 }
@@ -116,8 +116,6 @@ pub trait StorageFs: Send + Sync {
   fn copy(&self, from: &str, to: &str) -> BoxFuture<'_, Result<(), BackendError>>;
 }
 
-use std::sync::Arc;
-
 use super::WorldSave;
 
 /// High-level persistence backend trait.
@@ -128,13 +126,8 @@ use super::WorldSave;
 ///
 /// Both native and WASM implementations are complete - no `Option` wrapping
 /// needed. WASM backend is only inserted after async init completes.
-pub trait PersistenceBackend: Send + Sync {
-  /// Lists all save files (returns names without .save extension).
-  fn list_saves(&self) -> io::Result<Vec<String>>;
-
-  /// Deletes a save file.
-  fn delete_save(&self, name: &str) -> io::Result<()>;
-
+#[allow(dead_code)] // Kept for potential future copy-on-write support
+pub(crate) trait PersistenceBackend: Send + Sync {
   /// Opens or creates a world save asynchronously.
   ///
   /// Native: resolves immediately (sync I/O wrapped in ready future).
@@ -150,12 +143,4 @@ pub trait PersistenceBackend: Send + Sync {
   /// The save must be flushed before copying to ensure consistency.
   /// Returns a new WorldSave handle for the copied file.
   fn save_copy(&self, save: &mut WorldSave, to_name: &str) -> io::Result<WorldSave>;
-
-  /// Returns a reference to the underlying StorageFs.
-  ///
-  /// Used internally for operations that need direct fs access (like copy_to).
-  fn fs(&self) -> &dyn StorageFs;
-
-  /// Returns an Arc to the underlying StorageFs for shared access.
-  fn fs_arc(&self) -> Arc<dyn StorageFs>;
 }

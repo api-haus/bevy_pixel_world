@@ -37,9 +37,7 @@ impl TestHarness {
     app.add_plugins(bevy::scene::ScenePlugin);
     app.add_plugins(bevy::gizmos::GizmoPlugin);
 
-    app.add_plugins(
-      PixelWorldPlugin::default().persistence(PersistenceConfig::new("test").with_path(save_path)),
-    );
+    app.add_plugins(PixelWorldPlugin::new(PersistenceConfig::at(save_path)));
     app.add_plugins(PixelBodiesPlugin);
 
     // Add rapier2d physics

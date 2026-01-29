@@ -17,8 +17,8 @@ use web_sys::{
   FileSystemReadWriteOptions, FileSystemRemoveOptions, FileSystemSyncAccessHandle,
 };
 
+use super::WorldSave;
 use super::backend::{BackendError, BoxFuture, PersistenceBackend, StorageFile, StorageFs};
-use super::{WorldSave, block_on};
 
 /// Converts a JsValue error to BackendError.
 fn js_to_backend_error(e: JsValue) -> BackendError {
@@ -363,6 +363,7 @@ unsafe impl Sync for OpfsFs {}
 ///
 /// Wraps `OpfsFs` and provides high-level persistence operations.
 /// Must be created from an async context since OPFS initialization is async.
+#[allow(dead_code)] // Kept for potential future copy-on-write support
 pub struct WasmPersistence {
   fs: Arc<OpfsFs>,
 }
@@ -384,43 +385,16 @@ impl WasmPersistence {
 }
 
 impl PersistenceBackend for WasmPersistence {
-  fn list_saves(&self) -> io::Result<Vec<String>> {
-    let files = block_on(self.fs.list()).map_err(io::Error::from)?;
-    let mut saves: Vec<String> = files
-      .into_iter()
-      .filter_map(|n| n.strip_suffix(".save").map(String::from))
-      .collect();
-    saves.sort();
-    Ok(saves)
-  }
-
-  fn delete_save(&self, name: &str) -> io::Result<()> {
-    let file_name = format!("{}.save", name);
-    block_on(self.fs.delete(&file_name)).map_err(io::Error::from)
-  }
-
   fn open_or_create_async<'a>(
     &'a self,
     name: &'a str,
     seed: u64,
   ) -> BoxFuture<'a, Result<WorldSave, String>> {
-    Box::pin(async move {
-      let file_name = format!("{}.save", name);
-      WorldSave::open_or_create_async(&*self.fs, &file_name, seed).await
-    })
+    Box::pin(async move { WorldSave::open_or_create_async(&*self.fs, name, seed).await })
   }
 
   fn save_copy(&self, save: &mut WorldSave, to_name: &str) -> io::Result<WorldSave> {
-    let file_name = format!("{}.save", to_name);
-    save.copy_to(&*self.fs, &file_name)
-  }
-
-  fn fs(&self) -> &dyn StorageFs {
-    &*self.fs
-  }
-
-  fn fs_arc(&self) -> Arc<dyn StorageFs> {
-    self.fs.clone()
+    save.copy_to(&*self.fs, to_name)
   }
 }
 

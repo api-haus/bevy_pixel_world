@@ -39,6 +39,105 @@ use crate::primitives::Chunk;
 use crate::render::ChunkMaterial;
 use crate::seeding::ChunkSeeder;
 
+// ============================================================================
+// World Initialization State
+// ============================================================================
+
+/// Tracks the initialization state of the world.
+///
+/// Both native and WASM platforms follow the same async initialization flow:
+/// 1. `Initializing` — Reading save file index from disk
+/// 2. `LoadingChunks` — Initial chunks are being loaded/seeded
+/// 3. `Ready` — Gameplay can begin
+///
+/// Use [`world_is_ready`] and [`world_is_loading`] run conditions to gate
+/// systems appropriately.
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WorldInitState {
+  /// Reading save file index from disk.
+  #[default]
+  Initializing,
+  /// Initial chunks are being loaded or seeded.
+  LoadingChunks,
+  /// World is ready for gameplay.
+  Ready,
+}
+
+/// Progress metrics for world loading.
+///
+/// Provides information useful for loading screens.
+#[derive(Resource, Debug, Clone, Default)]
+pub struct WorldLoadingProgress {
+  /// Current initialization state.
+  pub state: WorldInitState,
+  /// Whether persistence I/O is ready.
+  pub persistence_ready: bool,
+  /// Number of chunks currently being loaded from disk.
+  pub chunks_loading: usize,
+  /// Number of chunks currently being seeded (procedural generation).
+  pub chunks_seeding: usize,
+  /// Number of chunks that are ready (active).
+  pub chunks_ready: usize,
+  /// Total number of chunks in the streaming window.
+  pub chunks_total: usize,
+}
+
+impl WorldLoadingProgress {
+  /// Returns the loading progress as a fraction from 0.0 to 1.0.
+  pub fn fraction(&self) -> f32 {
+    if self.chunks_total == 0 {
+      if self.persistence_ready { 1.0 } else { 0.0 }
+    } else {
+      self.chunks_ready as f32 / self.chunks_total as f32
+    }
+  }
+
+  /// Returns true if the world is fully loaded and ready.
+  pub fn is_complete(&self) -> bool {
+    self.state == WorldInitState::Ready
+  }
+}
+
+/// Run condition: Returns true when the world is ready for gameplay.
+///
+/// Use this to gate simulation and gameplay systems.
+pub fn world_is_ready(state: Res<WorldInitState>) -> bool {
+  *state == WorldInitState::Ready
+}
+
+/// Run condition: Returns true when the world is still loading.
+///
+/// Use this for loading screen systems.
+pub fn world_is_loading(state: Res<WorldInitState>) -> bool {
+  *state != WorldInitState::Ready
+}
+
+// ============================================================================
+// World Events
+// ============================================================================
+
+/// Message emitted when persistence initialization completes.
+///
+/// Contains information about the loaded save file.
+#[derive(bevy::prelude::Message, Debug, Clone)]
+pub struct PersistenceInitialized {
+  /// Number of chunks in the save file.
+  pub chunk_count: usize,
+  /// Number of pixel bodies in the save file.
+  pub body_count: usize,
+}
+
+/// Message emitted when the world becomes ready for gameplay.
+///
+/// This is emitted once when the world transitions from `LoadingChunks` to
+/// `Ready`. Use this to spawn the player or start gameplay.
+#[derive(bevy::prelude::Message, Debug, Clone)]
+pub struct WorldReady;
+
+// ============================================================================
+// Configuration
+// ============================================================================
+
 /// Configuration for pixel world simulation behavior.
 #[derive(Clone, Debug)]
 pub struct PixelWorldConfig {

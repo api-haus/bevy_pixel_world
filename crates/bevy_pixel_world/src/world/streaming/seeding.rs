@@ -23,6 +23,18 @@ pub(crate) struct SeedingTasks {
   pub(super) tasks: Vec<SeedingTask>,
 }
 
+impl SeedingTasks {
+  /// Returns the number of in-flight seeding tasks.
+  pub fn len(&self) -> usize {
+    self.tasks.len()
+  }
+
+  /// Returns true if there are no in-flight seeding tasks.
+  pub fn is_empty(&self) -> bool {
+    self.tasks.is_empty()
+  }
+}
+
 /// An in-flight seeding task.
 pub(super) struct SeedingTask {
   /// Which PixelWorld entity.
@@ -37,18 +49,6 @@ pub(super) struct SeedingTask {
 
 /// Maximum number of concurrent seeding tasks.
 const MAX_SEEDING_TASKS: usize = 2;
-
-/// Creates and seeds a new chunk at the given position.
-#[allow(dead_code)] // Kept for non-persistence code paths
-pub(crate) fn seed_chunk(
-  seeder: &(dyn crate::seeding::ChunkSeeder + Send + Sync),
-  pos: ChunkPos,
-) -> Chunk {
-  let mut chunk = Chunk::new(CHUNK_SIZE, CHUNK_SIZE);
-  chunk.set_pos(pos);
-  seeder.seed(pos, &mut chunk);
-  chunk
-}
 
 /// Creates and seeds a new chunk with pre-loaded persistence data.
 ///
@@ -189,15 +189,6 @@ pub(crate) fn dispatch_seeding(
 
       // Take any pre-loaded data for this chunk
       let loaded = loaded_data.take(pos);
-
-      info!(
-        "[WASM-DEBUG] dispatch_seeding {:?}: loaded={}",
-        pos,
-        loaded
-          .as_ref()
-          .map(|l| format!("{} bytes", l.data.len()))
-          .unwrap_or_else(|| "None".to_string())
-      );
 
       spawn_seeding_task(
         &mut seeding_tasks,
