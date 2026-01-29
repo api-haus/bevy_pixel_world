@@ -37,7 +37,7 @@ mod split;
 use bevy::prelude::*;
 pub use blit::{LastBlitTransform, WrittenPixel, update_pixel_bodies};
 pub(crate) use blit::{compute_transformed_aabb, compute_world_aabb};
-pub use bomb::{Bomb, BombShellMask, check_bomb_ignition, compute_bomb_shell, process_detonations};
+pub use bomb::{Bomb, BombInitialState, check_bomb_damage, init_bomb_state, process_detonations};
 pub use collider::generate_collider;
 pub use displacement::DisplacementState;
 pub use loader::PixelBodyLoader;

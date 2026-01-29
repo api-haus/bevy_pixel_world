@@ -1,10 +1,8 @@
 //! Bomb detonation system.
 //!
-//! Pixel bodies tagged with `Bomb` detonate when their outer shell catches
-//! fire. Detonation destroys/transforms pixels in a blast radius, releases
-//! heat, and chain-detonates nearby bombs.
-
-use std::collections::VecDeque;
+//! Pixel bodies tagged with `Bomb` detonate when enough of their pixels are
+//! destroyed (burned, erased, blasted, etc.). Detonation destroys/transforms
+//! pixels in a blast radius, releases heat, and chain-detonates nearby bombs.
 
 use bevy::prelude::*;
 
@@ -15,11 +13,12 @@ use crate::pixel::{Pixel, PixelFlags};
 use crate::simulation::hash::hash41uu64;
 use crate::world::{BlastHit, BlastParams, PixelWorld};
 
-/// Marks a pixel body as a bomb that detonates when its shell catches fire.
+/// Marks a pixel body as a bomb that detonates when enough pixels are
+/// destroyed.
 #[derive(Component)]
 pub struct Bomb {
-  /// Pixels from the edge that count as "shell". Computed on `Added<Bomb>`.
-  pub shell_depth: u32,
+  /// Fraction of pixels that must be destroyed to trigger (0.0-1.0).
+  pub damage_threshold: f32,
   /// Maximum blast radius in world pixels (caps ray length).
   pub blast_radius: f32,
   /// Initial explosion energy. Dissipated by material blast_resistance per
@@ -29,110 +28,42 @@ pub struct Bomb {
   pub detonated: bool,
 }
 
-/// Precomputed mask of which pixels are in the outer shell.
+/// Tracks initial pixel count for damage-based detonation.
 #[derive(Component)]
-pub struct BombShellMask(pub Vec<bool>);
+pub struct BombInitialState {
+  /// Initial solid pixel count (from shape_mask at spawn).
+  pub initial_pixels: u32,
+}
 
-/// Computes the shell mask for newly added bombs via BFS from void-adjacent
-/// pixels.
-pub fn compute_bomb_shell(
-  mut commands: Commands,
-  query: Query<(Entity, &Bomb, &PixelBody), Added<Bomb>>,
-) {
-  for (entity, bomb, body) in &query {
-    let w = body.width() as usize;
-    let h = body.height() as usize;
-    let len = w * h;
-
-    // Compute shell_depth: ~10% of half-dimension, min 1
-    let depth = if bomb.shell_depth == 0 {
-      (w.min(h) / 20).max(1) as u32
-    } else {
-      bomb.shell_depth
-    };
-
-    // BFS from void-adjacent solid pixels inward
-    let mut distance = vec![u32::MAX; len];
-    let mut queue = VecDeque::new();
-
-    // Seed: solid pixels adjacent to void or edge
-    for y in 0..h {
-      for x in 0..w {
-        let idx = y * w + x;
-        if !body.shape_mask[idx] {
-          continue;
-        }
-        // Check if on edge or adjacent to void
-        let on_boundary = x == 0
-          || x == w - 1
-          || y == 0
-          || y == h - 1
-          || !body.shape_mask[y * w + (x - 1)]
-          || !body.shape_mask[y * w + (x + 1)]
-          || !body.shape_mask[(y - 1) * w + x]
-          || !body.shape_mask[(y + 1) * w + x];
-        if on_boundary {
-          distance[idx] = 0;
-          queue.push_back((x, y));
-        }
-      }
-    }
-
-    // BFS
-    while let Some((x, y)) = queue.pop_front() {
-      let d = distance[y * w + x];
-      if d >= depth {
-        continue;
-      }
-      for (dx, dy) in [(1i32, 0), (-1, 0), (0, 1), (0, -1)] {
-        let nx = x as i32 + dx;
-        let ny = y as i32 + dy;
-        if nx < 0 || nx >= w as i32 || ny < 0 || ny >= h as i32 {
-          continue;
-        }
-        let (nx, ny) = (nx as usize, ny as usize);
-        let nidx = ny * w + nx;
-        if body.shape_mask[nidx] && distance[nidx] == u32::MAX {
-          distance[nidx] = d + 1;
-          queue.push_back((nx, ny));
-        }
-      }
-    }
-
-    // Shell = solid pixels with distance < depth
-    let shell: Vec<bool> = (0..len)
-      .map(|i| body.shape_mask[i] && distance[i] < depth)
-      .collect();
-
+/// Initializes bomb state by counting solid pixels on spawn.
+pub fn init_bomb_state(mut commands: Commands, query: Query<(Entity, &PixelBody), Added<Bomb>>) {
+  for (entity, body) in &query {
+    let initial_pixels = body.shape_mask.iter().filter(|&&s| s).count() as u32;
     commands
       .entity(entity)
-      .insert(BombShellMask(shell))
-      .try_insert(Bomb {
-        shell_depth: depth,
-        ..*bomb
-      });
+      .insert(BombInitialState { initial_pixels });
   }
 }
 
-/// Checks if any shell pixel is burning and triggers detonation.
-pub fn check_bomb_ignition(mut query: Query<(&mut Bomb, &PixelBody, &BombShellMask)>) {
-  for (mut bomb, body, shell) in &mut query {
+/// Checks if enough pixels are destroyed and triggers detonation.
+pub fn check_bomb_damage(mut query: Query<(&mut Bomb, &BombInitialState, &PixelBody)>) {
+  for (mut bomb, initial_state, body) in &mut query {
     if bomb.detonated {
       continue;
     }
-    let w = body.width() as usize;
-    for (i, &is_shell) in shell.0.iter().enumerate() {
-      if !is_shell {
-        continue;
-      }
-      let x = (i % w) as u32;
-      let y = (i / w) as u32;
-      if let Some(pixel) = body.get_pixel(x, y)
-        && pixel.flags.contains(PixelFlags::BURNING)
-      {
-        bomb.detonated = true;
-        break;
-      }
+
+    let current_pixels = body.shape_mask.iter().filter(|&&s| s).count() as u32;
+    let initial = initial_state.initial_pixels;
+
+    if initial == 0 {
+      continue;
+    }
+
+    let destroyed = initial.saturating_sub(current_pixels);
+    let damage_ratio = destroyed as f32 / initial as f32;
+
+    if damage_ratio >= bomb.damage_threshold {
+      bomb.detonated = true;
     }
   }
 }
@@ -170,38 +101,41 @@ pub fn process_detonations(
     return;
   };
 
-  for &(_entity, radius, strength, center) in &detonations {
-    let params = BlastParams {
+  // Build blast params for all detonations
+  let blast_params: Vec<BlastParams> = detonations
+    .iter()
+    .map(|&(_, radius, strength, center)| BlastParams {
       center,
       strength,
       max_radius: radius,
       heat_radius: radius * 4.0,
+    })
+    .collect();
+
+  // Process all blasts in a single batched operation
+  world.blast_many(&blast_params, |pixel, pos| {
+    let mat = materials.get(pixel.material);
+    let cost = mat.effects.blast_resistance;
+
+    // 90% void, 10% ash
+    let roll = hash41uu64(0xB00B, pos.x as u64, pos.y as u64, 0xDEAD);
+    let new_pixel = if roll.is_multiple_of(10) {
+      let color_idx = (roll / 10 % 256) as u8;
+      Pixel {
+        material: crate::material::ids::ASH,
+        color: ColorIndex(color_idx),
+        damage: 0,
+        flags: PixelFlags::DIRTY | PixelFlags::SOLID | PixelFlags::FALLING,
+      }
+    } else {
+      Pixel::VOID
     };
 
-    world.blast(&params, |pixel, pos| {
-      let mat = materials.get(pixel.material);
-      let cost = mat.effects.blast_resistance;
-
-      // 90% void, 10% ash
-      let roll = hash41uu64(0xB00B, pos.x as u64, pos.y as u64, 0xDEAD);
-      let new_pixel = if roll.is_multiple_of(10) {
-        let color_idx = (roll / 10 % 256) as u8;
-        Pixel {
-          material: crate::material::ids::ASH,
-          color: ColorIndex(color_idx),
-          damage: 0,
-          flags: PixelFlags::DIRTY | PixelFlags::SOLID | PixelFlags::FALLING,
-        }
-      } else {
-        Pixel::VOID
-      };
-
-      BlastHit::Hit {
-        pixel: new_pixel,
-        cost,
-      }
-    });
-  }
+    BlastHit::Hit {
+      pixel: new_pixel,
+      cost,
+    }
+  });
 
   // Chain-detonate nearby bombs
   let centers: Vec<(f32, Vec2)> = detonations.iter().map(|&(_, r, _, c)| (r, c)).collect();
