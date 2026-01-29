@@ -1,11 +1,15 @@
 use bevy::{camera::ScalingMode, prelude::*};
-use bevy_pixel_world::{PixelCamera, StreamingCamera};
+use bevy_pixel_world::{PixelCamera, StreamingCamera, VirtualCamera};
 
 use crate::config::ConfigLoaded;
 
 /// Marker component for the game camera
 #[derive(Component)]
 pub struct GameCamera;
+
+/// Marker component for the player's virtual camera
+#[derive(Component)]
+pub struct PlayerVirtualCamera;
 
 /// Marker component for entities the camera should follow
 #[derive(Component)]
@@ -23,6 +27,7 @@ impl Default for CameraSmoothness {
 
 /// Simple orthographic 2D camera setup
 pub fn setup_camera(mut commands: Commands, config: Res<ConfigLoaded>) {
+  // Spawn the real camera for rendering
   commands.spawn((
     GameCamera,
     StreamingCamera,        // Required for PixelWorld chunk streaming
@@ -45,12 +50,19 @@ pub fn setup_camera(mut commands: Commands, config: Res<ConfigLoaded>) {
       area: Rect::default(),
     }),
   ));
+
+  // Spawn a virtual camera at player priority (lowest, default)
+  commands.spawn((
+    PlayerVirtualCamera,
+    VirtualCamera::new(VirtualCamera::PRIORITY_PLAYER),
+    Transform::default(),
+  ));
 }
 
-/// Camera follow with dampening
+/// Camera follow with dampening - updates the virtual camera's transform
 pub fn camera_follow(
-  target_query: Query<&GlobalTransform, (With<CameraTarget>, Without<GameCamera>)>,
-  mut camera_query: Query<&mut Transform, With<GameCamera>>,
+  target_query: Query<&GlobalTransform, (With<CameraTarget>, Without<PlayerVirtualCamera>)>,
+  mut camera_query: Query<&mut Transform, With<PlayerVirtualCamera>>,
   smoothness: Res<CameraSmoothness>,
   time: Res<Time>,
 ) {

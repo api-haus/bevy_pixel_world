@@ -36,7 +36,10 @@ pub struct BombInitialState {
 }
 
 /// Initializes bomb state by counting solid pixels on spawn.
-pub fn init_bomb_state(mut commands: Commands, query: Query<(Entity, &PixelBody), Added<Bomb>>) {
+pub fn init_bomb_state(
+  mut commands: Commands,
+  query: Query<(Entity, &PixelBody), (With<Bomb>, Without<BombInitialState>)>,
+) {
   for (entity, body) in &query {
     let initial_pixels = body.shape_mask.iter().filter(|&&s| s).count() as u32;
     commands

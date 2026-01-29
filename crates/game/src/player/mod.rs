@@ -3,13 +3,14 @@ mod flight;
 pub mod interpolation;
 pub mod movement;
 mod spawn;
-mod spawn_body;
 
 #[cfg(test)]
 mod tests;
 
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
+
+use crate::console::{in_creative_mode, in_survival_mode};
 
 pub struct PlayerPlugin;
 
@@ -35,6 +36,7 @@ impl Plugin for PlayerPlugin {
     app
       // FixedFirst: Shift positions for interpolation
       .add_systems(FixedFirst, interpolation::shift_positions)
+      // Survival mode: physics-based movement
       .add_systems(
         FixedUpdate,
         (
@@ -44,26 +46,31 @@ impl Plugin for PlayerPlugin {
           movement::apply_velocity_to_controller, // Send to physics
         )
           .chain()
+          .run_if(in_survival_mode)
+          .before(PhysicsSet::SyncBackend),
+      )
+      // Creative mode: WASD-controlled position
+      .add_systems(
+        FixedUpdate,
+        (
+          movement::creative_mode_handle_input,
+          movement::creative_mode_sync_player,
+        )
+          .chain()
+          .run_if(in_creative_mode)
           .before(PhysicsSet::SyncBackend),
       )
       // Read physics output AFTER Rapier writeback (still in FixedUpdate)
       .add_systems(
         FixedUpdate,
         (
-          movement::sync_ground_from_physics,
+          movement::sync_ground_from_physics.run_if(in_survival_mode),
           interpolation::store_current_position,
         )
           .chain()
           .after(PhysicsSet::Writeback),
       )
       // Update: Interpolate the visual child for smooth rendering
-      .add_systems(
-        Update,
-        (
-          interpolation::interpolate_visual,
-          spawn_body::spawn_body_on_input,
-          spawn_body::tag_new_bodies_as_bombs,
-        ),
-      );
+      .add_systems(Update, interpolation::interpolate_visual);
   }
 }

@@ -1,5 +1,6 @@
 mod ambiance;
 mod config;
+mod console;
 mod core;
 #[cfg(feature = "editor")]
 mod editor;
@@ -67,6 +68,7 @@ fn main() {
   app.add_plugins(editor::EditorPlugin);
 
   app.add_plugins(visual_debug::VisualDebugPlugin);
+  app.add_plugins(console::ConsolePlugins);
   // DiagnosticsPlugin is already added by PixelWorldFullBundle
 
   app.run();

@@ -132,6 +132,8 @@ pub struct SpawnPixelBody {
   pub material: MaterialId,
   /// World position to spawn at.
   pub position: Vec2,
+  /// Extra components to insert on the spawned entity.
+  extra: Option<Box<dyn FnOnce(&mut bevy::ecs::world::EntityWorldMut) + Send + Sync>>,
 }
 
 impl SpawnPixelBody {
@@ -143,7 +145,29 @@ impl SpawnPixelBody {
       path: path.into(),
       material,
       position,
+      extra: None,
     }
+  }
+
+  /// Adds extra components to the spawned entity.
+  ///
+  /// The closure receives a mutable reference to the entity and can insert
+  /// any additional components. These are preserved when the pending body
+  /// is finalized into a full pixel body.
+  ///
+  /// # Example
+  /// ```ignore
+  /// commands.queue(SpawnPixelBody::new("box.png", material_ids::WOOD, pos)
+  ///     .with_extra(|entity| {
+  ///         entity.insert(Bomb::default());
+  ///     }));
+  /// ```
+  pub fn with_extra<F>(mut self, f: F) -> Self
+  where
+    F: FnOnce(&mut bevy::ecs::world::EntityWorldMut) + Send + Sync + 'static,
+  {
+    self.extra = Some(Box::new(f));
+    self
   }
 }
 
@@ -201,11 +225,16 @@ impl bevy::ecs::system::Command for SpawnPixelBody {
     let image_handle: Handle<Image> = asset_server.load(&self.path);
 
     // Spawn a pending entity that will be finalized when the image loads
-    world.spawn(PendingPixelBody {
+    let mut entity = world.spawn(PendingPixelBody {
       image: image_handle,
       material: self.material,
       position: self.position,
     });
+
+    // Apply extra components if provided
+    if let Some(extra) = self.extra {
+      extra(&mut entity);
+    }
   }
 }
 
