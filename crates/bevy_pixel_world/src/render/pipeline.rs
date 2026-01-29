@@ -168,15 +168,15 @@ pub fn upload_heat(heat: &[u8], image: &mut Image) {
   }
 }
 
-/// Creates a quad mesh with Y+ up UV coordinates.
+/// Creates a quad mesh with Y+ up UV coordinates and origin at bottom-left.
 ///
-/// Unlike Bevy's default Rectangle which has UV (0,0) at top-left,
-/// this quad has UV (0,0) at bottom-left to match our Y+ up convention.
-/// This allows the shader to sample directly without Y-flipping.
+/// Unlike Bevy's default Rectangle which is centered, this quad has its
+/// origin at the bottom-left corner (0,0). This allows chunks to be positioned
+/// at exact integer coordinates without center offset calculations that could
+/// introduce float precision errors.
+///
+/// UV (0,0) is at bottom-left to match our Y+ up convention.
 pub fn create_chunk_quad(width: f32, height: f32) -> Mesh {
-  let hw = width / 2.0;
-  let hh = height / 2.0;
-
   Mesh::new(
     PrimitiveTopology::TriangleList,
     RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
@@ -184,10 +184,10 @@ pub fn create_chunk_quad(width: f32, height: f32) -> Mesh {
   .with_inserted_attribute(
     Mesh::ATTRIBUTE_POSITION,
     vec![
-      [-hw, -hh, 0.0], // bottom-left
-      [hw, -hh, 0.0],  // bottom-right
-      [hw, hh, 0.0],   // top-right
-      [-hw, hh, 0.0],  // top-left
+      [0.0, 0.0, 0.0],      // bottom-left (origin)
+      [width, 0.0, 0.0],    // bottom-right
+      [width, height, 0.0], // top-right
+      [0.0, height, 0.0],   // top-left
     ],
   )
   .with_inserted_attribute(

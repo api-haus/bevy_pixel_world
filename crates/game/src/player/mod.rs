@@ -3,6 +3,7 @@ mod flight;
 pub mod interpolation;
 pub mod movement;
 mod spawn;
+mod spawn_body;
 
 #[cfg(test)]
 mod tests;
@@ -56,6 +57,13 @@ impl Plugin for PlayerPlugin {
           .after(PhysicsSet::Writeback),
       )
       // Update: Interpolate the visual child for smooth rendering
-      .add_systems(Update, interpolation::interpolate_visual);
+      .add_systems(
+        Update,
+        (
+          interpolation::interpolate_visual,
+          spawn_body::spawn_body_on_input,
+          spawn_body::tag_new_bodies_as_bombs,
+        ),
+      );
   }
 }

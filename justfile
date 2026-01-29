@@ -21,7 +21,7 @@ test-pixel-world:
     cargo test -p bevy_pixel_world
 
 game:
-    cargo run -p game
+    cargo run -p game --release
 
 # Serve game with trunk (WASM dev server)
 serve:

@@ -3,6 +3,7 @@ use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
 use crate::collision::CollisionQueryPoint;
+use crate::pixel_camera::LogicalCameraPosition;
 use crate::{MaterialId, StreamingCamera, material_ids};
 
 pub const MIN_RADIUS: u32 = 2;
@@ -69,7 +70,15 @@ fn input_system(
   keys: Res<ButtonInput<KeyCode>>,
   mut scroll_events: MessageReader<MouseWheel>,
   window_query: Query<&Window, With<PrimaryWindow>>,
-  camera_query: Query<(&Camera, &GlobalTransform), With<StreamingCamera>>,
+  camera_query: Query<
+    (
+      &Camera,
+      &GlobalTransform,
+      &Projection,
+      Option<&LogicalCameraPosition>,
+    ),
+    With<StreamingCamera>,
+  >,
 ) {
   brush.painting = mouse_buttons.pressed(MouseButton::Left);
   brush.erasing = mouse_buttons.pressed(MouseButton::Right);
@@ -87,15 +96,52 @@ fn input_system(
   let Ok(window) = window_query.single() else {
     return;
   };
-  let Ok((camera, camera_transform)) = camera_query.single() else {
+  let Ok((camera, camera_transform, projection, logical_pos)) = camera_query.single() else {
     return;
   };
 
   if let Some(cursor_pos) = window.cursor_position() {
-    if let Ok(world_pos) = camera.viewport_to_world_2d(camera_transform, cursor_pos) {
-      brush.world_pos = Some((world_pos.x as i64, world_pos.y as i64));
-      brush.world_pos_f32 = Some(world_pos);
-    }
+    // With pixel camera, the scene camera renders to a texture, so
+    // viewport_to_world_2d doesn't work correctly. Compute world position
+    // manually from window coordinates.
+    let world_pos = if let Some(logical) = logical_pos {
+      // Pixel camera mode: compute manually using logical position
+      let Projection::Orthographic(ortho) = projection else {
+        return;
+      };
+
+      // Get orthographic view half-size
+      let half_width = (ortho.area.max.x - ortho.area.min.x) / 2.0;
+      let half_height = (ortho.area.max.y - ortho.area.min.y) / 2.0;
+
+      if half_width <= 0.0 || half_height <= 0.0 {
+        return; // Ortho area not computed yet
+      }
+
+      // Convert cursor to normalized coordinates (0 to 1)
+      let normalized = cursor_pos / Vec2::new(window.width(), window.height());
+
+      // Convert to clip space (-1 to 1), with Y flipped (screen Y down, world Y up)
+      let clip = Vec2::new(
+        (normalized.x - 0.5) * 2.0,
+        (0.5 - normalized.y) * 2.0, // Flip Y
+      );
+
+      // Map to world offset from camera center
+      let world_offset = Vec2::new(clip.x * half_width, clip.y * half_height);
+
+      // Add logical camera position
+      logical.0 + world_offset
+    } else {
+      // Normal mode: use standard viewport_to_world_2d
+      let Ok(pos) = camera.viewport_to_world_2d(camera_transform, cursor_pos) else {
+        return;
+      };
+      pos
+    };
+
+    brush.world_pos = Some((world_pos.x as i64, world_pos.y as i64));
+    brush.world_pos_f32 = Some(world_pos);
   } else {
     brush.world_pos = None;
     brush.world_pos_f32 = None;

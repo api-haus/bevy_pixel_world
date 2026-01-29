@@ -9,6 +9,7 @@ use crate::coords::{CHUNK_SIZE, ChunkPos, WorldPos, WorldRect};
 use crate::persistence::PersistenceTasks;
 use crate::persistence::compression::compress_lz4;
 use crate::persistence::format::StorageType;
+use crate::pixel_camera::LogicalCameraPosition;
 use crate::primitives::HEAT_GRID_SIZE;
 use crate::render::{ChunkMaterial, create_heat_texture, create_pixel_texture};
 use crate::world::control::PersistenceControl;
@@ -39,7 +40,7 @@ pub(crate) struct SharedPaletteTexture {
 #[cfg_attr(feature = "tracy", tracing::instrument(skip_all))]
 pub(crate) fn update_streaming_windows(
   mut commands: Commands,
-  camera_query: Query<&GlobalTransform, With<StreamingCamera>>,
+  camera_query: Query<(&GlobalTransform, Option<&LogicalCameraPosition>), With<StreamingCamera>>,
   mut worlds: Query<(Entity, &mut PixelWorld)>,
   mut images: Option<ResMut<Assets<Image>>>,
   mut materials: Option<ResMut<Assets<ChunkMaterial>>>,
@@ -48,17 +49,22 @@ pub(crate) fn update_streaming_windows(
   mut unloading_chunks: ResMut<UnloadingChunks>,
   persistence_control: Option<Res<PersistenceControl>>,
 ) {
-  let Ok(camera_transform) = camera_query.single() else {
+  let Ok((camera_transform, logical_pos)) = camera_query.single() else {
     return;
   };
 
   let palette_handle = palette.as_ref().map(|p| p.handle.clone());
   let has_persistence = persistence_control.as_ref().is_some_and(|p| p.is_ready());
 
+  // Use logical camera position if available (pixel camera mode)
+  // Otherwise fall back to transform position
+  let cam_pos = logical_pos
+    .map(|lp| Vec3::new(lp.0.x, lp.0.y, 0.0))
+    .unwrap_or_else(|| camera_transform.translation());
+
   // Convert camera position to chunk position
   // Offset by half chunk so transitions occur at chunk centers
   let half_chunk = (CHUNK_SIZE / 2) as i64;
-  let cam_pos = camera_transform.translation();
   let cam_x = cam_pos.x as i64 + half_chunk;
   let cam_y = cam_pos.y as i64 + half_chunk;
   let (chunk_pos, _) = WorldPos::new(cam_x, cam_y).to_chunk_and_local();
@@ -118,13 +124,9 @@ fn spawn_chunk_entity(
   pos: ChunkPos,
   slot_idx: SlotIndex,
 ) {
-  // Spawn entity at chunk world position
+  // Spawn entity at chunk's min corner (mesh origin is bottom-left)
   let world_pos = pos.to_world();
-  let transform = Transform::from_xyz(
-    world_pos.x as f32 + CHUNK_SIZE as f32 / 2.0,
-    world_pos.y as f32 + CHUNK_SIZE as f32 / 2.0,
-    0.0,
-  );
+  let transform = Transform::from_xyz(world_pos.x as f32, world_pos.y as f32, 0.0);
 
   let (entity, texture, material, heat_tex) =
     if let (Some(images), Some(materials)) = (images, materials) {
@@ -186,10 +188,17 @@ fn spawn_chunk_entity(
 /// Extracts the visible area from the streaming camera's orthographic
 /// projection and sets it as the simulation bounds for all pixel worlds.
 pub(crate) fn update_simulation_bounds(
-  camera_query: Query<(&GlobalTransform, &Projection), With<StreamingCamera>>,
+  camera_query: Query<
+    (
+      &GlobalTransform,
+      &Projection,
+      Option<&LogicalCameraPosition>,
+    ),
+    With<StreamingCamera>,
+  >,
   mut worlds: Query<&mut PixelWorld>,
 ) {
-  let Ok((transform, projection)) = camera_query.single() else {
+  let Ok((transform, projection, logical_pos)) = camera_query.single() else {
     return;
   };
 
@@ -198,7 +207,11 @@ pub(crate) fn update_simulation_bounds(
     return;
   };
 
-  let cam_pos = transform.translation();
+  // Use logical camera position if available (pixel camera mode)
+  // Otherwise fall back to transform position
+  let cam_pos = logical_pos
+    .map(|lp| Vec3::new(lp.0.x, lp.0.y, 0.0))
+    .unwrap_or_else(|| transform.translation());
 
   // Extract viewport dimensions from the orthographic projection area
   let half_width = (ortho.area.max.x - ortho.area.min.x) / 2.0;

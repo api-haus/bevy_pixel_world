@@ -13,7 +13,7 @@ pub struct PhysicsPlugin;
 impl Plugin for PhysicsPlugin {
   fn build(&self, app: &mut App) {
     app
-      .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(1.0))
+      .add_plugins(RapierPhysicsPlugin::<NoUserData>::default().with_length_unit(50.0))
       .add_systems(Startup, setup_gravity);
   }
 }
