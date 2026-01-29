@@ -24,3 +24,7 @@ Thumbs.db
 rustc-ice-*.txt
 /*.json.gz
 dist/
+
+.claude/settings.local.json
+!.claude/
+!.claude/skills/
