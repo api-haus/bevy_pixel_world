@@ -40,6 +40,11 @@ Build a corpus of concrete examples to inform better methodology for spec-driven
 | [028](028-root-cause-misidentification.md) | Root Cause Misidentification | Persistence | fix didn't work, cause was wrong |
 | [029](029-ignoring-provided-resources.md) | Ignoring Provided Resources | Noise | "use the preset you donkey" |
 | [030](030-introduced-regression-during-fix.md) | Introduced Regression During Fix | Pixel Bodies | "we've introduced a bug" |
+| [031](031-recurring-bug-pattern.md) | Recurring Bug Pattern | Input | "not working again" |
+| [032](032-declaring-completion-without-verification.md) | Declaring Completion Without Verification | Canvas | code runs but output unchanged |
+| [033](033-repeated-goal-abandonment.md) | Repeated Goal Abandonment | Persistence | "third time you pivot" |
+| [034](034-leftover-debug-code.md) | Leftover Debug Code | Visual Debug | debug artifacts not cleaned up |
+| [035](035-overcomplicating-simple-request.md) | Overcomplicating Simple Request | Physics | "What really I want is..." |
 
 ## Common Signals
 
@@ -101,6 +106,11 @@ Phrases that effectively redirect Claude:
 28. **Wrong Root Cause** (#028) - Fixing the wrong thing based on incorrect diagnosis
 29. **Resource Substitution** (#029) - Inventing alternatives instead of using provided resources
 30. **Feature Regressions** (#030) - New features breaking existing functionality
+31. **Fragile Fixes** (#031) - Bugs that keep recurring indicate design problems
+32. **Unverified Visual Work** (#032) - Declaring visual features done without seeing output
+33. **Persistent Avoidance** (#033) - Repeatedly declaring the goal "a separate issue"
+34. **Debug Artifacts** (#034) - Temporary code not cleaned up after development
+35. **Complexity Attraction** (#035) - Pursuing interesting technical tangents over simple requests
 
 ## Session Archive
 
