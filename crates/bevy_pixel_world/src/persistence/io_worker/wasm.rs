@@ -51,6 +51,21 @@ impl WasmIoDispatcher {
     worker.set_onerror(Some(onerror.as_ref().unchecked_ref()));
     onerror.forget();
 
+    // Set up beforeunload handler to flush before page close
+    let worker_clone = worker.clone();
+    let beforeunload = Closure::wrap(Box::new(move |_event: web_sys::Event| {
+      // Send shutdown command to flush the save file
+      let obj = js_sys::Object::new();
+      js_sys::Reflect::set(&obj, &"type".into(), &"Shutdown".into()).unwrap();
+      let _ = worker_clone.post_message(&obj);
+    }) as Box<dyn FnMut(web_sys::Event)>);
+
+    let window = web_sys::window().expect("no window");
+    window
+      .add_event_listener_with_callback("beforeunload", beforeunload.as_ref().unchecked_ref())
+      .expect("Failed to add beforeunload listener");
+    beforeunload.forget();
+
     Self {
       worker,
       result_queue,
