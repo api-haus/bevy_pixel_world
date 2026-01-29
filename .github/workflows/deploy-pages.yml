@@ -73,7 +73,7 @@ jobs:
 
       - name: Build WASM with Trunk
         working-directory: crates/game
-        run: trunk build --release --public-url /sim2d/
+        run: trunk build --release --public-url /${GITHUB_REPOSITORY#*/}/
 
       - name: Add coi-serviceworker for SharedArrayBuffer
         working-directory: crates/game/dist
