@@ -49,7 +49,7 @@ pub use creative_mode::CreativeModePlugins;
 pub use debug_camera::{CameraZoom, PixelDebugControllerCameraPlugin};
 pub use debug_controller::{BrushState, PixelDebugControllerPlugin, UiPointerState};
 pub use material::{Material, Materials, MaterialsConfig, PhysicsState, ids as material_ids};
-pub use persistence::{PixelBodyRecord, WorldSave, WorldSaveResource};
+pub use persistence::{PersistenceBackend, PixelBodyRecord, WorldSave};
 pub use pixel::{Pixel, PixelFlags, PixelSurface};
 pub use pixel_awareness::GridSampleConfig;
 pub use pixel_body::{
@@ -244,59 +244,99 @@ impl Plugin for PixelWorldPlugin {
     // Store culling config
     app.insert_resource(self.culling.clone());
 
-    // Initialize storage backend and persistence control
-    let base_dir = self.persistence.save_dir();
-    // When an explicit path is set, derive save name from the filename.
-    // e.g., "/tmp/test.save" -> save name "test", file name "test.save"
-    let (current_save, save_file_name) = if let Some(ref explicit) = self.persistence.save_path {
-      let file_name = explicit
-        .file_name()
-        .and_then(|f| f.to_str())
-        .unwrap_or("world.save")
-        .to_string();
-      let save_name = file_name
-        .strip_suffix(".save")
-        .unwrap_or(&file_name)
-        .to_string();
-      (save_name, file_name)
-    } else {
-      let save_name = self.persistence.effective_save_name().to_string();
-      let file_name = PersistenceControl::save_file_name(&save_name);
-      (save_name, file_name)
-    };
+    // Initialize storage backend and persistence control (native only for now)
+    #[cfg(not(target_family = "wasm"))]
+    {
+      let base_dir = self.persistence.save_dir();
+      // When an explicit path is set, derive save name from the filename.
+      // e.g., "/tmp/test.save" -> save name "test", file name "test.save"
+      let current_save = if let Some(ref explicit) = self.persistence.save_path {
+        let file_name = explicit
+          .file_name()
+          .and_then(|f| f.to_str())
+          .unwrap_or("world.save");
+        file_name
+          .strip_suffix(".save")
+          .unwrap_or(file_name)
+          .to_string()
+      } else {
+        self.persistence.effective_save_name().to_string()
+      };
 
-    let native_fs = match persistence::native::NativeFs::new(base_dir.clone()) {
-      Ok(fs) => fs,
-      Err(e) => {
-        error!(
-          "Failed to create save directory {:?}: {}. Persistence disabled.",
-          base_dir, e
-        );
-        app.add_plugins(world::plugin::PixelWorldStreamingPlugin);
-        if app.is_plugin_added::<bevy::render::RenderPlugin>() {
-          app.add_plugins(visual_debug::VisualDebugPlugin);
-        }
-        return;
-      }
-    };
-
-    // Initialize world save if persistence is enabled
-    if self.persistence.enabled {
-      match WorldSave::open_or_create(&native_fs, &save_file_name, self.persistence.world_seed) {
-        Ok(save) => {
-          info!("Opened world save {:?} in {:?}", save_file_name, base_dir);
-          app.insert_resource(WorldSaveResource::new(save));
-        }
+      let backend = match persistence::NativePersistence::new(base_dir.clone()) {
+        Ok(b) => std::sync::Arc::new(b),
         Err(e) => {
           error!(
-            "Failed to open world save {:?}: {}. Persistence disabled.",
-            save_file_name, e
+            "Failed to create save directory {:?}: {}. Persistence disabled.",
+            base_dir, e
           );
+          app.add_plugins(world::plugin::PixelWorldStreamingPlugin);
+          if app.is_plugin_added::<bevy::render::RenderPlugin>() {
+            app.add_plugins(visual_debug::VisualDebugPlugin);
+          }
+          return;
         }
+      };
+
+      // Initialize world save if persistence is enabled
+      if self.persistence.enabled {
+        // Use block_on since NativePersistence resolves immediately
+        let save_result = persistence::block_on(
+          backend.open_or_create_async(&current_save, self.persistence.world_seed),
+        );
+        match save_result {
+          Ok(save) => {
+            info!("Opened world save {:?} in {:?}", current_save, base_dir);
+            app.insert_resource(PersistenceControl::with_save(backend, save, current_save));
+          }
+          Err(e) => {
+            error!(
+              "Failed to open world save {:?}: {}. Persistence disabled.",
+              current_save, e
+            );
+            // Insert control without save
+            app.insert_resource(PersistenceControl::new(backend));
+          }
+        }
+      } else {
+        // Persistence disabled, insert control without save
+        app.insert_resource(PersistenceControl::new(backend));
       }
     }
 
-    app.insert_resource(PersistenceControl::new(Box::new(native_fs), current_save));
+    // WASM: Persistence uses a dedicated Web Worker for OPFS operations.
+    // The Web Worker is required because `createSyncAccessHandle()` only
+    // works in Web Workers, not the main browser thread.
+    #[cfg(target_family = "wasm")]
+    {
+      if self.persistence.enabled {
+        let save_name = self.persistence.effective_save_name().to_string();
+        let seed = self.persistence.world_seed;
+
+        // Create IoDispatcher which spawns the Web Worker
+        let io_dispatcher = persistence::IoDispatcher::new();
+
+        // Send Initialize command to the worker
+        io_dispatcher.send(persistence::IoCommand::Initialize {
+          save_name: save_name.clone(),
+          seed,
+        });
+
+        app.insert_resource(io_dispatcher);
+
+        // Insert a pending PersistenceControl - will be activated when worker
+        // initializes
+        app.insert_resource(world::control::PendingPersistenceInit {
+          save_name: save_name.clone(),
+          world_seed: seed,
+        });
+
+        info!(
+          "WASM persistence enabled via Web Worker, initializing save '{}'",
+          save_name
+        );
+      }
+    }
 
     // Add world streaming systems
     app.add_plugins(world::plugin::PixelWorldStreamingPlugin);

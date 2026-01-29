@@ -1232,6 +1232,7 @@ name = "bevy_pixel_world"
 version = "0.1.0"
 dependencies = [
  "ab_glyph",
+ "async-channel",
  "avian2d",
  "bevy",
  "bevy_egui",
@@ -1253,6 +1254,8 @@ dependencies = [
  "tracing-subscriber",
  "tracing-tracy",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
  "web-time",
 ]
 

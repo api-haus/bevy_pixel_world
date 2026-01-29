@@ -10,13 +10,18 @@ use crate::render::ChunkMaterial;
 /// Lifecycle state of a chunk slot.
 ///
 /// Tracks the slot's position in the pooling state machine:
-/// `InPool` → `Seeding` → `Active` → `InPool`
+/// `InPool` → `Loading` → `Seeding` → `Active` → `InPool`
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ChunkLifecycle {
   /// Slot is in the pool, available for allocation.
   #[default]
   InPool,
-  /// Slot has been assigned a position but is awaiting seed data.
+  /// Slot has been assigned a position and is waiting for async I/O to load
+  /// persisted data. Chunks in this state have no valid pixel data yet and
+  /// are skipped by simulation and rendering.
+  Loading,
+  /// Slot has loaded data (or determined none exists) and is awaiting
+  /// procedural seeding or delta application.
   Seeding,
   /// Slot is fully active with valid pixel data.
   Active,
@@ -86,11 +91,37 @@ impl ChunkSlot {
     self.lifecycle == ChunkLifecycle::Active
   }
 
+  /// Returns true if the chunk is waiting for async I/O to complete.
+  #[inline]
+  pub fn is_loading(&self) -> bool {
+    self.lifecycle == ChunkLifecycle::Loading
+  }
+
+  /// Returns true if the chunk is in the seeding phase.
+  #[inline]
+  pub fn is_seeding(&self) -> bool {
+    self.lifecycle == ChunkLifecycle::Seeding
+  }
+
   /// Initializes the slot for a new chunk position.
   ///
   /// Transitions from InPool to Seeding state and prepares for seeding.
   pub(crate) fn initialize(&mut self, pos: crate::coords::ChunkPos) {
     self.lifecycle = ChunkLifecycle::Seeding;
+    self.pos = Some(pos);
+    self.chunk.set_pos(pos);
+    self.dirty = false;
+    self.modified = false;
+    self.persisted = false;
+  }
+
+  /// Initializes the slot for a new chunk position with Loading state.
+  ///
+  /// Used when persistence is enabled to allow async I/O before seeding.
+  /// Transitions from InPool to Loading state.
+  #[allow(dead_code)] // Used by streaming window when persistence is enabled
+  pub(crate) fn initialize_loading(&mut self, pos: crate::coords::ChunkPos) {
+    self.lifecycle = ChunkLifecycle::Loading;
     self.pos = Some(pos);
     self.chunk.set_pos(pos);
     self.dirty = false;

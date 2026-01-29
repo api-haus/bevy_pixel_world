@@ -9,8 +9,9 @@ use web_time::Instant;
 use super::PixelWorld;
 use super::control::{PersistenceComplete, RequestPersistence, SimulationState};
 use super::persistence_systems::{
-  flush_persistence_queue, handle_persistence_messages, notify_persistence_complete,
-  process_pending_save_requests,
+  LoadedChunkDataStore, dispatch_chunk_loads, dispatch_save_task, flush_persistence_queue,
+  handle_persistence_messages, notify_persistence_complete, poll_chunk_loads, poll_io_results,
+  poll_save_task, process_pending_save_requests,
 };
 use super::streaming::poll_seeding_tasks;
 use super::streaming::{
@@ -24,6 +25,7 @@ use crate::coords::CHUNK_SIZE;
 use crate::debug_shim;
 use crate::material::Materials;
 use crate::persistence::PersistenceTasks;
+use crate::persistence::tasks::{LoadingChunks, SavingChunks};
 use crate::render::{create_chunk_quad, create_palette_texture, upload_palette};
 use crate::schedule::{PixelWorldSet, SimulationPhase};
 use crate::simulation;
@@ -45,6 +47,9 @@ impl Plugin for PixelWorldStreamingPlugin {
     app
       .init_resource::<SeedingTasks>()
       .init_resource::<PersistenceTasks>()
+      .init_resource::<LoadingChunks>()
+      .init_resource::<SavingChunks>()
+      .init_resource::<LoadedChunkDataStore>()
       .init_resource::<crate::collision::CollisionCache>()
       .init_resource::<CullingConfig>()
       .init_resource::<UnloadingChunks>()
@@ -88,9 +93,15 @@ impl Plugin for PixelWorldStreamingPlugin {
       Update,
       (
         clear_chunk_tracking,
+        // Poll I/O worker results (initialization, chunk loads, etc.)
+        poll_io_results,
         handle_persistence_messages,
         update_streaming_windows,
         update_entity_culling,
+        // Async persistence loading: dispatch loads for new chunks, poll completed loads
+        dispatch_chunk_loads,
+        poll_chunk_loads,
+        // Seeding: dispatch and poll async seeding tasks
         dispatch_seeding,
         poll_seeding_tasks,
         update_simulation_bounds,
@@ -112,6 +123,10 @@ impl Plugin for PixelWorldStreamingPlugin {
       Update,
       (
         process_pending_save_requests,
+        // Async persistence saving: dispatch save task, poll completion
+        dispatch_save_task,
+        poll_save_task,
+        // Legacy sync flush (for copy-on-write and immediate flushes)
         flush_persistence_queue,
         notify_persistence_complete,
       )

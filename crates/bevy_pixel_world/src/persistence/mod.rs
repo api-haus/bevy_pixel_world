@@ -10,13 +10,19 @@ pub mod backend;
 pub mod compression;
 pub mod format;
 pub mod index;
+pub mod io_worker;
+#[cfg(not(target_family = "wasm"))]
 pub mod native;
+#[cfg(target_family = "wasm")]
+pub mod opfs;
 pub mod pixel_body;
+pub mod tasks;
 
 use std::io::{self, Cursor};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+pub use backend::PersistenceBackend;
 use backend::{StorageFile, StorageFs};
 use bevy::prelude::*;
 use compression::{
@@ -25,6 +31,12 @@ use compression::{
 };
 use format::{EntitySectionHeader, Header, HeaderError, PageTableEntry, StorageType};
 use index::{ChunkIndex, PixelBodyIndex, PixelBodyIndexEntry};
+pub use io_worker::{IoCommand, IoDispatcher, IoResult};
+// Re-export backend implementations
+#[cfg(not(target_family = "wasm"))]
+pub use native::NativePersistence;
+#[cfg(target_family = "wasm")]
+pub use opfs::WasmPersistence;
 pub use pixel_body::{PixelBodyReadError, PixelBodyRecord};
 
 use crate::coords::ChunkPos;
@@ -58,6 +70,7 @@ pub fn default_save_dir(_app_name: &str) -> PathBuf {
 ///
 /// All native backend futures resolve on first poll. This helper avoids
 /// pulling in a full async runtime for what is synchronous I/O.
+#[cfg(not(target_family = "wasm"))]
 pub(crate) fn block_on<T>(
   fut: std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send + '_>>,
 ) -> T {
@@ -85,6 +98,34 @@ pub(crate) fn block_on<T>(
   }
 }
 
+/// WASM version of block_on (no Send requirement, no thread yielding).
+#[cfg(target_family = "wasm")]
+pub(crate) fn block_on<T>(fut: std::pin::Pin<Box<dyn std::future::Future<Output = T> + '_>>) -> T {
+  use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
+
+  // Minimal no-op waker for WASM
+  const VTABLE: RawWakerVTable = RawWakerVTable::new(
+    |_| RawWaker::new(std::ptr::null(), &VTABLE),
+    |_| {},
+    |_| {},
+    |_| {},
+  );
+  let raw_waker = RawWaker::new(std::ptr::null(), &VTABLE);
+  let waker = unsafe { Waker::from_raw(raw_waker) };
+  let mut cx = Context::from_waker(&waker);
+  let mut fut = fut;
+
+  loop {
+    match fut.as_mut().poll(&mut cx) {
+      Poll::Ready(val) => return val,
+      Poll::Pending => {
+        // On WASM, if a future pends it won't resolve without an async runtime
+        panic!("block_on: future returned Pending on WASM (requires async runtime)");
+      }
+    }
+  }
+}
+
 /// World save file handle with runtime index.
 ///
 /// Holds the open save file and in-memory index for O(1) chunk lookups.
@@ -94,7 +135,8 @@ pub struct WorldSave {
   /// The file name (e.g., "world.save").
   pub(crate) name: String,
   /// Open file handle via the storage backend.
-  pub(crate) file: Box<dyn StorageFile>,
+  /// Arc-wrapped for sharing with async tasks.
+  pub(crate) file: Arc<dyn StorageFile>,
   /// File header.
   pub(crate) header: Header,
   /// Runtime index mapping positions to page table entries.
@@ -123,7 +165,7 @@ impl WorldSave {
 
     Ok(Self {
       name: name.to_string(),
-      file,
+      file: Arc::from(file),
       header,
       index: ChunkIndex::new(),
       body_index: PixelBodyIndex::new(),
@@ -176,7 +218,7 @@ impl WorldSave {
 
     Ok(Self {
       name: name.to_string(),
-      file,
+      file: Arc::from(file),
       header,
       index,
       body_index,
@@ -197,6 +239,137 @@ impl WorldSave {
     } else {
       Ok(Self::create(fs, name, world_seed)?)
     }
+  }
+
+  /// Opens an existing save file or creates a new one asynchronously.
+  ///
+  /// This is the WASM-compatible version that uses `.await` instead of
+  /// `block_on()`. Required because OPFS operations return actual async
+  /// futures that cannot be polled to completion synchronously.
+  #[cfg(target_family = "wasm")]
+  pub async fn open_or_create_async(
+    fs: &dyn StorageFs,
+    name: &str,
+    world_seed: u64,
+  ) -> Result<Self, String> {
+    let exists = fs
+      .exists(name)
+      .await
+      .map_err(|e| format!("Failed to check file existence: {}", e))?;
+
+    if exists {
+      Self::open_async(fs, name).await
+    } else {
+      Self::create_async(fs, name, world_seed).await
+    }
+  }
+
+  /// Creates a new save file asynchronously (WASM).
+  #[cfg(target_family = "wasm")]
+  async fn create_async(fs: &dyn StorageFs, name: &str, world_seed: u64) -> Result<Self, String> {
+    let file = fs
+      .create(name)
+      .await
+      .map_err(|e| format!("Failed to create file: {}", e))?;
+
+    let header = Header::new(world_seed);
+    let data_write_pos = Header::SIZE as u64;
+
+    // Serialize and write initial header
+    let mut buf = Vec::new();
+    header
+      .write_to(&mut buf)
+      .map_err(|e| format!("Failed to serialize header: {}", e))?;
+    file
+      .write_at(0, &buf)
+      .await
+      .map_err(|e| format!("Failed to write header: {}", e))?;
+    file
+      .sync()
+      .await
+      .map_err(|e| format!("Failed to sync file: {}", e))?;
+
+    Ok(Self {
+      name: name.to_string(),
+      file: Arc::from(file),
+      header,
+      index: ChunkIndex::new(),
+      body_index: PixelBodyIndex::new(),
+      data_write_pos,
+      dirty: false,
+    })
+  }
+
+  /// Opens an existing save file asynchronously (WASM).
+  #[cfg(target_family = "wasm")]
+  async fn open_async(fs: &dyn StorageFs, name: &str) -> Result<Self, String> {
+    let file = fs
+      .open(name)
+      .await
+      .map_err(|e| format!("Failed to open file: {}", e))?;
+
+    // Read header
+    let mut header_buf = [0u8; Header::SIZE];
+    file
+      .read_at(0, &mut header_buf)
+      .await
+      .map_err(|e| format!("Failed to read header: {}", e))?;
+    let header = Header::read_from(&mut Cursor::new(&header_buf))
+      .map_err(|e| format!("Invalid header: {}", e))?;
+    header
+      .validate()
+      .map_err(|e| format!("Invalid header: {}", e))?;
+
+    // Read page table
+    let page_table_size = header.chunk_count as usize * PageTableEntry::SIZE;
+    let mut page_table_buf = vec![0u8; page_table_size];
+    file
+      .read_at(header.data_region_ptr, &mut page_table_buf)
+      .await
+      .map_err(|e| format!("Failed to read page table: {}", e))?;
+    let index = ChunkIndex::read_from(
+      &mut Cursor::new(&page_table_buf),
+      header.chunk_count as usize,
+    )
+    .map_err(|e| format!("Invalid page table: {}", e))?;
+
+    // Read entity section if present
+    let body_index = if header.entity_section_ptr != 0 {
+      let mut entity_header_buf = [0u8; EntitySectionHeader::SIZE];
+      file
+        .read_at(header.entity_section_ptr, &mut entity_header_buf)
+        .await
+        .map_err(|e| format!("Failed to read entity header: {}", e))?;
+      let entity_header = EntitySectionHeader::read_from(&mut Cursor::new(&entity_header_buf))
+        .map_err(|e| format!("Invalid entity header: {}", e))?;
+
+      let body_index_size = entity_header.entity_count as usize * PixelBodyIndexEntry::SIZE;
+      let mut body_index_buf = vec![0u8; body_index_size];
+      let body_data_offset = header.entity_section_ptr + EntitySectionHeader::SIZE as u64;
+      file
+        .read_at(body_data_offset, &mut body_index_buf)
+        .await
+        .map_err(|e| format!("Failed to read body index: {}", e))?;
+      PixelBodyIndex::read_from(
+        &mut Cursor::new(&body_index_buf),
+        entity_header.entity_count as usize,
+      )
+      .map_err(|e| format!("Invalid body index: {}", e))?
+    } else {
+      PixelBodyIndex::new()
+    };
+
+    let data_write_pos = header.data_region_ptr;
+
+    Ok(Self {
+      name: name.to_string(),
+      file: Arc::from(file),
+      header,
+      index,
+      body_index,
+      data_write_pos,
+      dirty: false,
+    })
   }
 
   /// Returns the save file name.
@@ -451,9 +624,59 @@ impl WorldSave {
     self.dirty = false;
     Ok(())
   }
+
+  // ===== Async task support methods =====
+
+  /// Returns a clone of the file handle for use in async tasks.
+  ///
+  /// The file handle is Arc-wrapped and implements positioned I/O,
+  /// making it safe to share across tasks.
+  pub fn file_handle(&self) -> Arc<dyn StorageFile> {
+    Arc::clone(&self.file)
+  }
+
+  /// Returns a reference to the chunk index for checking if chunks exist.
+  pub fn chunk_index(&self) -> &ChunkIndex {
+    &self.index
+  }
+
+  /// Returns a reference to the body index.
+  pub fn body_index(&self) -> &PixelBodyIndex {
+    &self.body_index
+  }
+
+  /// Returns the current data write position.
+  pub fn data_write_pos(&self) -> u64 {
+    self.data_write_pos
+  }
+
+  /// Creates a snapshot of indices for passing to async save tasks.
+  ///
+  /// The snapshot includes clones of the chunk and body indices
+  /// that can be safely sent to another thread.
+  pub fn create_save_snapshot(&self) -> (ChunkIndex, PixelBodyIndex, u64) {
+    (
+      self.index.clone(),
+      self.body_index.clone(),
+      self.data_write_pos,
+    )
+  }
+
+  /// Merges the result of an async save task back into this WorldSave.
+  ///
+  /// This replaces the current indices with the updated versions from
+  /// the task and updates the write position.
+  pub fn merge_save_result(&mut self, result: tasks::SaveResult) {
+    self.index = result.chunk_index;
+    self.body_index = result.body_index;
+    self.data_write_pos = result.data_write_pos;
+    self.header.chunk_count = self.index.len() as u32;
+    self.dirty = true;
+  }
 }
 
 /// Loaded chunk data before decompression.
+#[derive(Debug)]
 pub struct LoadedChunk {
   /// Storage type.
   pub storage_type: StorageType,
@@ -534,20 +757,34 @@ impl std::fmt::Display for LoadError {
 
 impl std::error::Error for LoadError {}
 
-/// Bevy resource holding the world save.
+/// WASM: Resource for deferred async persistence initialization.
+///
+/// OPFS requires async setup (awaiting JS promises) which can't be done
+/// in synchronous `Plugin::build()`. This resource holds the configuration
+/// and task handle while initialization completes in the background.
+///
+/// The `initialize_wasm_persistence` system polls this task each frame.
+/// Once complete, it inserts `PersistenceControl` with the loaded save.
+#[cfg(target_family = "wasm")]
 #[derive(Resource)]
-pub struct WorldSaveResource {
-  /// The world save file handle.
-  pub save: Arc<std::sync::RwLock<WorldSave>>,
+pub struct PendingWasmPersistence {
+  /// World seed for procedural generation fallback.
+  pub world_seed: u64,
+  /// Save name without extension (e.g., "world").
+  pub save_name: String,
+  /// Async initialization task handle.
+  pub task: Option<bevy::tasks::Task<Result<WasmPersistenceInitResult, String>>>,
 }
 
-impl WorldSaveResource {
-  /// Creates a new resource wrapping the save.
-  pub fn new(save: WorldSave) -> Self {
-    Self {
-      save: Arc::new(std::sync::RwLock::new(save)),
-    }
-  }
+/// Result of WASM persistence initialization.
+#[cfg(target_family = "wasm")]
+pub struct WasmPersistenceInitResult {
+  /// The persistence backend.
+  pub backend: Arc<dyn backend::PersistenceBackend>,
+  /// The opened/created world save.
+  pub save: WorldSave,
+  /// Save name without extension.
+  pub save_name: String,
 }
 
 /// Async save task for background saving.

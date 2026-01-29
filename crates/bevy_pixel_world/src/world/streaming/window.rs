@@ -11,6 +11,8 @@ use crate::persistence::compression::compress_lz4;
 use crate::persistence::format::StorageType;
 use crate::primitives::HEAT_GRID_SIZE;
 use crate::render::{ChunkMaterial, create_heat_texture, create_pixel_texture};
+use crate::world::control::PersistenceControl;
+use crate::world::slot::ChunkLifecycle;
 use crate::world::{PixelWorld, SlotIndex};
 
 /// Marker component for the main camera that controls streaming.
@@ -44,12 +46,14 @@ pub(crate) fn update_streaming_windows(
   palette: Option<Res<SharedPaletteTexture>>,
   mut persistence_tasks: ResMut<PersistenceTasks>,
   mut unloading_chunks: ResMut<UnloadingChunks>,
+  persistence_control: Option<Res<PersistenceControl>>,
 ) {
   let Ok(camera_transform) = camera_query.single() else {
     return;
   };
 
   let palette_handle = palette.as_ref().map(|p| p.handle.clone());
+  let has_persistence = persistence_control.as_ref().is_some_and(|p| p.is_ready());
 
   // Convert camera position to chunk position
   // Offset by half chunk so transitions occur at chunk centers
@@ -85,6 +89,12 @@ pub(crate) fn update_streaming_windows(
 
     // Spawn entities for chunks entering the window
     for (pos, slot_idx) in delta.to_spawn {
+      // When persistence is available, start in Loading state to check for saved data
+      if has_persistence {
+        let slot = world.slot_mut(slot_idx);
+        slot.lifecycle = ChunkLifecycle::Loading;
+      }
+
       spawn_chunk_entity(
         &mut commands,
         &mut world,

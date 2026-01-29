@@ -6,12 +6,13 @@
 //! - Managing named saves
 
 use std::io;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, RwLock};
 
 use bevy::prelude::*;
 
-use crate::persistence::backend::StorageFs;
+use crate::persistence::WorldSave;
+use crate::persistence::backend::PersistenceBackend;
 
 /// Controls whether world simulation is running or paused.
 ///
@@ -82,10 +83,12 @@ impl SimulationState {
 /// Resource for persistence control and named save management.
 #[derive(Resource)]
 pub struct PersistenceControl {
-  /// Storage filesystem backend.
-  pub(crate) fs: Box<dyn StorageFs>,
-  /// Currently loaded save name.
-  pub(crate) current_save: String,
+  /// Persistence backend.
+  backend: Option<Arc<dyn PersistenceBackend>>,
+  /// The loaded WorldSave.
+  world_save: Option<Arc<RwLock<WorldSave>>>,
+  /// Save name without .save extension (e.g., "world").
+  pub(crate) save_name: Option<String>,
   /// Counter for generating unique request IDs.
   next_request_id: u64,
   /// Pending persistence requests.
@@ -93,25 +96,70 @@ pub struct PersistenceControl {
 }
 
 impl PersistenceControl {
-  /// Creates a new persistence control with the given storage backend and save
-  /// name.
-  pub fn new(fs: Box<dyn StorageFs>, current_save: String) -> Self {
+  /// Creates a new persistence control with the given backend but no loaded
+  /// save.
+  pub fn new(backend: Arc<dyn PersistenceBackend>) -> Self {
     Self {
-      fs,
-      current_save,
+      backend: Some(backend),
+      world_save: None,
+      save_name: None,
       next_request_id: 1,
       pending_requests: Vec::new(),
     }
   }
 
-  /// Returns the currently loaded save name.
-  pub fn current_save(&self) -> &str {
-    &self.current_save
+  /// Creates a persistence control with an already-loaded save.
+  ///
+  /// Used during synchronous native initialization where save is opened
+  /// immediately.
+  pub fn with_save(
+    backend: Arc<dyn PersistenceBackend>,
+    world_save: WorldSave,
+    save_name: String,
+  ) -> Self {
+    Self {
+      backend: Some(backend),
+      world_save: Some(Arc::new(RwLock::new(world_save))),
+      save_name: Some(save_name),
+      next_request_id: 1,
+      pending_requests: Vec::new(),
+    }
   }
 
-  /// Returns a reference to the storage filesystem backend.
-  pub fn fs(&self) -> &dyn StorageFs {
-    &*self.fs
+  /// Creates a persistence control that only tracks the save name.
+  ///
+  /// Used when I/O is handled by IoDispatcher instead of direct file access.
+  pub fn with_name_only(save_name: String) -> Self {
+    Self {
+      backend: None,
+      world_save: None,
+      save_name: Some(save_name),
+      next_request_id: 1,
+      pending_requests: Vec::new(),
+    }
+  }
+
+  /// Returns true if a save file is loaded and ready.
+  pub fn is_ready(&self) -> bool {
+    // current_save is set when initialization completes on both platforms
+    self.save_name.is_some()
+  }
+
+  /// Returns the save name (without .save extension).
+  pub fn save_name(&self) -> Option<&str> {
+    self.save_name.as_deref()
+  }
+
+  /// Returns a reference to the loaded save, if any.
+  pub fn world_save(&self) -> Option<&Arc<RwLock<WorldSave>>> {
+    self.world_save.as_ref()
+  }
+
+  /// Returns a reference to the persistence backend.
+  ///
+  /// Returns None on WASM with IoDispatcher (I/O is in worker).
+  pub fn backend(&self) -> Option<&dyn PersistenceBackend> {
+    self.backend.as_ref().map(|b| &**b)
   }
 
   /// Saves to a named save file.
@@ -169,21 +217,49 @@ impl PersistenceControl {
 
   /// Lists all save files in the storage backend.
   pub fn list_saves(&self) -> io::Result<Vec<String>> {
-    let all_files = crate::persistence::block_on(self.fs.list()).map_err(io::Error::from)?;
-
-    let mut saves: Vec<String> = all_files
-      .into_iter()
-      .filter_map(|name| name.strip_suffix(".save").map(String::from))
-      .collect();
-
-    saves.sort();
-    Ok(saves)
+    let backend = self
+      .backend
+      .as_ref()
+      .ok_or_else(|| io::Error::new(io::ErrorKind::Unsupported, "no backend available"))?;
+    backend.list_saves()
   }
 
   /// Deletes a save file.
   pub fn delete_save(&self, name: &str) -> io::Result<()> {
-    let file_name = Self::save_file_name(name);
-    crate::persistence::block_on(self.fs.delete(&file_name)).map_err(io::Error::from)
+    let backend = self
+      .backend
+      .as_ref()
+      .ok_or_else(|| io::Error::new(io::ErrorKind::Unsupported, "no backend available"))?;
+    backend.delete_save(name)
+  }
+
+  /// Copies the current save to a new name (copy-on-write for "Save As").
+  ///
+  /// Returns an error if no save is loaded or no backend available.
+  /// Updates the current save to point to the copied file.
+  pub fn copy_to(&mut self, target_name: &str) -> io::Result<()> {
+    let backend = self
+      .backend
+      .as_ref()
+      .ok_or_else(|| io::Error::new(io::ErrorKind::Unsupported, "no backend available"))?;
+
+    let save_arc = self
+      .world_save
+      .as_ref()
+      .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no save loaded"))?;
+
+    let mut save = save_arc
+      .write()
+      .map_err(|_| io::Error::new(io::ErrorKind::Other, "save lock poisoned"))?;
+
+    let new_save = backend.save_copy(&mut save, target_name)?;
+
+    // Replace the current save with the new one
+    drop(save);
+    self.world_save = Some(Arc::new(RwLock::new(new_save)));
+    self.save_name = Some(target_name.to_string());
+
+    Ok(())
   }
 }
 
@@ -278,6 +354,25 @@ pub struct PersistenceComplete {
 pub struct RequestPersistence {
   /// Whether to include pixel bodies in the save.
   pub include_bodies: bool,
+}
+
+/// Marker resource indicating the I/O dispatcher is ready (WASM only).
+///
+/// On WASM, persistence uses a Web Worker instead of PersistenceControl's
+/// internal WorldSave. This marker indicates the worker has initialized.
+#[derive(Resource)]
+pub struct IoDispatcherReady;
+
+/// Resource holding pending persistence initialization data (WASM only).
+///
+/// When the I/O worker sends back `Initialized`, this is consumed to create
+/// the `PersistenceControl` resource.
+#[derive(Resource)]
+pub struct PendingPersistenceInit {
+  /// Save name that was requested.
+  pub save_name: String,
+  /// World seed.
+  pub world_seed: u64,
 }
 
 impl RequestPersistence {

@@ -8,8 +8,9 @@ use bevy::prelude::*;
 
 use super::SeededChunks;
 use crate::coords::TilePos;
-use crate::persistence::{PersistenceTasks, PixelBodyRecord, WorldSaveResource};
+use crate::persistence::{PersistenceTasks, PixelBodyRecord};
 use crate::pixel_body::{PixelBodyIdGenerator, compute_transformed_aabb};
+use crate::world::control::PersistenceControl;
 
 /// Entry for a body waiting to spawn.
 pub(crate) struct PendingBodyEntry {
@@ -51,7 +52,7 @@ pub(crate) fn compute_required_tiles(record: &PixelBodyRecord) -> Vec<TilePos> {
 /// their required collision tiles are cached.
 pub(crate) fn queue_pixel_bodies_on_chunk_seed(
   seeded_chunks: Res<SeededChunks>,
-  save_resource: Option<Res<WorldSaveResource>>,
+  persistence_control: Option<Res<PersistenceControl>>,
   mut pending: ResMut<PendingPixelBodies>,
   mut id_generator: ResMut<PixelBodyIdGenerator>,
   mut persistence_tasks: ResMut<PersistenceTasks>,
@@ -60,11 +61,15 @@ pub(crate) fn queue_pixel_bodies_on_chunk_seed(
     return;
   }
 
-  let Some(save_resource) = save_resource else {
+  let Some(persistence_control) = persistence_control else {
     return;
   };
 
-  let save = match save_resource.save.read() {
+  let Some(save_arc) = persistence_control.world_save() else {
+    return;
+  };
+
+  let save = match save_arc.read() {
     Ok(s) => s,
     Err(_) => return,
   };

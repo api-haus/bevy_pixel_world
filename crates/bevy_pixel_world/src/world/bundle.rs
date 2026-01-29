@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use bevy::prelude::*;
 
+use super::control::PersistenceControl;
 use super::{PixelWorld, PixelWorldConfig};
-use crate::persistence::WorldSaveResource;
 use crate::seeding::{ChunkSeeder, PersistenceSeeder};
 
 /// Bundle for spawning a PixelWorld entity.
@@ -85,22 +85,22 @@ impl bevy::ecs::system::Command for SpawnPixelWorld {
         .unwrap_or_default()
     });
 
-    // Wrap seeder with PersistenceSeeder if save resource exists
+    // Wrap seeder with PersistenceSeeder if persistence is ready
     let seeder: Arc<dyn ChunkSeeder + Send + Sync> =
-      if let Some(save_resource) = world.get_resource::<WorldSaveResource>() {
-        let chunk_count = save_resource
-          .save
-          .read()
-          .map(|s| s.chunk_count())
-          .unwrap_or(0);
-        info!(
-          "PixelWorld spawned with persistence ({} saved chunks)",
-          chunk_count
-        );
-        Arc::new(PersistenceSeeder::new(
-          ArcSeeder(self.seeder),
-          save_resource.save.clone(),
-        ))
+      if let Some(persistence) = world.get_resource::<PersistenceControl>() {
+        if let Some(save_arc) = persistence.world_save() {
+          let chunk_count = save_arc.read().map(|s| s.chunk_count()).unwrap_or(0);
+          info!(
+            "PixelWorld spawned with persistence ({} saved chunks)",
+            chunk_count
+          );
+          Arc::new(PersistenceSeeder::new(
+            ArcSeeder(self.seeder),
+            save_arc.clone(),
+          ))
+        } else {
+          self.seeder
+        }
       } else {
         self.seeder
       };

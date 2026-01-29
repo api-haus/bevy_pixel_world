@@ -18,11 +18,14 @@ fn handle_save_hotkey(
   let Some(mut persistence) = persistence else {
     return;
   };
+  let Some(name) = persistence.save_name().map(String::from) else {
+    return;
+  };
   let ctrl_pressed = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
   let s_pressed = keys.just_pressed(KeyCode::KeyS);
 
   if ctrl_pressed && s_pressed {
-    let handle = persistence.save("world");
+    let handle = persistence.save(&name);
     info!("Manual save requested (id: {})", handle.id());
   }
 }
@@ -35,10 +38,13 @@ fn auto_save_system(
   let Some(mut persistence) = persistence else {
     return;
   };
+  let Some(name) = persistence.save_name().map(String::from) else {
+    return;
+  };
   let timer = timer.get_or_insert_with(|| Timer::from_seconds(5.0, TimerMode::Repeating));
   timer.tick(time.delta());
 
   if timer.just_finished() {
-    persistence.save("world");
+    persistence.save(&name);
   }
 }

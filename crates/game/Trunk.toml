@@ -13,3 +13,4 @@ headers = { "Cross-Origin-Opener-Policy" = "same-origin", "Cross-Origin-Embedder
 stage = "pre_build"
 command = "sh"
 command_arguments = ["-c", "cd ../sim2d_noise && make 2>/dev/null || echo '[sim2d_noise] Skipped (run: source ~/emsdk/emsdk_env.sh)'"]
+
