@@ -76,10 +76,10 @@ jobs:
         run: trunk build --release --public-url /sim2d/
 
       - name: Add coi-serviceworker for SharedArrayBuffer
+        working-directory: crates/game/dist
         run: |
-          curl -sL https://raw.githubusercontent.com/nicorithner/coi-serviceworker/main/coi-serviceworker.min.js \
-            -o crates/game/dist/coi-serviceworker.min.js
-          sed -i 's|<head>|<head><script src="coi-serviceworker.min.js"></script>|' crates/game/dist/index.html
+          curl -sL https://raw.githubusercontent.com/gzuidhof/coi-serviceworker/master/coi-serviceworker.min.js -o coi-serviceworker.js
+          sed -i 's|<head>|<head><script src="coi-serviceworker.js"></script>|' index.html
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
