@@ -77,6 +77,24 @@ jobs:
       - name: Show sccache stats
         run: sccache --show-stats
 
+      # Upload large WASM file to R2 (bypasses Pages 25MB limit)
+      - name: Upload WASM to R2
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: r2 object put bevy-pixel-world-assets/game.wasm --file crates/game/dist/*_bg.wasm
+
+      # Patch JS loader to fetch WASM from R2 public URL
+      - name: Patch WASM URL to R2
+        run: |
+          WASM_FILE=$(basename crates/game/dist/*_bg.wasm)
+          JS_FILE=$(ls crates/game/dist/*.js | grep -v snippets | head -1)
+          # Replace relative WASM path with R2 public URL
+          sed -i "s|${WASM_FILE}|${{ secrets.R2_PUBLIC_URL }}/game.wasm|g" "$JS_FILE"
+          # Remove the local WASM file (served from R2)
+          rm crates/game/dist/*_bg.wasm
+
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:
