@@ -2,9 +2,9 @@
 //!
 //! Implements falling sand physics using checkerboard scheduling.
 
-pub mod burning;
-pub mod hash;
-pub mod heat;
+mod burning;
+pub(crate) mod hash;
+mod heat;
 pub(crate) mod physics;
 
 use std::collections::HashSet;

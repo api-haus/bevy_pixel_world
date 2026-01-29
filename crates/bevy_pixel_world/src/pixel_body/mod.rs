@@ -26,7 +26,7 @@
 //! ```
 
 mod blit;
-pub mod bomb;
+mod bomb;
 mod collider;
 mod displacement;
 mod loader;
