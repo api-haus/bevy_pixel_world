@@ -31,6 +31,7 @@ Build a corpus of concrete examples to inform better methodology for spec-driven
 | [019](019-thrashing-without-methodology.md) | Thrashing Without Methodology | Pixel Bodies | repeated fixes without systematic debugging |
 | [020](020-unwanted-fallback-code.md) | Unwanted Fallback Code | Noise | adding fallbacks instead of fixing primary |
 | [021](021-unexpected-behavior-changes.md) | Unexpected Behavior Changes | Rendering | feature change alters unrelated startup |
+| [022](022-api-scope-over-design.md) | API Scope Over-Design | Persistence | designing "complete" API vs what's needed |
 
 ## Common Signals
 
@@ -83,6 +84,7 @@ Phrases that effectively redirect Claude:
 19. **Guess-and-Check** (#019) - Repeated fixes without systematic investigation
 20. **Graceful Degradation Creep** (#020) - Adding fallbacks instead of fixing the real implementation
 21. **Ripple Regressions** (#021) - Feature changes breaking unrelated functionality
+22. **Completionist APIs** (#022) - Designing comprehensive APIs when minimal ones suffice
 
 ## Session Archive
 
