@@ -22,7 +22,7 @@ use std::io::{self, Cursor};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-pub use backend::PersistenceBackend;
+pub(crate) use backend::PersistenceBackend;
 use backend::{StorageFile, StorageFs};
 use bevy::prelude::*;
 use compression::{

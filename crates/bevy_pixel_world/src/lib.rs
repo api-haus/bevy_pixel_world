@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 use bevy::prelude::*;
 use bevy::sprite_render::Material2dPlugin;
+use persistence::PersistenceBackend;
 
 pub mod basic_persistence;
 pub mod bodies_plugin;
@@ -49,7 +50,7 @@ pub use creative_mode::CreativeModePlugins;
 pub use debug_camera::{CameraZoom, PixelDebugControllerCameraPlugin};
 pub use debug_controller::{BrushState, PixelDebugControllerPlugin, UiPointerState};
 pub use material::{Material, Materials, MaterialsConfig, PhysicsState, ids as material_ids};
-pub use persistence::{PersistenceBackend, PixelBodyRecord, WorldSave};
+pub use persistence::{PixelBodyRecord, WorldSave};
 pub use pixel::{Pixel, PixelFlags, PixelSurface};
 pub use pixel_awareness::GridSampleConfig;
 pub use pixel_body::{
@@ -80,56 +81,41 @@ pub use world::streaming::{CullingConfig, StreamCulled};
 pub use world::{PixelWorld, PixelWorldBundle, PixelWorldConfig, SpawnPixelWorld};
 
 /// Configuration for chunk persistence.
-#[derive(Clone, Debug)]
+///
+/// Persistence is enabled by providing a path to a save file.
+/// When disabled (no path), the world exists only in memory.
+///
+/// # Example
+/// ```ignore
+/// // Enable persistence with explicit path
+/// let config = PersistenceConfig::at("/home/user/saves/world.save");
+///
+/// // Disable persistence
+/// let config = PersistenceConfig::disabled();
+/// ```
+#[derive(Clone, Debug, Default)]
 pub struct PersistenceConfig {
-  /// Whether persistence is enabled.
-  pub enabled: bool,
-  /// Application name for default save directory.
-  /// Used to create `~/.local/share/<app_name>/saves/` on Linux, etc.
-  pub app_name: String,
-  /// Explicit save file path. If None, uses default directory with
-  /// "world.save".
-  pub save_path: Option<PathBuf>,
-  /// Name of save to load (e.g., "world" loads "world.save").
-  /// If None, defaults to "world".
-  pub load_save: Option<String>,
-  /// World seed for procedural generation fallback.
+  /// Path to save file. None = persistence disabled.
+  pub path: Option<PathBuf>,
+  /// World seed for procedural generation.
   pub world_seed: u64,
 }
 
-impl Default for PersistenceConfig {
-  fn default() -> Self {
+impl PersistenceConfig {
+  /// Creates a persistence config with the given save file path.
+  pub fn at(path: impl Into<PathBuf>) -> Self {
     Self {
-      enabled: true,
-      app_name: persistence::DEFAULT_APP_NAME.to_string(),
-      save_path: None,
-      load_save: None,
+      path: Some(path.into()),
       world_seed: 42,
     }
   }
-}
 
-impl PersistenceConfig {
-  /// Creates a new persistence config with the given app name.
-  pub fn new(app_name: impl Into<String>) -> Self {
-    Self {
-      app_name: app_name.into(),
-      ..Default::default()
-    }
-  }
-
-  /// Disables persistence.
+  /// Disables persistence (in-memory only).
   pub fn disabled() -> Self {
     Self {
-      enabled: false,
-      ..Default::default()
+      path: None,
+      world_seed: 42,
     }
-  }
-
-  /// Sets an explicit save file path.
-  pub fn with_path(mut self, path: impl Into<PathBuf>) -> Self {
-    self.save_path = Some(path.into());
-    self
   }
 
   /// Sets the world seed.
@@ -138,37 +124,9 @@ impl PersistenceConfig {
     self
   }
 
-  /// Sets the save name to load.
-  pub fn load(mut self, name: &str) -> Self {
-    self.load_save = Some(name.to_string());
-    self
-  }
-
-  /// Returns the effective save name.
-  pub fn effective_save_name(&self) -> &str {
-    self.load_save.as_deref().unwrap_or("world")
-  }
-
-  /// Returns the base directory for saves.
-  pub fn save_dir(&self) -> PathBuf {
-    self
-      .save_path
-      .as_ref()
-      .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-      .unwrap_or_else(|| persistence::default_save_dir(&self.app_name))
-  }
-
-  /// Returns the effective save path for a given save name.
-  pub fn save_path_for(&self, name: &str) -> PathBuf {
-    self.save_dir().join(format!("{}.save", name))
-  }
-
-  /// Returns the effective save path.
-  pub fn effective_path(&self) -> PathBuf {
-    self
-      .save_path
-      .clone()
-      .unwrap_or_else(|| self.save_path_for(self.effective_save_name()))
+  /// Returns true if persistence is enabled (path is set).
+  pub fn is_enabled(&self) -> bool {
+    self.path.is_some()
   }
 }
 
@@ -195,15 +153,6 @@ pub struct PixelWorldPlugin {
 }
 
 impl PixelWorldPlugin {
-  /// Creates a plugin with persistence enabled for the given app name.
-  pub fn with_persistence(app_name: impl Into<String>) -> Self {
-    Self {
-      config: PixelWorldConfig::default(),
-      persistence: PersistenceConfig::new(app_name),
-      culling: CullingConfig::default(),
-    }
-  }
-
   /// Sets the persistence configuration.
   pub fn persistence(mut self, config: PersistenceConfig) -> Self {
     self.persistence = config;
@@ -213,12 +162,6 @@ impl PixelWorldPlugin {
   /// Sets the culling configuration.
   pub fn culling(mut self, config: CullingConfig) -> Self {
     self.culling = config;
-    self
-  }
-
-  /// Sets the save name to load.
-  pub fn load(mut self, name: &str) -> Self {
-    self.persistence = self.persistence.load(name);
     self
   }
 }
@@ -244,24 +187,19 @@ impl Plugin for PixelWorldPlugin {
     // Store culling config
     app.insert_resource(self.culling.clone());
 
-    // Initialize storage backend and persistence control (native only for now)
+    // Initialize persistence if a path is configured
     #[cfg(not(target_family = "wasm"))]
-    {
-      let base_dir = self.persistence.save_dir();
-      // When an explicit path is set, derive save name from the filename.
-      // e.g., "/tmp/test.save" -> save name "test", file name "test.save"
-      let current_save = if let Some(ref explicit) = self.persistence.save_path {
-        let file_name = explicit
-          .file_name()
-          .and_then(|f| f.to_str())
-          .unwrap_or("world.save");
-        file_name
-          .strip_suffix(".save")
-          .unwrap_or(file_name)
-          .to_string()
-      } else {
-        self.persistence.effective_save_name().to_string()
-      };
+    if let Some(ref path) = self.persistence.path {
+      // Extract directory and filename from the absolute path
+      let base_dir = path
+        .parent()
+        .unwrap_or(std::path::Path::new("."))
+        .to_path_buf();
+      let file_name = path
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or("world.save")
+        .to_string();
 
       let backend = match persistence::NativePersistence::new(base_dir.clone()) {
         Ok(b) => std::sync::Arc::new(b),
@@ -278,29 +216,21 @@ impl Plugin for PixelWorldPlugin {
         }
       };
 
-      // Initialize world save if persistence is enabled
-      if self.persistence.enabled {
-        // Use block_on since NativePersistence resolves immediately
-        let save_result = persistence::block_on(
-          backend.open_or_create_async(&current_save, self.persistence.world_seed),
-        );
-        match save_result {
-          Ok(save) => {
-            info!("Opened world save {:?} in {:?}", current_save, base_dir);
-            app.insert_resource(PersistenceControl::with_save(backend, save, current_save));
-          }
-          Err(e) => {
-            error!(
-              "Failed to open world save {:?}: {}. Persistence disabled.",
-              current_save, e
-            );
-            // Insert control without save
-            app.insert_resource(PersistenceControl::new(backend));
-          }
+      // Open or create the save file
+      let save_result = persistence::block_on(
+        backend.open_or_create_async(&file_name, self.persistence.world_seed),
+      );
+      match save_result {
+        Ok(save) => {
+          info!("Opened world save {:?}", path);
+          app.insert_resource(PersistenceControl::with_save(backend, save, path.clone()));
         }
-      } else {
-        // Persistence disabled, insert control without save
-        app.insert_resource(PersistenceControl::new(backend));
+        Err(e) => {
+          error!(
+            "Failed to open world save {:?}: {}. Persistence disabled.",
+            path, e
+          );
+        }
       }
     }
 
@@ -308,34 +238,31 @@ impl Plugin for PixelWorldPlugin {
     // The Web Worker is required because `createSyncAccessHandle()` only
     // works in Web Workers, not the main browser thread.
     #[cfg(target_family = "wasm")]
-    {
-      if self.persistence.enabled {
-        let save_name = self.persistence.effective_save_name().to_string();
-        let seed = self.persistence.world_seed;
+    if let Some(ref path) = self.persistence.path {
+      let seed = self.persistence.world_seed;
 
-        // Create IoDispatcher which spawns the Web Worker
-        let io_dispatcher = persistence::IoDispatcher::new();
+      // Create IoDispatcher which spawns the Web Worker
+      let io_dispatcher = persistence::IoDispatcher::new();
 
-        // Send Initialize command to the worker
-        io_dispatcher.send(persistence::IoCommand::Initialize {
-          save_name: save_name.clone(),
-          seed,
-        });
+      // Send Initialize command to the worker
+      io_dispatcher.send(persistence::IoCommand::Initialize {
+        path: path.clone(),
+        seed,
+      });
 
-        app.insert_resource(io_dispatcher);
+      app.insert_resource(io_dispatcher);
 
-        // Insert a pending PersistenceControl - will be activated when worker
-        // initializes
-        app.insert_resource(world::control::PendingPersistenceInit {
-          save_name: save_name.clone(),
-          world_seed: seed,
-        });
+      // Insert a pending PersistenceControl - will be activated when worker
+      // initializes
+      app.insert_resource(world::control::PendingPersistenceInit {
+        path: path.clone(),
+        world_seed: seed,
+      });
 
-        info!(
-          "WASM persistence enabled via Web Worker, initializing save '{}'",
-          save_name
-        );
-      }
+      info!(
+        "WASM persistence enabled via Web Worker, initializing {:?}",
+        path
+      );
     }
 
     // Add world streaming systems

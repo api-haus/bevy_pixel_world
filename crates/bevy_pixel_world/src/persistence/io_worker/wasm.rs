@@ -103,7 +103,12 @@ fn command_to_js(cmd: &IoCommand) -> JsValue {
   let obj = js_sys::Object::new();
 
   match cmd {
-    IoCommand::Initialize { save_name, seed } => {
+    IoCommand::Initialize { path, seed } => {
+      // Extract filename from path - OPFS is a flat store, we only use the filename
+      let save_name = path
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or("world.save");
       js_sys::Reflect::set(&obj, &"type".into(), &"Initialize".into()).unwrap();
       js_sys::Reflect::set(&obj, &"saveName".into(), &save_name.into()).unwrap();
       js_sys::Reflect::set(&obj, &"seed".into(), &JsValue::from_f64(*seed as f64)).unwrap();

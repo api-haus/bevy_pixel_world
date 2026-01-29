@@ -38,18 +38,6 @@ pub(super) struct SeedingTask {
 /// Maximum number of concurrent seeding tasks.
 const MAX_SEEDING_TASKS: usize = 2;
 
-/// Creates and seeds a new chunk at the given position.
-#[allow(dead_code)] // Kept for non-persistence code paths
-pub(crate) fn seed_chunk(
-  seeder: &(dyn crate::seeding::ChunkSeeder + Send + Sync),
-  pos: ChunkPos,
-) -> Chunk {
-  let mut chunk = Chunk::new(CHUNK_SIZE, CHUNK_SIZE);
-  chunk.set_pos(pos);
-  seeder.seed(pos, &mut chunk);
-  chunk
-}
-
 /// Creates and seeds a new chunk with pre-loaded persistence data.
 ///
 /// Applies loaded data directly instead of relying on the seeder's
@@ -189,15 +177,6 @@ pub(crate) fn dispatch_seeding(
 
       // Take any pre-loaded data for this chunk
       let loaded = loaded_data.take(pos);
-
-      info!(
-        "[WASM-DEBUG] dispatch_seeding {:?}: loaded={}",
-        pos,
-        loaded
-          .as_ref()
-          .map(|l| format!("{} bytes", l.data.len()))
-          .unwrap_or_else(|| "None".to_string())
-      );
 
       spawn_seeding_task(
         &mut seeding_tasks,

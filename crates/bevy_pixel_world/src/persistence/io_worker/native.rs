@@ -135,7 +135,7 @@ fn worker_loop(save_dir: PathBuf, cmd_rx: Receiver<IoCommand>, result_tx: Sender
 /// Handles a single command and returns the result.
 fn handle_command(state: &mut WorkerState, cmd: IoCommand) -> IoResult {
   match cmd {
-    IoCommand::Initialize { save_name, seed } => handle_initialize(state, save_name, seed),
+    IoCommand::Initialize { path, seed } => handle_initialize(state, path, seed),
     IoCommand::LoadChunk { chunk_pos } => handle_load_chunk(state, chunk_pos),
     IoCommand::WriteChunk { chunk_pos, data } => handle_write_chunk(state, chunk_pos, data),
     IoCommand::SaveBody {
@@ -152,8 +152,13 @@ fn handle_command(state: &mut WorkerState, cmd: IoCommand) -> IoResult {
   }
 }
 
-fn handle_initialize(state: &mut WorkerState, save_name: String, seed: u64) -> IoResult {
-  let file_name = format!("{}.save", save_name);
+fn handle_initialize(state: &mut WorkerState, path: std::path::PathBuf, seed: u64) -> IoResult {
+  // Extract filename from path
+  let file_name = path
+    .file_name()
+    .and_then(|f| f.to_str())
+    .unwrap_or("world.save")
+    .to_string();
 
   match WorldSave::open_or_create(&state.fs, &file_name, seed) {
     Ok(save) => {
@@ -174,7 +179,7 @@ fn handle_initialize(state: &mut WorkerState, save_name: String, seed: u64) -> I
       }
     }
     Err(e) => IoResult::Error {
-      message: format!("Failed to open/create save '{}': {}", save_name, e),
+      message: format!("Failed to open/create save '{}': {}", file_name, e),
     },
   }
 }

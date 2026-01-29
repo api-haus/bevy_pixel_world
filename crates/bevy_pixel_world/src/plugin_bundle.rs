@@ -20,8 +20,8 @@ use crate::world::streaming::CullingConfig;
 ///
 /// ```ignore
 /// app.add_plugins(
-///     PixelWorldFullBundle::new("my_game")
-///         .load("world")
+///     PixelWorldFullBundle::default()
+///         .persistence(PersistenceConfig::at("/path/to/save.save"))
 ///         .submersion(SubmersionConfig { submersion_threshold: 0.5, ..default() })
 /// );
 /// ```
@@ -39,23 +39,9 @@ pub struct PixelWorldFullBundle {
 }
 
 impl PixelWorldFullBundle {
-  /// Creates a bundle with persistence enabled for the given app name.
-  pub fn new(app_name: impl Into<String>) -> Self {
-    Self {
-      world: PixelWorldPlugin::with_persistence(app_name),
-      ..Default::default()
-    }
-  }
-
   /// Sets the persistence configuration.
   pub fn persistence(mut self, config: PersistenceConfig) -> Self {
     self.world = self.world.persistence(config);
-    self
-  }
-
-  /// Sets the save name to load.
-  pub fn load(mut self, save_name: &str) -> Self {
-    self.world = self.world.load(save_name);
     self
   }
 

@@ -12,6 +12,8 @@ mod native;
 #[cfg(target_family = "wasm")]
 mod wasm;
 
+use std::path::PathBuf;
+
 use bevy::math::IVec2;
 use bevy::prelude::*;
 #[cfg(not(target_family = "wasm"))]
@@ -22,8 +24,9 @@ pub use wasm::WasmIoDispatcher;
 /// Commands sent from main thread to I/O worker.
 #[derive(Debug, Clone)]
 pub enum IoCommand {
-  /// Initialize persistence with save name and seed.
-  Initialize { save_name: String, seed: u64 },
+  /// Initialize persistence with save file path and seed.
+  /// On WASM, only the filename portion is used (OPFS is a flat store).
+  Initialize { path: PathBuf, seed: u64 },
   /// Load chunk data from storage.
   LoadChunk { chunk_pos: IVec2 },
   /// Write chunk data to storage.

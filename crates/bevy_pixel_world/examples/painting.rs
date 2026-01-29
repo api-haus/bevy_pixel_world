@@ -29,14 +29,21 @@ use bevy_pixel_world::visual_debug::{
   SettingsPersistence, VisualDebugSettings, visual_debug_checkboxes,
 };
 use bevy_pixel_world::{
-  Bomb, CreativeModePlugins, MaterialSeeder, Materials, MaterialsConfig, PixelBody, PixelFlags,
-  PixelWorld, PixelWorldFullBundle, SpawnPixelWorld, WorldPos, material_ids,
+  Bomb, CreativeModePlugins, MaterialSeeder, Materials, MaterialsConfig, PersistenceConfig,
+  PixelBody, PixelFlags, PixelWorld, PixelWorldFullBundle, SpawnPixelWorld, WorldPos, material_ids,
 };
 #[cfg(any(feature = "avian2d", feature = "rapier2d"))]
 use rand::Rng;
 
 fn main() {
   let config: MaterialsConfig = toml::from_str(include_str!("materials.toml")).unwrap();
+
+  // Compute save path in user's data directory
+  let save_path = dirs::data_dir()
+    .unwrap_or_else(|| std::path::PathBuf::from("."))
+    .join("pixel_world_painting")
+    .join("saves")
+    .join("world.save");
 
   App::new()
     .add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -48,7 +55,7 @@ fn main() {
       ..default()
     }))
     .insert_resource(Materials::from(config))
-    .add_plugins(PixelWorldFullBundle::new("pixel_world_painting").load("world"))
+    .add_plugins(PixelWorldFullBundle::default().persistence(PersistenceConfig::at(save_path)))
     .add_plugins((CreativeModePlugins, UiPlugin, PhysicsPlugin))
     .add_systems(Startup, setup)
     .run();

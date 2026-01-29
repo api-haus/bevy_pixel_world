@@ -52,9 +52,7 @@ impl TestHarness {
     // ScenePlugin is needed for avian2d's collider hierarchy initialization
     app.add_plugins(bevy::scene::ScenePlugin);
 
-    app.add_plugins(
-      PixelWorldPlugin::default().persistence(PersistenceConfig::new("test").with_path(save_path)),
-    );
+    app.add_plugins(PixelWorldPlugin::default().persistence(PersistenceConfig::at(save_path)));
     app.add_plugins(PixelBodiesPlugin);
 
     // Add physics plugin based on feature

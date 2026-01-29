@@ -2,7 +2,8 @@
 
 use bevy::prelude::*;
 use bevy_pixel_world::{
-  MaterialSeeder, Materials, MaterialsConfig, PixelWorldFullBundle, SpawnPixelWorld,
+  MaterialSeeder, Materials, MaterialsConfig, PersistenceConfig, PixelWorldFullBundle,
+  SpawnPixelWorld,
 };
 
 pub struct WorldPlugin;
@@ -17,9 +18,19 @@ impl Plugin for WorldPlugin {
     let config: MaterialsConfig =
       toml::from_str(&std::fs::read_to_string("assets/materials.toml").unwrap()).unwrap();
 
+    // Compute save path
+    #[cfg(not(target_family = "wasm"))]
+    let save_path = dirs::data_dir()
+      .unwrap_or_else(|| std::path::PathBuf::from("."))
+      .join("sim2d_game")
+      .join("saves")
+      .join("world.save");
+    #[cfg(target_family = "wasm")]
+    let save_path = std::path::PathBuf::from("world.save");
+
     app
       .insert_resource(Materials::from(config))
-      .add_plugins(PixelWorldFullBundle::new("sim2d_game"))
+      .add_plugins(PixelWorldFullBundle::default().persistence(PersistenceConfig::at(save_path)))
       .add_plugins(bevy_pixel_world::PixelDebugControllerPlugin)
       .add_plugins(bevy_pixel_world::BasicPersistencePlugin)
       .add_systems(Startup, spawn_world);

@@ -53,7 +53,7 @@ pub(crate) fn update_streaming_windows(
   };
 
   let palette_handle = palette.as_ref().map(|p| p.handle.clone());
-  let has_persistence = persistence_control.as_ref().is_some_and(|p| p.is_ready());
+  let has_persistence = persistence_control.as_ref().is_some_and(|p| p.is_active());
 
   // Convert camera position to chunk position
   // Offset by half chunk so transitions occur at chunk centers

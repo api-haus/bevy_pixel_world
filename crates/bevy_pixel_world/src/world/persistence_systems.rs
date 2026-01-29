@@ -40,18 +40,14 @@ pub(crate) fn handle_persistence_messages(
     return;
   };
 
-  // Need a loaded save to process messages
-  let Some(name) = persistence.save_name().map(String::from) else {
+  // Need an active save to process messages
+  if !persistence.is_active() {
     for _ in messages.read() {}
     return;
-  };
+  }
 
-  for message in messages.read() {
-    if message.include_bodies {
-      persistence.save(&name);
-    } else {
-      persistence.save_chunks(&name);
-    }
+  for _message in messages.read() {
+    persistence.save();
   }
 }
 
@@ -180,8 +176,8 @@ fn try_flush_to_disk(save: &mut crate::persistence::WorldSave) {
 /// System: Flushes pending persistence tasks to disk.
 ///
 /// Writes queued chunk and body saves to the save file. Only runs if
-/// PersistenceControl has a loaded save. Handles copy-on-write when saving
-/// to a different save name than the current one.
+/// PersistenceControl has an active save. Handles copy-on-write when saving
+/// to a different path.
 ///
 /// Note: On WASM, this system sends a Flush command to the IoDispatcher.
 #[cfg_attr(feature = "tracy", tracing::instrument(skip_all))]
@@ -196,18 +192,18 @@ pub(crate) fn flush_persistence_queue(
   // WASM: Send Flush command if we have pending saves
   #[cfg(target_family = "wasm")]
   {
-    if !saving.wasm_pending {
+    if !saving.busy {
       return;
     }
 
     let Some(io_dispatcher) = io_dispatcher else {
-      saving.wasm_pending = false;
+      saving.busy = false;
       return;
     };
 
     // Send flush command
     io_dispatcher.send(crate::persistence::IoCommand::Flush);
-    saving.wasm_pending = false;
+    saving.busy = false;
     return;
   }
 
@@ -223,27 +219,21 @@ pub(crate) fn flush_persistence_queue(
       return;
     };
 
-    if !persistence_control.is_ready() {
+    if !persistence_control.is_active() {
       discard_queued_operations(&mut persistence_tasks);
       return;
     }
 
-    let current_save_name = persistence_control
-      .save_name()
-      .unwrap_or_default()
-      .to_string();
-
-    // Handle copy-on-write if saving to a different name
-    let target_save = persistence_control
+    // Handle copy-on-write if saving to a different path
+    let target_path = persistence_control
       .pending_requests
       .iter()
-      .find(|req| req.target_save != current_save_name)
-      .map(|req| req.target_save.clone());
+      .find_map(|req| req.target_path.clone());
 
-    if let Some(new_save_name) = target_save {
-      match persistence_control.copy_to(&new_save_name) {
+    if let Some(new_path) = target_path {
+      match persistence_control.copy_to(&new_path) {
         Ok(()) => {
-          info!("Copied save to {:?}", new_save_name);
+          info!("Copied save to {:?}", new_path);
         }
         Err(e) => {
           warn!("Failed to copy save to new location: {}", e);
@@ -431,7 +421,7 @@ pub(crate) fn save_pixel_bodies_on_chunk_unload(
   );
 }
 
-/// System: Saves all pixel bodies when a full save is requested.
+/// System: Saves all pixel bodies when a save is requested.
 ///
 /// Unlike `save_pixel_bodies_on_chunk_unload`, this saves ALL bodies without
 /// despawning them, used for manual saves (Ctrl+S) and auto-saves.
@@ -461,12 +451,9 @@ pub(crate) fn save_pixel_bodies_on_request(
   let Some(persistence) = persistence else {
     return;
   };
-  let save_bodies = persistence
-    .pending_requests
-    .iter()
-    .any(|req| req.include_bodies);
 
-  if !save_bodies {
+  // Only save bodies if there are pending save requests
+  if persistence.pending_requests.is_empty() {
     return;
   }
 
@@ -581,12 +568,6 @@ pub(crate) fn dispatch_save_task(
       return;
     }
 
-    info!(
-      "[WASM-DEBUG] dispatch_save_task: {} chunks, {} bodies queued",
-      tasks.save_queue.len(),
-      tasks.body_save_queue.len()
-    );
-
     // Send WriteChunk commands for each chunk
     for task in tasks.save_queue.drain(..) {
       io_dispatcher.send(crate::persistence::IoCommand::WriteChunk {
@@ -616,7 +597,7 @@ pub(crate) fn dispatch_save_task(
     }
 
     // Mark as busy (we'll clear this when flush completes)
-    saving.wasm_pending = true;
+    saving.busy = true;
     return;
   }
 
@@ -628,27 +609,21 @@ pub(crate) fn dispatch_save_task(
       return;
     };
 
-    if !persistence_control.is_ready() {
+    if !persistence_control.is_active() {
       discard_queued_operations(&mut tasks);
       return;
     }
 
-    let current_save_name = persistence_control
-      .save_name()
-      .unwrap_or_default()
-      .to_string();
-
-    // Handle copy-on-write if saving to a different name
-    let target_save = persistence_control
+    // Handle copy-on-write if saving to a different path
+    let target_path = persistence_control
       .pending_requests
       .iter()
-      .find(|req| req.target_save != current_save_name)
-      .map(|req| req.target_save.clone());
+      .find_map(|req| req.target_path.clone());
 
-    if let Some(new_save_name) = target_save {
-      match persistence_control.copy_to(&new_save_name) {
+    if let Some(new_path) = target_path {
+      match persistence_control.copy_to(&new_path) {
         Ok(()) => {
-          info!("Copied save to {:?}", new_save_name);
+          info!("Copied save to {:?}", new_path);
         }
         Err(e) => {
           warn!("Failed to copy save to new location: {}", e);
@@ -684,6 +659,7 @@ pub(crate) fn dispatch_save_task(
       AsyncComputeTaskPool::get().spawn(async move { save_batch_async(file, input).await });
 
     saving.task = Some(task);
+    saving.busy = true;
   }
 }
 
@@ -721,6 +697,7 @@ pub(crate) fn poll_save_task(
     // Get result
     let result = bevy::tasks::block_on(task);
     saving.task = None;
+    saving.busy = false;
 
     let Some(persistence_control) = persistence_control else {
       return;
@@ -793,7 +770,7 @@ pub(crate) fn dispatch_chunk_loads(
         let slot = world.slot(slot_idx);
 
         // Only dispatch for Loading state chunks not already being loaded
-        if !slot.is_loading() || loading.pending_positions.contains(&pos) {
+        if !slot.is_loading() || loading.pending.contains(&pos) {
           continue;
         }
 
@@ -803,7 +780,7 @@ pub(crate) fn dispatch_chunk_loads(
         });
 
         // Track that we're loading this chunk
-        loading.pending_positions.insert(pos);
+        loading.pending.insert(pos);
       }
     }
     return;
@@ -832,7 +809,7 @@ pub(crate) fn dispatch_chunk_loads(
         let slot = world.slot(slot_idx);
 
         // Only dispatch for Loading state chunks not already being loaded
-        if !slot.is_loading() || loading.tasks.contains_key(&pos) {
+        if !slot.is_loading() || loading.pending.contains(&pos) {
           continue;
         }
 
@@ -846,6 +823,7 @@ pub(crate) fn dispatch_chunk_loads(
           crate::persistence::tasks::load_chunk_async(&*file, &index_clone, task_pos).await
         });
 
+        loading.pending.insert(pos);
         loading.tasks.insert(pos, task);
       }
     }
@@ -875,12 +853,16 @@ pub(crate) fn poll_chunk_loads(
   {
     let block_all = rendering.is_none();
 
+    // Collect positions that finished loading
+    let mut completed_positions = Vec::new();
+
     loading.tasks.retain(|pos, task| {
       if !block_all && !task.is_finished() {
         return true; // Keep polling
       }
 
       let result = bevy::tasks::block_on(task);
+      completed_positions.push(*pos);
 
       // Log errors
       if let Some(ref error) = result.error {
@@ -906,6 +888,11 @@ pub(crate) fn poll_chunk_loads(
 
       false // Remove completed task
     });
+
+    // Remove completed positions from pending set
+    for pos in completed_positions {
+      loading.pending.remove(&pos);
+    }
   }
 
   // WASM: Chunk loading is handled by poll_io_results
@@ -973,30 +960,18 @@ pub(crate) fn poll_io_results(
 
         // Create PersistenceControl now that worker is ready
         if let Some(ref pending) = pending_init {
-          commands.insert_resource(PersistenceControl::with_name_only(
-            pending.save_name.clone(),
-          ));
+          commands.insert_resource(PersistenceControl::with_path_only(pending.path.clone()));
           commands.remove_resource::<crate::world::control::PendingPersistenceInit>();
         }
       }
       IoResult::ChunkLoaded { chunk_pos, data } => {
         let pos = crate::coords::ChunkPos::new(chunk_pos.x, chunk_pos.y);
 
-        // Remove from pending positions
-        #[cfg(target_family = "wasm")]
-        loading.pending_positions.remove(&pos);
-        #[cfg(not(target_family = "wasm"))]
-        loading.tasks.remove(&pos);
+        // Remove from pending set
+        loading.pending.remove(&pos);
 
         // Store loaded data if present
         if let Some(chunk_data) = data {
-          info!(
-            "[WASM-DEBUG] ChunkLoaded {:?}: {} bytes, storage_type={}, seeder_needed={}",
-            pos,
-            chunk_data.data.len(),
-            chunk_data.storage_type,
-            chunk_data.seeder_needed
-          );
           let storage_type = match chunk_data.storage_type {
             0 => crate::persistence::format::StorageType::Empty,
             1 => crate::persistence::format::StorageType::Delta,
@@ -1010,11 +985,6 @@ pub(crate) fn poll_io_results(
               pos,
               seeder_needed: chunk_data.seeder_needed,
             },
-          );
-        } else {
-          info!(
-            "[WASM-DEBUG] ChunkLoaded {:?}: no data (not persisted)",
-            pos
           );
         }
 
