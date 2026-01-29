@@ -1,3 +1,6 @@
+#[cfg(all(feature = "editor", target_family = "wasm"))]
+compile_error!("Editor feature is not supported on WASM");
+
 #[cfg(feature = "editor")]
 mod actions;
 mod entities;

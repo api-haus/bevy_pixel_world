@@ -54,7 +54,8 @@ impl SubmersionState {
     self.is_submerged && !self.previous_submerged
   }
 
-  /// Returns true if this is the first frame the body crossed out of submerged.
+  /// Returns true if this is the first frame the body crossed out of
+  /// submerged.
   pub fn just_surfaced(&self) -> bool {
     !self.is_submerged && self.previous_submerged
   }

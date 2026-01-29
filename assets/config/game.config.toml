@@ -44,3 +44,14 @@ x_max = 350.0
 y_min = -200.0
 y_max = 250.0
 color = [0.4, 0.4, 0.6]
+
+[day_cycle]
+seconds_per_hour = 1.0  # 24h cycle = 2 real minutes
+start_hour = 6.0
+sky_colors = [
+    { hour = 0.0, color = "#050514" }, # Midnight
+    { hour = 6.0, color = "#664D80" }, # Dawn
+    { hour = 12.0, color = "#66A6F2" }, # Noon
+    { hour = 18.0, color = "#E6804D" }, # Sunset
+    { hour = 24.0, color = "#050514" }, # Midnight wrap
+]

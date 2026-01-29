@@ -562,9 +562,9 @@ impl WorldSave {
 
   /// Flushes the page table, entity section, and header to disk.
   ///
-  /// Rewrites header in-place and appends page table and entity section at end
-  /// of file. The page table and entity section locations are stored in the
-  /// header.
+  /// Rewrites header in-place and appends page table and entity section at
+  /// end of file. The page table and entity section locations are stored
+  /// in the header.
   pub fn flush(&mut self) -> io::Result<()> {
     if !self.dirty {
       return Ok(());

@@ -3,13 +3,13 @@
 <head>
     <meta charset="utf-8">
     <title>sim2d</title>
-    <link data-trunk rel="rust" data-wasm-opt="0"/>
-    <link data-trunk rel="copy-dir" href="assets"/>
-    <link data-trunk rel="copy-dir" href="../sim2d_noise/dist" data-target-path="dist"/>
-    <link data-trunk rel="copy-dir" href="../sim2d_noise/js" data-target-path="js"/>
-    <link data-trunk rel="copy-file" href="worker.js"/>
+    <link data-trunk data-wasm-opt="0" rel="rust"/>
+    <link data-trunk href="assets" rel="copy-dir"/>
+    <link data-target-path="dist" data-trunk href="../sim2d_noise/dist" rel="copy-dir"/>
+    <link data-target-path="js" data-trunk href="../sim2d_noise/js" rel="copy-dir"/>
+    <link data-trunk href="worker.js" rel="copy-file"/>
 </head>
 <body>
-    <canvas id="bevy"></canvas>
+<canvas id="bevy"></canvas>
 </body>
 </html>

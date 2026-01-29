@@ -55,8 +55,8 @@ pub(crate) struct StreamingDelta {
   pub to_despawn: Vec<(ChunkPos, Entity)>,
   /// Chunks that entered the window (position, slot index).
   pub to_spawn: Vec<(ChunkPos, SlotIndex)>,
-  /// Chunks that need saving before being released (position, raw pixel data).
-  /// The pixel data is cloned before the slot is released.
+  /// Chunks that need saving before being released (position, raw pixel
+  /// data). The pixel data is cloned before the slot is released.
   pub to_save: Vec<ChunkSaveData>,
 }
 

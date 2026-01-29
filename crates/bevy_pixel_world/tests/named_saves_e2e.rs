@@ -190,7 +190,8 @@ impl PersistenceHarness {
     std::fs::metadata(path).map(|m| m.len()).unwrap_or(0)
   }
 
-  /// Paint a circle of stone pixels at the given position with the given color.
+  /// Paint a circle of stone pixels at the given position with the given
+  /// color.
   fn paint_circle(&mut self, center: WorldPos, color: ColorIndex, radius: i64) {
     let mut world = self.world_mut();
     for dy in -radius..=radius {

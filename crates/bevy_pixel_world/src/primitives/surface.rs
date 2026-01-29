@@ -76,14 +76,15 @@ impl<T> Surface<T> {
     }
   }
 
-  /// Returns a reference to the element at (x, y), or `None` if out of bounds.
+  /// Returns a reference to the element at (x, y), or `None` if out of
+  /// bounds.
   #[inline]
   pub fn get(&self, x: u32, y: u32) -> Option<&T> {
     self.index_of(x, y).map(|i| &self.data[i])
   }
 
-  /// Returns a mutable reference to the element at (x, y), or `None` if out of
-  /// bounds.
+  /// Returns a mutable reference to the element at (x, y), or `None` if out
+  /// of bounds.
   #[inline]
   pub fn get_mut(&mut self, x: u32, y: u32) -> Option<&mut T> {
     self.index_of(x, y).map(|i| &mut self.data[i])

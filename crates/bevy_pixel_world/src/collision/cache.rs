@@ -59,8 +59,8 @@ impl CollisionCache {
 
   /// Directly inserts a mesh into the cache (for synchronous operations).
   ///
-  /// Use this for immediate caching (e.g., empty tiles detected synchronously).
-  /// Does NOT check in_flight status.
+  /// Use this for immediate caching (e.g., empty tiles detected
+  /// synchronously). Does NOT check in_flight status.
   pub fn insert_direct(&mut self, tile: TilePos, mut mesh: TileCollisionMesh) {
     self.generation += 1;
     mesh.generation = self.generation;

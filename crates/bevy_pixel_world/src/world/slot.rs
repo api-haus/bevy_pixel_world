@@ -47,8 +47,8 @@ pub struct ChunkSlot {
   /// Whether the chunk's CPU data differs from GPU texture.
   /// When true, the chunk needs upload.
   pub dirty: bool,
-  /// Whether the chunk has been modified by user actions (paint, erase, swap).
-  /// Set when modified, cleared when saved to disk.
+  /// Whether the chunk has been modified by user actions (paint, erase,
+  /// swap). Set when modified, cleared when saved to disk.
   pub modified: bool,
   /// Whether the chunk has been persisted to disk since last modification.
   pub persisted: bool,

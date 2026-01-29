@@ -21,7 +21,8 @@ pub enum PixelEffect {
 /// Per-material effect responses.
 #[derive(Clone, Copy, Debug)]
 pub struct MaterialEffects {
-  /// Burning effect: (effect, per-tick chance). None = no burn transformation.
+  /// Burning effect: (effect, per-tick chance). None = no burn
+  /// transformation.
   pub on_burn: Option<(PixelEffect, f32)>,
   /// How much blast strength this material absorbs per pixel.
   /// Higher = harder to blast through. 0 = no resistance (void/air).
@@ -49,13 +50,15 @@ pub struct Material {
   pub palette: [Rgba; 8],
   /// Physics behavior.
   pub state: PhysicsState,
-  /// Density for liquid displacement (higher sinks into lower-density liquids).
+  /// Density for liquid displacement (higher sinks into lower-density
+  /// liquids).
   pub density: u8,
   /// Horizontal spread per tick (liquids).
   pub dispersion: u8,
   /// Air resistance: 1/N chance to skip falling (0 = disabled).
   pub air_resistance: u8,
-  /// Air drift: 1/N chance to drift horizontally while falling (0 = disabled).
+  /// Air drift: 1/N chance to drift horizontally while falling (0 =
+  /// disabled).
   pub air_drift: u8,
   /// Heat level at which this material ignites (0 = non-flammable).
   pub ignition_threshold: u8,
@@ -364,7 +367,8 @@ impl MaterialsConfig {
           PixelEffect::Transform(id) => {
             BurnEffectConfig::Transform(defaults.get(id).name.to_string())
           }
-          PixelEffect::Resist => BurnEffectConfig::Destroy, // shouldn't appear in burn config
+          PixelEffect::Resist => BurnEffectConfig::Destroy, /* shouldn't appear in burn
+                                                             * config */
         };
         BurnConfig { effect, chance }
       });

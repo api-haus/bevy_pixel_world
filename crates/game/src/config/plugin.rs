@@ -1,23 +1,25 @@
-#[cfg(not(target_family = "wasm"))]
-use bevy::{asset::AssetEvent, ecs::message::MessageReader};
-use bevy::{camera::ScalingMode, prelude::*, window::PrimaryWindow};
-#[cfg(not(target_family = "wasm"))]
+use bevy::{
+  asset::AssetEvent, camera::ScalingMode, ecs::message::MessageReader, prelude::*,
+  window::PrimaryWindow,
+};
 use bevy_common_assets::toml::TomlAssetPlugin;
 
-#[cfg(not(target_family = "wasm"))]
-use super::ConfigHandle;
 use super::{ConfigLoaded, GameConfig};
 use crate::core::GravityConfig;
+use crate::platform::{EmbeddedAssets, PlatformConfig};
 
 pub struct ConfigPlugin;
 
 impl Plugin for ConfigPlugin {
   fn build(&self, app: &mut App) {
-    // Native: asset-based config with hot-reload
-    #[cfg(not(target_family = "wasm"))]
-    app
-      .add_plugins(TomlAssetPlugin::<GameConfig>::new(&["config.toml"]))
-      .add_systems(Update, watch_config_changes);
+    // Check platform config to determine if hot-reload should be enabled
+    let hot_reload = app.world().resource::<PlatformConfig>().hot_reload;
+
+    if hot_reload {
+      app
+        .add_plugins(TomlAssetPlugin::<GameConfig>::new(&["config.toml"]))
+        .add_systems(Update, watch_config_changes);
+    }
 
     app.add_systems(PreStartup, load_config_sync).add_systems(
       Update,
@@ -32,34 +34,38 @@ impl Plugin for ConfigPlugin {
 
 fn load_config_sync(
   mut commands: Commands,
-  #[cfg(not(target_family = "wasm"))] asset_server: Res<AssetServer>,
+  embedded: Option<Res<EmbeddedAssets>>,
+  platform: Res<PlatformConfig>,
+  asset_server: Res<AssetServer>,
 ) {
-  // Native: set up asset handle for hot-reload
-  #[cfg(not(target_family = "wasm"))]
-  {
+  // Set up asset handle for hot-reload if enabled
+  if platform.hot_reload {
     let handle: Handle<GameConfig> = asset_server.load("config/game.config.toml");
-    commands.insert_resource(ConfigHandle(handle));
+    commands.insert_resource(super::ConfigHandle(handle));
   }
 
-  // WASM: embed config at compile time
-  #[cfg(target_family = "wasm")]
-  let config_str = include_str!("../../assets/config/game.config.toml");
-  #[cfg(not(target_family = "wasm"))]
-  let config_str =
-    std::fs::read_to_string("assets/config/game.config.toml").expect("Failed to read config file");
+  // Load config from embedded assets or filesystem
+  let config_str = embedded
+    .as_ref()
+    .map(|e| e.game_config.to_string())
+    .unwrap_or_else(|| {
+      std::fs::read_to_string("assets/config/game.config.toml").expect("Failed to read config file")
+    });
 
   let config: GameConfig = toml::from_str(&config_str).expect("Failed to parse config file");
-
   commands.insert_resource(ConfigLoaded::from(config));
 }
 
-#[cfg(not(target_family = "wasm"))]
 fn watch_config_changes(
   mut commands: Commands,
-  config_handle: Res<ConfigHandle>,
+  config_handle: Option<Res<super::ConfigHandle>>,
   mut messages: MessageReader<AssetEvent<GameConfig>>,
   configs: Res<Assets<GameConfig>>,
 ) {
+  let Some(config_handle) = config_handle else {
+    return;
+  };
+
   for event in messages.read() {
     if let AssetEvent::Modified { id } = event {
       if config_handle.0.id() == *id {

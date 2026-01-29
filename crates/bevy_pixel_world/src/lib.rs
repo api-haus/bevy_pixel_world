@@ -83,11 +83,11 @@ pub use world::plugin::{SeededChunks, StreamingCamera, UnloadingChunks};
 // Re-export culling types from streaming module for backward compatibility
 pub use world::streaming::{CullingConfig, StreamCulled};
 pub use world::{
-  // World initialization state and progress tracking
   PersistenceInitialized,
   PixelWorld,
   PixelWorldBundle,
   PixelWorldConfig,
+  // World initialization state and progress tracking
   SpawnPixelWorld,
   WorldInitState,
   WorldLoadingProgress,

@@ -3,7 +3,7 @@
 use bevy::prelude::*;
 use bevy::render::render_resource::AsBindGroup;
 use bevy::shader::ShaderRef;
-use bevy::sprite_render::Material2d;
+use bevy::sprite_render::{AlphaMode2d, Material2d};
 
 /// Material for rendering chunks with GPU-side palette lookup.
 ///
@@ -29,5 +29,9 @@ pub struct ChunkMaterial {
 impl Material2d for ChunkMaterial {
   fn fragment_shader() -> ShaderRef {
     "embedded://bevy_pixel_world/render/shaders/chunk.wgsl".into()
+  }
+
+  fn alpha_mode(&self) -> AlphaMode2d {
+    AlphaMode2d::Blend
   }
 }

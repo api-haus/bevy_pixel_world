@@ -2,7 +2,7 @@ mod plugin;
 
 use bevy::{asset::Asset, prelude::*, reflect::TypePath};
 pub use plugin::ConfigPlugin;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer, de};
 
 #[derive(Asset, TypePath, Deserialize, Debug, Clone)]
 pub struct GameConfig {
@@ -12,6 +12,7 @@ pub struct GameConfig {
   pub player: PlayerConfig,
   pub ground: GroundConfig,
   pub platforms: PlatformsConfig,
+  pub day_cycle: DayCycleConfig,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -73,6 +74,35 @@ pub struct PlatformsConfig {
   pub color: [f32; 3],
 }
 
+#[derive(Deserialize, Debug, Clone)]
+pub struct DayCycleConfig {
+  pub seconds_per_hour: f32,
+  pub start_hour: f32,
+  pub sky_colors: Vec<SkyKeyframe>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct SkyKeyframe {
+  pub hour: f32,
+  #[serde(deserialize_with = "deserialize_hex_color")]
+  pub color: [f32; 3],
+}
+
+fn deserialize_hex_color<'de, D>(deserializer: D) -> Result<[f32; 3], D::Error>
+where
+  D: Deserializer<'de>,
+{
+  let s: String = Deserialize::deserialize(deserializer)?;
+  let s = s.trim_start_matches('#');
+  if s.len() != 6 {
+    return Err(de::Error::custom("hex color must be 6 characters"));
+  }
+  let r = u8::from_str_radix(&s[0..2], 16).map_err(de::Error::custom)?;
+  let g = u8::from_str_radix(&s[2..4], 16).map_err(de::Error::custom)?;
+  let b = u8::from_str_radix(&s[4..6], 16).map_err(de::Error::custom)?;
+  Ok([r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0])
+}
+
 #[derive(Resource)]
 pub struct ConfigHandle(pub Handle<GameConfig>);
 
@@ -84,6 +114,7 @@ pub struct ConfigLoaded {
   pub player: PlayerConfig,
   pub ground: GroundConfig,
   pub platforms: PlatformsConfig,
+  pub day_cycle: DayCycleConfig,
 }
 
 impl From<GameConfig> for ConfigLoaded {
@@ -95,6 +126,7 @@ impl From<GameConfig> for ConfigLoaded {
       player: config.player,
       ground: config.ground,
       platforms: config.platforms,
+      day_cycle: config.day_cycle,
     }
   }
 }

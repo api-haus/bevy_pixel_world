@@ -103,8 +103,8 @@ pub struct IoDispatcher {
 }
 
 impl IoDispatcher {
-  /// Creates a new IoDispatcher with the given save directory (native) or OPFS
-  /// root (WASM).
+  /// Creates a new IoDispatcher with the given save directory (native) or
+  /// OPFS root (WASM).
   #[cfg(not(target_family = "wasm"))]
   pub fn new(save_dir: std::path::PathBuf) -> Self {
     Self {

@@ -30,11 +30,10 @@
 //! The JS bridge (`js/sim2d_noise_bridge.js`) wraps these exports.
 
 mod native;
-pub use native::NoiseNode;
-
 // Re-export wasm_api for Emscripten builds
 #[cfg(all(target_arch = "wasm32", target_os = "emscripten"))]
 pub use native::wasm_api;
+pub use native::NoiseNode;
 
 /// Encoded node tree presets (from FastNoise2 NoiseTool)
 pub mod presets {

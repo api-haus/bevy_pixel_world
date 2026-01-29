@@ -231,8 +231,10 @@ pub struct WorldFragment {
   pub x: i64,
   /// Absolute Y coordinate in world space (Y+ up).
   pub y: i64,
-  /// Normalized U coordinate within the blit rect (0.0 at left, 1.0 at right).
+  /// Normalized U coordinate within the blit rect (0.0 at left, 1.0 at
+  /// right).
   pub u: f32,
-  /// Normalized V coordinate within the blit rect (0.0 at bottom, 1.0 at top).
+  /// Normalized V coordinate within the blit rect (0.0 at bottom, 1.0 at
+  /// top).
   pub v: f32,
 }

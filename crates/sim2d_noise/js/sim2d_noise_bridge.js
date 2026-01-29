@@ -9,17 +9,17 @@ let module = null;
 
 // Top-level await: Block module from being "ready" until init completes.
 try {
-  // Compute module URL relative to this script's location
-  // Script ends up at: /snippets/sim2d_noise/js/sim2d_noise_bridge.js (via wasm-bindgen)
-  // Target is at: /dist/sim2d_noise.js (copied by trunk)
-  const moduleUrl = new URL('../../../dist/sim2d_noise.js', import.meta.url).href;
-  const { default: createSim2dNoiseModule } = await import(moduleUrl);
-  module = await createSim2dNoiseModule();
-  console.log('[sim2d_noise] FastNoise2 module initialized');
+	// Compute module URL relative to this script's location
+	// Script ends up at: /snippets/sim2d_noise/js/sim2d_noise_bridge.js (via wasm-bindgen)
+	// Target is at: /dist/sim2d_noise.js (copied by trunk)
+	const moduleUrl = new URL('../../../dist/sim2d_noise.js', import.meta.url).href;
+	const { default: createSim2dNoiseModule } = await import(moduleUrl);
+	module = await createSim2dNoiseModule();
+	console.log('[sim2d_noise] FastNoise2 module initialized');
 } catch (e) {
-  console.error('[sim2d_noise] FATAL: FastNoise2 module failed to load:', e.message);
-  console.error('[sim2d_noise] Build the module with: cd crates/sim2d_noise && make');
-  throw new Error('FastNoise2 Emscripten module required but not available');
+	console.error('[sim2d_noise] FATAL: FastNoise2 module failed to load:', e.message);
+	console.error('[sim2d_noise] Build the module with: cd crates/sim2d_noise && make');
+	throw new Error('FastNoise2 Emscripten module required but not available');
 }
 
 /**
@@ -29,22 +29,22 @@ try {
  * @throws {Error} If module not loaded
  */
 export function s2d_create(encoded) {
-  if (!module) {
-    throw new Error('FastNoise2 module not initialized');
-  }
+	if (!module) {
+		throw new Error('FastNoise2 module not initialized');
+	}
 
-  const len = module.lengthBytesUTF8(encoded) + 1;
-  const strPtr = module._malloc(len);
-  module.stringToUTF8(encoded, strPtr, len);
+	const len = module.lengthBytesUTF8(encoded) + 1;
+	const strPtr = module._malloc(len);
+	module.stringToUTF8(encoded, strPtr, len);
 
-  const handle = module._s2d_noise_create(strPtr);
-  module._free(strPtr);
+	const handle = module._s2d_noise_create(strPtr);
+	module._free(strPtr);
 
-  if (handle === 0) {
-    throw new Error('Failed to create noise node from encoded string');
-  }
+	if (handle === 0) {
+		throw new Error('Failed to create noise node from encoded string');
+	}
 
-  return handle;
+	return handle;
 }
 
 /**
@@ -61,28 +61,28 @@ export function s2d_create(encoded) {
  * @throws {Error} If module not loaded or handle invalid
  */
 export function s2d_gen_2d(handle, xOff, yOff, xCnt, yCnt, xStep, yStep, seed) {
-  if (!module) {
-    throw new Error('FastNoise2 module not initialized');
-  }
-  if (handle === 0) {
-    throw new Error('Invalid noise node handle');
-  }
+	if (!module) {
+		throw new Error('FastNoise2 module not initialized');
+	}
+	if (handle === 0) {
+		throw new Error('Invalid noise node handle');
+	}
 
-  const count = xCnt * yCnt;
-  const outPtr = module._malloc(count * 4);
+	const count = xCnt * yCnt;
+	const outPtr = module._malloc(count * 4);
 
-  module._s2d_noise_gen_2d(
-    handle, outPtr,
-    xOff, yOff,
-    xCnt, yCnt,
-    xStep, yStep,
-    seed
-  );
+	module._s2d_noise_gen_2d(
+		handle, outPtr,
+		xOff, yOff,
+		xCnt, yCnt,
+		xStep, yStep,
+		seed
+	);
 
-  // Copy from WASM heap and free
-  const result = new Float32Array(module.HEAPF32.buffer, outPtr, count).slice();
-  module._free(outPtr);
-  return result;
+	// Copy from WASM heap and free
+	const result = new Float32Array(module.HEAPF32.buffer, outPtr, count).slice();
+	module._free(outPtr);
+	return result;
 }
 
 /**
@@ -90,7 +90,7 @@ export function s2d_gen_2d(handle, xOff, yOff, xCnt, yCnt, xStep, yStep, seed) {
  * @param {number} handle - Noise node handle
  */
 export function s2d_destroy(handle) {
-  if (module && handle) {
-    module._s2d_noise_destroy(handle);
-  }
+	if (module && handle) {
+		module._s2d_noise_destroy(handle);
+	}
 }

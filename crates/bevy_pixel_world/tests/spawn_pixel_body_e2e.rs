@@ -145,7 +145,8 @@ impl TestHarness {
     q.iter(self.app.world()).count()
   }
 
-  /// Verifies that pixel bodies have physics components (RigidBody, Collider).
+  /// Verifies that pixel bodies have physics components (RigidBody,
+  /// Collider).
   fn verify_physics_components(&mut self) {
     #[cfg(feature = "avian2d")]
     {
@@ -190,8 +191,8 @@ impl TestHarness {
     }
   }
 
-  /// Verifies transform components are correctly set up for a body at expected
-  /// position.
+  /// Verifies transform components are correctly set up for a body at
+  /// expected position.
   fn verify_transform_at_position(&mut self, expected_pos: Vec2) -> Entity {
     let mut q = self
       .app

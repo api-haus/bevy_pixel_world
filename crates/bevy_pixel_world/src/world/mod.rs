@@ -256,8 +256,9 @@ impl PixelWorld {
 
   /// Sets the simulation bounds for viewport culling.
   ///
-  /// When set, only tiles overlapping these bounds (plus margin) are simulated.
-  /// Pass `None` to simulate all tiles in the streaming window.
+  /// When set, only tiles overlapping these bounds (plus margin) are
+  /// simulated. Pass `None` to simulate all tiles in the streaming
+  /// window.
   pub fn set_simulation_bounds(&mut self, bounds: Option<WorldRect>) {
     self.simulation_bounds = bounds;
   }

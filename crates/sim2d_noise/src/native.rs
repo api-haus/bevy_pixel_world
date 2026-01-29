@@ -34,7 +34,8 @@ impl NoiseNode {
   /// Generate noise values on a uniform 2D grid.
   ///
   /// # Arguments
-  /// * `output` - Buffer to write noise values into (must be x_cnt * y_cnt in size)
+  /// * `output` - Buffer to write noise values into (must be x_cnt * y_cnt in
+  ///   size)
   /// * `x_off, y_off` - Grid origin offset
   /// * `x_cnt, y_cnt` - Grid dimensions
   /// * `x_step, y_step` - Step size between samples
@@ -65,16 +66,18 @@ unsafe impl Sync for NoiseNode {}
 // ============================================================================
 //
 // These functions are exported for the Emscripten JS bridge.
-// The JS bridge (`sim2d_noise_bridge.js`) calls these via the Emscripten module.
+// The JS bridge (`sim2d_noise_bridge.js`) calls these via the Emscripten
+// module.
 //
 // Build: `make build` in crates/sim2d_noise/
 // Output: dist/sim2d_noise.js + dist/sim2d_noise.wasm
 
 #[cfg(all(target_arch = "wasm32", target_os = "emscripten"))]
 pub mod wasm_api {
-  use super::NoiseNode;
   use std::ffi::CStr;
   use std::os::raw::c_char;
+
+  use super::NoiseNode;
 
   /// Create a noise node from an encoded node tree string.
   ///
@@ -121,7 +124,16 @@ pub mod wasm_api {
     let count = (x_cnt * y_cnt) as usize;
     let output_slice = unsafe { std::slice::from_raw_parts_mut(output, count) };
 
-    node.gen_uniform_grid_2d(output_slice, x_off, y_off, x_cnt, y_cnt, x_step, y_step, seed);
+    node.gen_uniform_grid_2d(
+      output_slice,
+      x_off,
+      y_off,
+      x_cnt,
+      y_cnt,
+      x_step,
+      y_step,
+      seed,
+    );
   }
 
   /// Destroy a noise node and free its memory.

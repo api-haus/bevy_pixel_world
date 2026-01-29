@@ -95,8 +95,8 @@ impl PixelBodyRecord {
   /// Creates a record using the blitted transform instead of current physics
   /// transform.
   ///
-  /// This ensures the saved position matches where pixels were actually written
-  /// to chunks, preventing ghost pixels when bodies are restored.
+  /// This ensures the saved position matches where pixels were actually
+  /// written to chunks, preventing ghost pixels when bodies are restored.
   pub fn from_components_blitted(
     body_id: &PixelBodyId,
     body: &PixelBody,

@@ -119,7 +119,8 @@ impl PixelBody {
     self.surface.height()
   }
 
-  /// Returns the linear index for local coordinates, or None if out of bounds.
+  /// Returns the linear index for local coordinates, or None if out of
+  /// bounds.
   #[inline]
   fn index_of(&self, x: u32, y: u32) -> Option<usize> {
     if x < self.width() && y < self.height() {

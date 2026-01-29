@@ -24,8 +24,8 @@ pub trait ChunkSeeder: Send + Sync {
   /// Fills the chunk buffer with data for the given world position.
   fn seed(&self, pos: ChunkPos, chunk: &mut Chunk);
 
-  /// Fills the chunk buffer with data, optionally using pre-loaded persistence
-  /// data.
+  /// Fills the chunk buffer with data, optionally using pre-loaded
+  /// persistence data.
   ///
   /// Default implementation ignores loaded data and calls `seed()`.
   /// Override this to handle persistence data integration.

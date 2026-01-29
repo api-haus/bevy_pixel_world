@@ -1,34 +1,36 @@
+mod ambiance;
 mod config;
 mod core;
 #[cfg(feature = "editor")]
 mod editor;
 mod input;
+mod platform;
 mod player;
+mod time_of_day;
 mod visual_debug;
 mod world;
 
-use bevy::{
-  prelude::*,
-  window::{MonitorSelection, PresentMode, WindowMode, WindowResolution},
-};
+use bevy::{prelude::*, window::WindowResolution};
 
 fn main() {
-  // WASM: set up panic hook for better error messages
-  #[cfg(target_family = "wasm")]
-  console_error_panic_hook::set_once();
+  let (platform_config, embedded_assets) = platform::init();
 
-  // WASM: embed config at compile time (no filesystem access)
-  #[cfg(target_family = "wasm")]
-  let config_str = include_str!("../assets/config/game.config.toml");
-  #[cfg(not(target_family = "wasm"))]
-  let config_str =
-    std::fs::read_to_string("assets/config/game.config.toml").expect("Failed to read config file");
-
+  // Load game config for window setup
+  let config_str = embedded_assets
+    .as_ref()
+    .map(|e| e.game_config.to_string())
+    .unwrap_or_else(|| {
+      std::fs::read_to_string("assets/config/game.config.toml").expect("Failed to read config file")
+    });
   let config: config::GameConfig = toml::from_str(&config_str).expect("Failed to parse config");
 
   let mut app = App::new();
 
   app.insert_resource(Time::<Fixed>::from_hz(60.0));
+  app.insert_resource(platform_config.clone());
+  if let Some(embedded) = embedded_assets {
+    app.insert_resource(embedded);
+  }
 
   app
     .add_plugins(
@@ -38,21 +40,10 @@ fn main() {
           primary_window: Some(Window {
             resolution: WindowResolution::new(config.window.width, config.window.height),
             title: config.window.title.clone(),
-            // WASM: only Fifo (vsync) is supported on WebGL2
-            #[cfg(target_family = "wasm")]
-            present_mode: PresentMode::Fifo,
-            #[cfg(not(target_family = "wasm"))]
-            present_mode: PresentMode::Immediate,
-            // WASM: use windowed mode and target canvas element
-            #[cfg(target_family = "wasm")]
-            mode: WindowMode::Windowed,
-            #[cfg(target_family = "wasm")]
-            canvas: Some("#bevy".to_string()),
-            #[cfg(target_family = "wasm")]
-            fit_canvas_to_parent: true,
-            // Native: borderless fullscreen
-            #[cfg(not(target_family = "wasm"))]
-            mode: WindowMode::BorderlessFullscreen(MonitorSelection::Primary),
+            present_mode: platform_config.present_mode,
+            mode: platform_config.window_mode,
+            canvas: platform_config.canvas,
+            fit_canvas_to_parent: platform_config.fit_canvas_to_parent,
             ..default()
           }),
           ..default()
@@ -62,11 +53,13 @@ fn main() {
     )
     .add_plugins(config::ConfigPlugin)
     .add_plugins(core::CorePlugin)
+    .add_plugins(time_of_day::TimeOfDayPlugin)
+    .add_plugins(ambiance::Ambiance2DPlugin)
     .add_plugins(input::InputPlugin)
     .add_plugins(player::PlayerPlugin);
 
   // Always add procedural world with noise terrain
-  app.add_plugins(world::WorldPlugin);
+  app.add_plugins(world::WorldPlugin::new("assets/config/materials.toml"));
 
   // Editor mode: add level editor on top
   #[cfg(feature = "editor")]

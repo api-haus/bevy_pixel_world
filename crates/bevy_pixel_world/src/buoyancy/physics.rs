@@ -10,8 +10,8 @@ use super::submersion::SubmersionState;
 /// Configuration for submersion physics effects.
 #[derive(Resource, Clone, Debug)]
 pub struct SubmersionPhysicsConfig {
-  /// Gravity scale when fully submerged (0.0 = no gravity, 1.0 = full gravity).
-  /// Default: 0.3 (reduced gravity underwater).
+  /// Gravity scale when fully submerged (0.0 = no gravity, 1.0 = full
+  /// gravity). Default: 0.3 (reduced gravity underwater).
   pub submerged_gravity_scale: f32,
   /// Linear damping when fully submerged.
   /// Default: 3.0 (significant drag in water).
