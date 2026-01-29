@@ -45,6 +45,8 @@ Build a corpus of concrete examples to inform better methodology for spec-driven
 | [033](033-repeated-goal-abandonment.md) | Repeated Goal Abandonment | Persistence | "third time you pivot" |
 | [034](034-leftover-debug-code.md) | Leftover Debug Code | Visual Debug | debug artifacts not cleaned up |
 | [035](035-overcomplicating-simple-request.md) | Overcomplicating Simple Request | Physics | "What really I want is..." |
+| [036](036-unrealistic-test-coverage.md) | Unrealistic Test Coverage | Testing | tests pass but don't reproduce bugs |
+| [037](037-system-ordering-bugs.md) | System Ordering Bugs | Physics | systems running in wrong order |
 
 ## Common Signals
 
@@ -111,6 +113,8 @@ Phrases that effectively redirect Claude:
 33. **Persistent Avoidance** (#033) - Repeatedly declaring the goal "a separate issue"
 34. **Debug Artifacts** (#034) - Temporary code not cleaned up after development
 35. **Complexity Attraction** (#035) - Pursuing interesting technical tangents over simple requests
+36. **Shallow Testing** (#036) - Tests with shortcuts that don't reflect real behavior
+37. **Implicit Ordering** (#037) - Assuming registration order implies execution order
 
 ## Session Archive
 
