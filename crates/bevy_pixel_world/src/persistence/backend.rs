@@ -126,6 +126,7 @@ use super::WorldSave;
 ///
 /// Both native and WASM implementations are complete - no `Option` wrapping
 /// needed. WASM backend is only inserted after async init completes.
+#[allow(dead_code)] // Kept for potential future copy-on-write support
 pub(crate) trait PersistenceBackend: Send + Sync {
   /// Opens or creates a world save asynchronously.
   ///

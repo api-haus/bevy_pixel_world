@@ -55,7 +55,7 @@ fn main() {
       ..default()
     }))
     .insert_resource(Materials::from(config))
-    .add_plugins(PixelWorldFullBundle::default().persistence(PersistenceConfig::at(save_path)))
+    .add_plugins(PixelWorldFullBundle::new(PersistenceConfig::at(save_path)))
     .add_plugins((CreativeModePlugins, UiPlugin, PhysicsPlugin))
     .add_systems(Startup, setup)
     .run();

@@ -203,6 +203,7 @@ impl StorageFs for NativeFs {
 ///
 /// Wraps `NativeFs` and provides high-level persistence operations.
 /// All operations are synchronous (blocking I/O).
+#[allow(dead_code)] // Kept for potential future copy-on-write support
 pub struct NativePersistence {
   fs: Arc<NativeFs>,
 }

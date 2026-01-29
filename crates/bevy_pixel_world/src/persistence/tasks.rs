@@ -3,6 +3,7 @@
 //! Provides resources and types for managing async chunk load/save operations
 //! via Bevy's AsyncComputeTaskPool.
 
+#[cfg(not(target_family = "wasm"))]
 use std::collections::HashMap;
 use std::io;
 use std::sync::Arc;

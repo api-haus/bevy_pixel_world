@@ -27,7 +27,7 @@ pub enum IoCommand {
   /// Initialize persistence with save file path and seed.
   /// On WASM, only the filename portion is used (OPFS is a flat store).
   Initialize { path: PathBuf, seed: u64 },
-  /// Load chunk data from storage.
+  /// Load chunk data and associated bodies from storage.
   LoadChunk { chunk_pos: IVec2 },
   /// Write chunk data to storage.
   WriteChunk { chunk_pos: IVec2, data: Vec<u8> },
@@ -53,10 +53,13 @@ pub enum IoResult {
     body_count: usize,
     world_seed: u64,
   },
-  /// Chunk data loaded (None if not found).
+  /// Chunk data and bodies loaded.
   ChunkLoaded {
     chunk_pos: IVec2,
+    /// Chunk pixel data (None if not found).
     data: Option<ChunkLoadData>,
+    /// Bodies associated with this chunk.
+    bodies: Vec<BodyLoadData>,
   },
   /// Write completed.
   WriteComplete { chunk_pos: IVec2 },
@@ -68,6 +71,13 @@ pub enum IoResult {
   FlushComplete,
   /// Error occurred.
   Error { message: String },
+}
+
+/// Loaded body data from worker.
+#[derive(Debug, Clone)]
+pub struct BodyLoadData {
+  /// Serialized PixelBodyRecord.
+  pub record_data: Vec<u8>,
 }
 
 /// Loaded chunk data from worker.
@@ -139,5 +149,17 @@ impl IoDispatcher {
   /// Sets the world seed (called when Initialized result is received).
   pub fn set_world_seed(&self, seed: u64) {
     self.inner.set_world_seed(seed);
+  }
+
+  /// Returns the initialization counts (chunk_count, body_count).
+  /// Returns (0, 0) if not yet initialized.
+  pub fn init_counts(&self) -> (usize, usize) {
+    self.inner.init_counts()
+  }
+
+  /// Sets the initialization counts (called when Initialized result is
+  /// received).
+  pub fn set_init_counts(&self, chunk_count: usize, body_count: usize) {
+    self.inner.set_init_counts(chunk_count, body_count);
   }
 }

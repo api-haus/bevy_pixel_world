@@ -37,7 +37,7 @@ impl TestHarness {
     app.add_plugins(bevy::scene::ScenePlugin);
     app.add_plugins(bevy::gizmos::GizmoPlugin);
 
-    app.add_plugins(PixelWorldPlugin::default().persistence(PersistenceConfig::at(save_path)));
+    app.add_plugins(PixelWorldPlugin::new(PersistenceConfig::at(save_path)));
     app.add_plugins(PixelBodiesPlugin);
 
     let camera = app

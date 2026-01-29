@@ -117,142 +117,27 @@ fn discard_queued_operations(tasks: &mut PersistenceTasks) {
   tasks.body_remove_queue.clear();
 }
 
-/// Writes all queued chunk saves to the save file.
-fn flush_chunk_saves(
-  save: &mut crate::persistence::WorldSave,
-  queue: &mut Vec<crate::persistence::SaveTask>,
-) {
-  for task in queue.drain(..) {
-    let entry = crate::persistence::format::PageTableEntry::new(
-      task.pos,
-      save.data_write_pos + 4, // Skip size prefix
-      task.data.len() as u32,
-      task.storage_type,
-    );
-
-    if let Err(e) = save.write_chunk_data(save.data_write_pos, &task.data) {
-      warn!("Failed to save chunk {:?}: {}", task.pos, e);
-      continue;
-    }
-
-    save.index.insert(entry);
-    save.data_write_pos += 4 + task.data.len() as u64;
-    save.header.chunk_count = save.index.len() as u32;
-    save.dirty = true;
-  }
-}
-
-/// Writes all queued body saves to the save file.
-fn flush_body_saves(
-  save: &mut crate::persistence::WorldSave,
-  queue: &mut Vec<crate::persistence::BodySaveTask>,
-) {
-  for task in queue.drain(..) {
-    if let Err(e) = save.save_body(&task.record) {
-      warn!("Failed to save pixel body {}: {}", task.record.stable_id, e);
-    }
-  }
-}
-
-/// Processes all queued body removals.
-fn flush_body_removes(
-  save: &mut crate::persistence::WorldSave,
-  queue: &mut Vec<crate::persistence::BodyRemoveTask>,
-) {
-  for task in queue.drain(..) {
-    save.remove_body(task.stable_id);
-  }
-}
-
-/// Attempts to flush the save file to disk if dirty.
-fn try_flush_to_disk(save: &mut crate::persistence::WorldSave) {
-  if save.dirty
-    && let Err(e) = save.flush()
-  {
-    warn!("Failed to flush save: {}", e);
-  }
-}
-
-/// System: Flushes pending persistence tasks to disk.
+/// System: Legacy flush for persistence tasks.
 ///
-/// Writes queued chunk and body saves to the save file. Only runs if
-/// PersistenceControl has an active save. Handles copy-on-write when saving
-/// to a different path.
-///
-/// Note: On WASM, this system sends a Flush command to the IoDispatcher.
+/// With the unified async architecture, saves now go through IoDispatcher
+/// via dispatch_save_task. This system is kept for backward compatibility
+/// but does minimal work.
 #[cfg_attr(feature = "tracy", tracing::instrument(skip_all))]
 pub(crate) fn flush_persistence_queue(
-  #[cfg(not(target_family = "wasm"))] mut persistence_tasks: ResMut<PersistenceTasks>,
-  #[cfg(target_family = "wasm")] _persistence_tasks: ResMut<PersistenceTasks>,
-  #[cfg(not(target_family = "wasm"))] persistence_control: Option<ResMut<PersistenceControl>>,
-  #[cfg(target_family = "wasm")] io_dispatcher: Option<Res<IoDispatcher>>,
-  #[cfg(not(target_family = "wasm"))] _saving: ResMut<SavingChunks>,
-  #[cfg(target_family = "wasm")] mut saving: ResMut<SavingChunks>,
+  _persistence_tasks: ResMut<PersistenceTasks>,
+  mut saving: ResMut<SavingChunks>,
+  io_dispatcher: Option<Res<IoDispatcher>>,
 ) {
-  // WASM: Send Flush command if we have pending saves
-  #[cfg(target_family = "wasm")]
-  {
-    if !saving.busy {
-      return;
-    }
-
-    let Some(io_dispatcher) = io_dispatcher else {
-      saving.busy = false;
-      return;
-    };
-
-    // Send flush command
-    io_dispatcher.send(crate::persistence::IoCommand::Flush);
-    saving.busy = false;
+  // Both native and WASM now use IoDispatcher for saves via dispatch_save_task.
+  // This system just resets the busy flag after Flush was sent.
+  if !saving.busy {
     return;
   }
 
-  // Native: Direct file access
-  #[cfg(not(target_family = "wasm"))]
-  {
-    if !has_pending_work(&persistence_tasks) {
-      return;
-    }
-
-    let Some(mut persistence_control) = persistence_control else {
-      discard_queued_operations(&mut persistence_tasks);
-      return;
-    };
-
-    if !persistence_control.is_active() {
-      discard_queued_operations(&mut persistence_tasks);
-      return;
-    }
-
-    // Handle copy-on-write if saving to a different path
-    let target_path = persistence_control
-      .pending_requests
-      .iter()
-      .find_map(|req| req.target_path.clone());
-
-    if let Some(new_path) = target_path {
-      match persistence_control.copy_to(&new_path) {
-        Ok(()) => {
-          info!("Copied save to {:?}", new_path);
-        }
-        Err(e) => {
-          warn!("Failed to copy save to new location: {}", e);
-        }
-      }
-    }
-
-    // Acquire lock and flush all queued operations
-    let save_arc = persistence_control.world_save().unwrap();
-    let Ok(mut save) = save_arc.write() else {
-      warn!("Failed to acquire save lock");
-      discard_queued_operations(&mut persistence_tasks);
-      return;
-    };
-
-    flush_chunk_saves(&mut save, &mut persistence_tasks.save_queue);
-    flush_body_saves(&mut save, &mut persistence_tasks.body_save_queue);
-    flush_body_removes(&mut save, &mut persistence_tasks.body_remove_queue);
-    try_flush_to_disk(&mut save);
+  // If IoDispatcher is available and ready, the Flush was already sent
+  // by dispatch_save_task. Just clear the busy flag.
+  if io_dispatcher.as_ref().is_some_and(|d| d.is_ready()) {
+    saving.busy = false;
   }
 }
 
@@ -526,163 +411,84 @@ pub(crate) fn notify_persistence_complete(saving: Res<SavingChunks>, tasks: Res<
 // 1. `dispatch_save_task` - spawns async task when saves are queued
 // 2. `poll_save_task` - checks task completion, merges results back
 
-#[cfg(not(target_family = "wasm"))]
-use std::sync::Arc;
-
-#[cfg(not(target_family = "wasm"))]
-use bevy::tasks::AsyncComputeTaskPool;
-
 use crate::persistence::tasks::{LoadingChunks, SavingChunks};
-#[cfg(not(target_family = "wasm"))]
-use crate::persistence::tasks::{SaveBatchInput, save_batch_async};
 
 /// System: Dispatches a batch save task when saves are queued.
 ///
 /// Only one save task runs at a time to prevent write conflicts.
 /// Runs in PostSimulation after chunks are queued.
 ///
-/// - Native: Uses AsyncComputeTaskPool with direct file access
-/// - WASM: Uses IoDispatcher to send commands to Web Worker
+/// Both native and WASM use IoDispatcher to send commands to the worker.
 #[cfg_attr(feature = "tracy", tracing::instrument(skip_all))]
 pub(crate) fn dispatch_save_task(
   mut saving: ResMut<SavingChunks>,
   mut tasks: ResMut<PersistenceTasks>,
-  #[cfg(not(target_family = "wasm"))] persistence_control: Option<ResMut<PersistenceControl>>,
-  #[cfg(target_family = "wasm")] io_dispatcher: Option<Res<IoDispatcher>>,
+  io_dispatcher: Option<Res<IoDispatcher>>,
 ) {
   // Don't dispatch if already saving or nothing to save
   if saving.is_busy() || !has_pending_work(&tasks) {
     return;
   }
 
-  // WASM: Use IoDispatcher
-  #[cfg(target_family = "wasm")]
-  {
-    let Some(io_dispatcher) = io_dispatcher else {
-      discard_queued_operations(&mut tasks);
-      return;
-    };
+  let Some(io_dispatcher) = io_dispatcher else {
+    discard_queued_operations(&mut tasks);
+    return;
+  };
 
-    if !io_dispatcher.is_ready() {
-      discard_queued_operations(&mut tasks);
-      return;
-    }
-
-    // Send WriteChunk commands for each chunk
-    for task in tasks.save_queue.drain(..) {
-      io_dispatcher.send(crate::persistence::IoCommand::WriteChunk {
-        chunk_pos: bevy::math::IVec2::new(task.pos.x, task.pos.y),
-        data: task.data,
-      });
-    }
-
-    // Send SaveBody commands for each body
-    for task in tasks.body_save_queue.drain(..) {
-      let mut buf = Vec::new();
-      if let Err(e) = task.record.write_to(&mut buf) {
-        warn!("Failed to serialize body {}: {}", task.record.stable_id, e);
-        continue;
-      }
-      io_dispatcher.send(crate::persistence::IoCommand::SaveBody {
-        record_data: buf,
-        stable_id: task.record.stable_id,
-      });
-    }
-
-    // Send RemoveBody commands
-    for task in tasks.body_remove_queue.drain(..) {
-      io_dispatcher.send(crate::persistence::IoCommand::RemoveBody {
-        stable_id: task.stable_id,
-      });
-    }
-
-    // Mark as busy (we'll clear this when flush completes)
-    saving.busy = true;
+  if !io_dispatcher.is_ready() {
+    discard_queued_operations(&mut tasks);
     return;
   }
 
-  // Native: Use AsyncComputeTaskPool
-  #[cfg(not(target_family = "wasm"))]
-  {
-    let Some(mut persistence_control) = persistence_control else {
-      discard_queued_operations(&mut tasks);
-      return;
-    };
-
-    if !persistence_control.is_active() {
-      discard_queued_operations(&mut tasks);
-      return;
-    }
-
-    // Handle copy-on-write if saving to a different path
-    let target_path = persistence_control
-      .pending_requests
-      .iter()
-      .find_map(|req| req.target_path.clone());
-
-    if let Some(new_path) = target_path {
-      match persistence_control.copy_to(&new_path) {
-        Ok(()) => {
-          info!("Copied save to {:?}", new_path);
-        }
-        Err(e) => {
-          warn!("Failed to copy save to new location: {}", e);
-        }
-      }
-    }
-
-    // Get save file handle and create snapshot of indices
-    let save_arc = persistence_control.world_save().unwrap();
-    let (file, chunk_index, body_index, data_write_pos) = {
-      let Ok(save) = save_arc.read() else {
-        warn!("Failed to acquire save lock for async save");
-        discard_queued_operations(&mut tasks);
-        return;
-      };
-
-      let (chunk_index, body_index, data_write_pos) = save.create_save_snapshot();
-      (save.file_handle(), chunk_index, body_index, data_write_pos)
-    };
-
-    // Drain queued operations
-    let input = SaveBatchInput {
-      chunks: std::mem::take(&mut tasks.save_queue),
-      bodies: std::mem::take(&mut tasks.body_save_queue),
-      removals: std::mem::take(&mut tasks.body_remove_queue),
-      chunk_index,
-      body_index,
-      data_write_pos,
-    };
-
-    // Spawn async task
-    let task =
-      AsyncComputeTaskPool::get().spawn(async move { save_batch_async(file, input).await });
-
-    saving.task = Some(task);
-    saving.busy = true;
+  // Send WriteChunk commands for each chunk
+  for task in tasks.save_queue.drain(..) {
+    io_dispatcher.send(crate::persistence::IoCommand::WriteChunk {
+      chunk_pos: bevy::math::IVec2::new(task.pos.x, task.pos.y),
+      data: task.data,
+    });
   }
+
+  // Send SaveBody commands for each body
+  for task in tasks.body_save_queue.drain(..) {
+    let mut buf = Vec::new();
+    if let Err(e) = task.record.write_to(&mut buf) {
+      warn!("Failed to serialize body {}: {}", task.record.stable_id, e);
+      continue;
+    }
+    io_dispatcher.send(crate::persistence::IoCommand::SaveBody {
+      record_data: buf,
+      stable_id: task.record.stable_id,
+    });
+  }
+
+  // Send RemoveBody commands
+  for task in tasks.body_remove_queue.drain(..) {
+    io_dispatcher.send(crate::persistence::IoCommand::RemoveBody {
+      stable_id: task.stable_id,
+    });
+  }
+
+  // Send Flush to persist to disk
+  io_dispatcher.send(crate::persistence::IoCommand::Flush);
+
+  saving.busy = true;
 }
 
-/// System: Polls the save task and merges results back.
+/// System: Legacy poll for save tasks.
 ///
-/// When the save task completes, this system updates the WorldSave's indices
-/// and flushes metadata to disk.
-///
-/// When rendering is absent (no `RenderingEnabled` resource), tasks are
-/// block-waited to completion. This gives synchronous semantics in test
-/// environments.
-///
-/// Note: On WASM, save completion is handled by `poll_io_results` instead.
+/// With the unified async architecture, saves now go through IoDispatcher
+/// and completion is handled by poll_io_results. This system is kept for
+/// backward compatibility with any legacy code that spawns tasks directly.
 #[cfg_attr(feature = "tracy", tracing::instrument(skip_all))]
 pub(crate) fn poll_save_task(
   #[cfg(not(target_family = "wasm"))] mut saving: ResMut<SavingChunks>,
-  #[cfg(not(target_family = "wasm"))] persistence_control: Option<Res<PersistenceControl>>,
   #[cfg(not(target_family = "wasm"))] rendering: Option<
     Res<crate::world::plugin::RenderingEnabled>,
   >,
 ) {
   #[cfg(not(target_family = "wasm"))]
   {
+    // Legacy task support - if any code still spawns tasks directly
     let Some(ref mut task) = saving.task else {
       return;
     };
@@ -699,15 +505,7 @@ pub(crate) fn poll_save_task(
     saving.task = None;
     saving.busy = false;
 
-    let Some(persistence_control) = persistence_control else {
-      return;
-    };
-
-    let Some(save_arc) = persistence_control.world_save() else {
-      return;
-    };
-
-    // Log any errors
+    // Log results (no longer need to merge since IoDispatcher handles this)
     for error in &result.errors {
       warn!("{}", error);
     }
@@ -717,20 +515,6 @@ pub(crate) fn poll_save_task(
         "Saved {} chunks, {} bodies, removed {} bodies",
         result.chunks_saved, result.bodies_saved, result.bodies_removed
       );
-    }
-
-    // Merge results back and flush metadata
-    let Ok(mut save) = save_arc.write() else {
-      warn!("Failed to acquire save lock to merge results");
-      return;
-    };
-
-    save.merge_save_result(result);
-
-    // Flush metadata synchronously (header + indices)
-    // This is safe because it's a small amount of data
-    if let Err(e) = save.flush() {
-      warn!("Failed to flush save metadata: {}", e);
     }
   }
 
@@ -750,82 +534,34 @@ pub(crate) fn poll_save_task(
 #[cfg_attr(feature = "tracy", tracing::instrument(skip_all))]
 pub(crate) fn dispatch_chunk_loads(
   mut loading: ResMut<LoadingChunks>,
-  #[cfg(not(target_family = "wasm"))] persistence_control: Option<Res<PersistenceControl>>,
-  #[cfg(target_family = "wasm")] io_dispatcher: Option<Res<IoDispatcher>>,
+  io_dispatcher: Option<Res<IoDispatcher>>,
   worlds: Query<&PixelWorld>,
 ) {
-  // WASM: Use IoDispatcher
-  #[cfg(target_family = "wasm")]
-  {
-    let Some(io_dispatcher) = io_dispatcher else {
-      return;
-    };
+  // Both native and WASM now use IoDispatcher for chunk loading
+  let Some(io_dispatcher) = io_dispatcher else {
+    return;
+  };
 
-    if !io_dispatcher.is_ready() {
-      return;
-    }
-
-    for world in worlds.iter() {
-      for (pos, slot_idx) in world.active_chunks() {
-        let slot = world.slot(slot_idx);
-
-        // Only dispatch for Loading state chunks not already being loaded
-        if !slot.is_loading() || loading.pending.contains(&pos) {
-          continue;
-        }
-
-        // Send LoadChunk command to worker
-        io_dispatcher.send(crate::persistence::IoCommand::LoadChunk {
-          chunk_pos: bevy::math::IVec2::new(pos.x, pos.y),
-        });
-
-        // Track that we're loading this chunk
-        loading.pending.insert(pos);
-      }
-    }
+  if !io_dispatcher.is_ready() {
     return;
   }
 
-  // Native: Use AsyncComputeTaskPool
-  #[cfg(not(target_family = "wasm"))]
-  {
-    let Some(persistence_control) = persistence_control else {
-      return;
-    };
+  for world in worlds.iter() {
+    for (pos, slot_idx) in world.active_chunks() {
+      let slot = world.slot(slot_idx);
 
-    let Some(save_arc) = persistence_control.world_save() else {
-      return;
-    };
-
-    let Ok(save) = save_arc.read() else {
-      return;
-    };
-
-    let file = save.file_handle();
-    let index = save.chunk_index();
-
-    for world in worlds.iter() {
-      for (pos, slot_idx) in world.active_chunks() {
-        let slot = world.slot(slot_idx);
-
-        // Only dispatch for Loading state chunks not already being loaded
-        if !slot.is_loading() || loading.pending.contains(&pos) {
-          continue;
-        }
-
-        // Clone data needed for task
-        let file = Arc::clone(&file);
-        let index_clone = index.clone();
-        let task_pos = pos;
-
-        // Spawn load task
-        let task = AsyncComputeTaskPool::get().spawn(async move {
-          crate::persistence::tasks::load_chunk_async(&*file, &index_clone, task_pos).await
-        });
-
-        loading.pending.insert(pos);
-        loading.tasks.insert(pos, task);
+      // Only dispatch for Loading state chunks not already being loaded
+      if !slot.is_loading() || loading.pending.contains(&pos) {
+        continue;
       }
+
+      // Send LoadChunk command to worker
+      io_dispatcher.send(crate::persistence::IoCommand::LoadChunk {
+        chunk_pos: bevy::math::IVec2::new(pos.x, pos.y),
+      });
+
+      // Track that we're loading this chunk
+      loading.pending.insert(pos);
     }
   }
 }
@@ -849,8 +585,15 @@ pub(crate) fn poll_chunk_loads(
     Res<crate::world::plugin::RenderingEnabled>,
   >,
 ) {
+  // Legacy native task polling (for tasks still using AsyncComputeTaskPool).
+  // Most chunk loading now goes through IoDispatcher and poll_io_results.
   #[cfg(not(target_family = "wasm"))]
   {
+    // If there are no tasks, skip processing
+    if loading.tasks.is_empty() {
+      return;
+    }
+
     let block_all = rendering.is_none();
 
     // Collect positions that finished loading
@@ -903,14 +646,27 @@ pub(crate) fn poll_chunk_loads(
 /// Resource storing loaded chunk data waiting to be applied during seeding.
 #[derive(Resource, Default)]
 pub struct LoadedChunkDataStore {
-  /// Map from chunk position to loaded data.
+  /// Map from chunk position to loaded chunk data.
   pub store: std::collections::HashMap<crate::coords::ChunkPos, crate::persistence::LoadedChunk>,
+  /// Map from chunk position to loaded body data.
+  pub bodies: std::collections::HashMap<
+    crate::coords::ChunkPos,
+    Vec<crate::persistence::io_worker::BodyLoadData>,
+  >,
 }
 
 impl LoadedChunkDataStore {
-  /// Takes loaded data for a position, if any.
+  /// Takes loaded chunk data for a position, if any.
   pub fn take(&mut self, pos: crate::coords::ChunkPos) -> Option<crate::persistence::LoadedChunk> {
     self.store.remove(&pos)
+  }
+
+  /// Takes loaded body data for a position, if any.
+  pub fn take_bodies(
+    &mut self,
+    pos: crate::coords::ChunkPos,
+  ) -> Vec<crate::persistence::io_worker::BodyLoadData> {
+    self.bodies.remove(&pos).unwrap_or_default()
   }
 }
 
@@ -938,6 +694,7 @@ pub(crate) fn poll_io_results(
   mut loaded_data: ResMut<LoadedChunkDataStore>,
   mut worlds: Query<&mut PixelWorld>,
   mut loading: ResMut<LoadingChunks>,
+  mut saving: ResMut<SavingChunks>,
 ) {
   let Some(io_dispatcher) = io_dispatcher else {
     return;
@@ -957,6 +714,7 @@ pub(crate) fn poll_io_results(
         );
         io_dispatcher.set_ready(true);
         io_dispatcher.set_world_seed(world_seed);
+        io_dispatcher.set_init_counts(chunk_count, body_count);
 
         // Create PersistenceControl now that worker is ready
         if let Some(ref pending) = pending_init {
@@ -964,13 +722,17 @@ pub(crate) fn poll_io_results(
           commands.remove_resource::<crate::world::control::PendingPersistenceInit>();
         }
       }
-      IoResult::ChunkLoaded { chunk_pos, data } => {
+      IoResult::ChunkLoaded {
+        chunk_pos,
+        data,
+        bodies,
+      } => {
         let pos = crate::coords::ChunkPos::new(chunk_pos.x, chunk_pos.y);
 
         // Remove from pending set
         loading.pending.remove(&pos);
 
-        // Store loaded data if present
+        // Store loaded chunk data if present
         if let Some(chunk_data) = data {
           let storage_type = match chunk_data.storage_type {
             0 => crate::persistence::format::StorageType::Empty,
@@ -986,6 +748,11 @@ pub(crate) fn poll_io_results(
               seeder_needed: chunk_data.seeder_needed,
             },
           );
+        }
+
+        // Store loaded body data for later spawning (when chunk finishes seeding)
+        if !bodies.is_empty() {
+          loaded_data.bodies.insert(pos, bodies);
         }
 
         // Transition chunk to Seeding state
@@ -1010,6 +777,8 @@ pub(crate) fn poll_io_results(
       }
       IoResult::FlushComplete => {
         info!("I/O Worker flush complete");
+        // Reset busy flag so new saves can be dispatched
+        saving.busy = false;
       }
       IoResult::Error { message } => {
         warn!("I/O Worker error: {}", message);

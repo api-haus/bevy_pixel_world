@@ -6,7 +6,6 @@ use bevy::prelude::*;
 // WASM compat: std::time::Instant panics on wasm32
 use web_time::Instant;
 
-use super::PixelWorld;
 use super::control::{PersistenceComplete, RequestPersistence, SimulationState};
 use super::persistence_systems::{
   LoadedChunkDataStore, dispatch_chunk_loads, dispatch_save_task, flush_persistence_queue,
@@ -21,10 +20,15 @@ use super::streaming::{
 pub use super::streaming::{SeededChunks, StreamingCamera, UnloadingChunks};
 pub(crate) use super::streaming::{SharedChunkMesh, SharedPaletteTexture};
 use super::systems::upload_dirty_chunks;
+use super::{
+  PersistenceInitialized, PixelWorld, WorldInitState, WorldLoadingProgress, WorldReady,
+  world_is_ready,
+};
 use crate::coords::CHUNK_SIZE;
 use crate::debug_shim;
 use crate::material::Materials;
 use crate::persistence::PersistenceTasks;
+use crate::persistence::io_worker::IoDispatcher;
 use crate::persistence::tasks::{LoadingChunks, SavingChunks};
 use crate::render::{create_chunk_quad, create_palette_texture, upload_palette};
 use crate::schedule::{PixelWorldSet, SimulationPhase};
@@ -57,6 +61,11 @@ impl Plugin for PixelWorldStreamingPlugin {
       .init_resource::<SimulationState>()
       .init_resource::<crate::diagnostics::SimulationMetrics>()
       .init_resource::<HeatConfig>()
+      // World initialization state tracking
+      .init_resource::<WorldInitState>()
+      .init_resource::<WorldLoadingProgress>()
+      .add_message::<PersistenceInitialized>()
+      .add_message::<WorldReady>()
       .add_message::<RequestPersistence>()
       .add_message::<PersistenceComplete>();
 
@@ -95,6 +104,8 @@ impl Plugin for PixelWorldStreamingPlugin {
         clear_chunk_tracking,
         // Poll I/O worker results (initialization, chunk loads, etc.)
         poll_io_results,
+        // Update world init state based on persistence readiness
+        transition_to_loading_chunks,
         handle_persistence_messages,
         update_streaming_windows,
         update_entity_culling,
@@ -105,16 +116,20 @@ impl Plugin for PixelWorldStreamingPlugin {
         dispatch_seeding,
         poll_seeding_tasks,
         update_simulation_bounds,
+        // Update loading progress and check for world ready
+        update_loading_progress,
+        transition_to_ready,
       )
         .chain()
         .in_set(PixelWorldSet::PreSimulation),
     );
 
-    // Core simulation system
+    // Core simulation system - only runs when world is ready
     app.add_systems(
       Update,
       run_simulation
         .run_if(simulation_not_paused)
+        .run_if(world_is_ready)
         .in_set(SimulationPhase::CATick),
     );
 
@@ -219,4 +234,111 @@ fn run_simulation(
 /// Run condition: Returns true if simulation is not paused.
 fn simulation_not_paused(state: Res<SimulationState>) -> bool {
   state.is_running()
+}
+
+// ============================================================================
+// World Initialization State Systems
+// ============================================================================
+
+/// System: Transitions from `Initializing` to `LoadingChunks` when persistence
+/// is ready.
+///
+/// This runs after `poll_io_results` which sets `IoDispatcher::is_ready()`.
+fn transition_to_loading_chunks(
+  io_dispatcher: Option<Res<IoDispatcher>>,
+  mut state: ResMut<WorldInitState>,
+  mut events: bevy::ecs::message::MessageWriter<PersistenceInitialized>,
+) {
+  if *state != WorldInitState::Initializing {
+    return;
+  }
+
+  let Some(ref dispatcher) = io_dispatcher else {
+    return;
+  };
+
+  if dispatcher.is_ready() {
+    *state = WorldInitState::LoadingChunks;
+
+    // Emit PersistenceInitialized event with counts from IoDispatcher
+    let (chunk_count, body_count) = dispatcher.init_counts();
+    events.write(PersistenceInitialized {
+      chunk_count,
+      body_count,
+    });
+
+    info!("World state: Initializing -> LoadingChunks");
+  }
+}
+
+/// System: Transitions from `LoadingChunks` to `Ready` when initial chunks are
+/// loaded.
+///
+/// The world is ready when:
+/// 1. There is at least one active chunk (not loading/seeding)
+/// 2. No chunks are being loaded from disk
+/// 3. No chunks are being seeded
+fn transition_to_ready(
+  mut state: ResMut<WorldInitState>,
+  loading: Res<LoadingChunks>,
+  seeding_tasks: Res<SeedingTasks>,
+  worlds: Query<&PixelWorld>,
+  mut events: bevy::ecs::message::MessageWriter<WorldReady>,
+) {
+  if *state != WorldInitState::LoadingChunks {
+    return;
+  }
+
+  // Check if any world has active chunks and nothing is in-flight
+  for world in &worlds {
+    let has_active_chunks = world.active_count() > 0;
+    let no_loading = loading.is_empty();
+    let no_seeding = seeding_tasks.is_empty();
+
+    // Count how many chunks are actually active (not loading/seeding)
+    let active_chunk_count = world
+      .active_chunks()
+      .filter(|(_, idx)| world.slot(*idx).is_seeded())
+      .count();
+
+    if has_active_chunks && no_loading && no_seeding && active_chunk_count > 0 {
+      *state = WorldInitState::Ready;
+      events.write(WorldReady);
+      info!(
+        "World state: LoadingChunks -> Ready ({} active chunks)",
+        active_chunk_count
+      );
+      return;
+    }
+  }
+}
+
+/// System: Updates the loading progress metrics.
+fn update_loading_progress(
+  mut progress: ResMut<WorldLoadingProgress>,
+  state: Res<WorldInitState>,
+  io_dispatcher: Option<Res<IoDispatcher>>,
+  loading: Res<LoadingChunks>,
+  seeding_tasks: Res<SeedingTasks>,
+  worlds: Query<&PixelWorld>,
+) {
+  progress.state = *state;
+  progress.persistence_ready = io_dispatcher
+    .as_ref()
+    .map(|d| d.is_ready())
+    .unwrap_or(false);
+  progress.chunks_loading = loading.len();
+  progress.chunks_seeding = seeding_tasks.len();
+
+  let (mut ready, mut total) = (0, 0);
+  for world in &worlds {
+    for (_, slot_idx) in world.active_chunks() {
+      total += 1;
+      if world.slot(slot_idx).is_seeded() {
+        ready += 1;
+      }
+    }
+  }
+  progress.chunks_ready = ready;
+  progress.chunks_total = total;
 }

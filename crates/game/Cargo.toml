@@ -21,6 +21,9 @@ rayon = "1.11.0"
 bevy_pixel_world = { path = "../bevy_pixel_world", features = ["rapier2d"] }
 bevy-yoleck = { version = "0.29", optional = true, features = ["vpeol_2d"] }
 
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+dirs = "6"
+
 [target.'cfg(target_family = "wasm")'.dependencies]
 console_error_panic_hook = "0.1"
 

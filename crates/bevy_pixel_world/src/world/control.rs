@@ -4,14 +4,11 @@
 //! - Pausing/resuming world simulation and physics
 //! - Triggering on-demand persistence with completion notification
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, RwLock};
 
 use bevy::prelude::*;
-
-use crate::persistence::WorldSave;
-use crate::persistence::backend::PersistenceBackend;
 
 /// Controls whether world simulation is running or paused.
 ///
@@ -85,11 +82,6 @@ impl SimulationState {
 /// path.
 #[derive(Resource)]
 pub struct PersistenceControl {
-  /// Persistence backend (native only; None on WASM where IoDispatcher handles
-  /// I/O).
-  pub(crate) backend: Option<Arc<dyn PersistenceBackend>>,
-  /// The loaded WorldSave (native only).
-  pub(crate) world_save: Option<Arc<RwLock<WorldSave>>>,
   /// Current save file path.
   pub(crate) current_path: Option<PathBuf>,
   /// Counter for generating unique request IDs.
@@ -99,32 +91,11 @@ pub struct PersistenceControl {
 }
 
 impl PersistenceControl {
-  /// Creates a persistence control with an already-loaded save.
+  /// Creates a persistence control that tracks the save file path.
   ///
-  /// Used during synchronous native initialization where save is opened
-  /// immediately.
-  pub(crate) fn with_save(
-    backend: Arc<dyn PersistenceBackend>,
-    world_save: WorldSave,
-    path: PathBuf,
-  ) -> Self {
-    Self {
-      backend: Some(backend),
-      world_save: Some(Arc::new(RwLock::new(world_save))),
-      current_path: Some(path),
-      next_request_id: 1,
-      pending_requests: Vec::new(),
-    }
-  }
-
-  /// Creates a persistence control that only tracks the path.
-  ///
-  /// Used on WASM where I/O is handled by IoDispatcher instead of direct file
-  /// access.
+  /// All I/O is handled by IoDispatcher on both native and WASM platforms.
   pub fn with_path_only(path: PathBuf) -> Self {
     Self {
-      backend: None,
-      world_save: None,
       current_path: Some(path),
       next_request_id: 1,
       pending_requests: Vec::new(),
@@ -136,11 +107,6 @@ impl PersistenceControl {
   /// Check this before calling save methods.
   pub fn is_active(&self) -> bool {
     self.current_path.is_some()
-  }
-
-  /// Returns a reference to the loaded save, if any.
-  pub(crate) fn world_save(&self) -> Option<&Arc<RwLock<WorldSave>>> {
-    self.world_save.as_ref()
   }
 
   /// Saves all chunks and pixel bodies to the current save file.
@@ -196,7 +162,8 @@ impl PersistenceControl {
   }
 
   /// Internal helper for save operations.
-  fn save_internal(&mut self, target_path: Option<PathBuf>) -> PersistenceHandle {
+  fn save_internal(&mut self, _target_path: Option<PathBuf>) -> PersistenceHandle {
+    // TODO: target_path for copy-on-write requires IoDispatcher CopyTo command
     let id = self.next_request_id;
     self.next_request_id += 1;
 
@@ -204,56 +171,18 @@ impl PersistenceControl {
     let request = PersistenceRequestInner {
       id,
       completed: completed.clone(),
-      target_path,
     };
     self.pending_requests.push(request);
 
     PersistenceHandle { id, completed }
   }
-
-  /// Copies the current save to a new path (internal copy-on-write
-  /// implementation).
-  ///
-  /// Updates the current path to point to the copied file.
-  pub(crate) fn copy_to(&mut self, target_path: &Path) -> std::io::Result<()> {
-    let backend = self.backend.as_ref().ok_or_else(|| {
-      std::io::Error::new(std::io::ErrorKind::Unsupported, "no backend available")
-    })?;
-
-    let save_arc = self
-      .world_save
-      .as_ref()
-      .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "no save loaded"))?;
-
-    let mut save = save_arc
-      .write()
-      .map_err(|_| std::io::Error::other("save lock poisoned"))?;
-
-    // Extract filename from target path for backend
-    let file_name = target_path
-      .file_name()
-      .and_then(|f| f.to_str())
-      .ok_or_else(|| {
-        std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid target path")
-      })?;
-
-    let new_save = backend.save_copy(&mut save, file_name)?;
-
-    // Replace the current save with the new one
-    drop(save);
-    self.world_save = Some(Arc::new(RwLock::new(new_save)));
-    self.current_path = Some(target_path.to_path_buf());
-
-    Ok(())
-  }
 }
 
 /// Internal representation of a pending persistence request.
+#[allow(dead_code)] // Fields used on native but not WASM
 pub(crate) struct PersistenceRequestInner {
   pub id: u64,
   pub completed: Arc<AtomicBool>,
-  /// Target path for copy-on-write. None = save to current path.
-  pub target_path: Option<PathBuf>,
 }
 
 /// Handle to track completion of an on-demand save operation.

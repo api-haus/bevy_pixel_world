@@ -16,12 +16,13 @@ use crate::world::streaming::CullingConfig;
 /// Plugin group that adds [`PixelWorldPlugin`] and all optional sub-plugins
 /// based on enabled features.
 ///
+/// Persistence is always enabled - you must provide a save path.
+///
 /// # Usage
 ///
 /// ```ignore
 /// app.add_plugins(
-///     PixelWorldFullBundle::default()
-///         .persistence(PersistenceConfig::at("/path/to/save.save"))
+///     PixelWorldFullBundle::new(PersistenceConfig::at("/path/to/save.save"))
 ///         .submersion(SubmersionConfig { submersion_threshold: 0.5, ..default() })
 /// );
 /// ```
@@ -39,10 +40,18 @@ pub struct PixelWorldFullBundle {
 }
 
 impl PixelWorldFullBundle {
-  /// Sets the persistence configuration.
-  pub fn persistence(mut self, config: PersistenceConfig) -> Self {
-    self.world = self.world.persistence(config);
-    self
+  /// Creates a new plugin bundle with the given persistence configuration.
+  ///
+  /// Persistence is always enabled. Provide the path where the world
+  /// save file will be stored.
+  pub fn new(persistence: PersistenceConfig) -> Self {
+    Self {
+      world: PixelWorldPlugin::new(persistence),
+      bodies: PixelBodiesPlugin,
+      awareness: PixelAwarenessPlugin::default(),
+      buoyancy: Buoyancy2dPlugin::default(),
+      diagnostics: DiagnosticsPlugin,
+    }
   }
 
   /// Sets the culling configuration.
@@ -74,18 +83,6 @@ impl PixelWorldFullBundle {
   pub fn submersion_physics(mut self, config: SubmersionPhysicsConfig) -> Self {
     self.buoyancy = self.buoyancy.with_physics(config);
     self
-  }
-}
-
-impl Default for PixelWorldFullBundle {
-  fn default() -> Self {
-    Self {
-      world: PixelWorldPlugin::default(),
-      bodies: PixelBodiesPlugin,
-      awareness: PixelAwarenessPlugin::default(),
-      buoyancy: Buoyancy2dPlugin::default(),
-      diagnostics: DiagnosticsPlugin,
-    }
   }
 }
 

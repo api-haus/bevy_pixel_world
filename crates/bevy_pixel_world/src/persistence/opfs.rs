@@ -17,8 +17,8 @@ use web_sys::{
   FileSystemReadWriteOptions, FileSystemRemoveOptions, FileSystemSyncAccessHandle,
 };
 
+use super::WorldSave;
 use super::backend::{BackendError, BoxFuture, PersistenceBackend, StorageFile, StorageFs};
-use super::{WorldSave, block_on};
 
 /// Converts a JsValue error to BackendError.
 fn js_to_backend_error(e: JsValue) -> BackendError {
@@ -363,6 +363,7 @@ unsafe impl Sync for OpfsFs {}
 ///
 /// Wraps `OpfsFs` and provides high-level persistence operations.
 /// Must be created from an async context since OPFS initialization is async.
+#[allow(dead_code)] // Kept for potential future copy-on-write support
 pub struct WasmPersistence {
   fs: Arc<OpfsFs>,
 }

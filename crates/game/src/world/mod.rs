@@ -30,7 +30,7 @@ impl Plugin for WorldPlugin {
 
     app
       .insert_resource(Materials::from(config))
-      .add_plugins(PixelWorldFullBundle::default().persistence(PersistenceConfig::at(save_path)))
+      .add_plugins(PixelWorldFullBundle::new(PersistenceConfig::at(save_path)))
       .add_plugins(bevy_pixel_world::PixelDebugControllerPlugin)
       .add_plugins(bevy_pixel_world::BasicPersistencePlugin)
       .add_systems(Startup, spawn_world);

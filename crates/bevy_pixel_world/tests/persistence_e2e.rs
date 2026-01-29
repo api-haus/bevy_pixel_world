@@ -1,18 +1,16 @@
 //! E2E test for chunk persistence layer.
 //!
-//! Tests save/load cycle directly without full Bevy ECS:
+//! Tests save/load cycle:
 //! 1. Create WorldSave
 //! 2. Create chunk with painted pixels
 //! 3. Save to disk via persistence API
-//! 4. Load via PersistenceSeeder
+//! 4. Load via seed_chunk_with_loaded (the async persistence pathway)
 //! 5. Verify from_persistence flag and pixel data
 
-use std::sync::{Arc, RwLock};
-
 use bevy_pixel_world::persistence::native::NativeFs;
+use bevy_pixel_world::persistence::{LoadedChunk, compression, format::StorageType};
 use bevy_pixel_world::{
-  CHUNK_SIZE, Chunk, ChunkPos, ChunkSeeder, ColorIndex, PersistenceSeeder, Pixel, WorldSave,
-  material_ids,
+  CHUNK_SIZE, Chunk, ChunkPos, ChunkSeeder, ColorIndex, Pixel, WorldSave, material_ids,
 };
 use tempfile::TempDir;
 
@@ -29,6 +27,33 @@ impl ChunkSeeder for NoopSeeder {
       }
     }
   }
+}
+
+/// Seeds a chunk with optional pre-loaded persistence data.
+///
+/// This mirrors the logic in `streaming/seeding.rs::seed_chunk_with_loaded`.
+fn seed_chunk_with_loaded(
+  seeder: &dyn ChunkSeeder,
+  pos: ChunkPos,
+  loaded: Option<LoadedChunk>,
+) -> Chunk {
+  let mut chunk = Chunk::new(CHUNK_SIZE, CHUNK_SIZE);
+  chunk.set_pos(pos);
+
+  if let Some(loaded_chunk) = loaded {
+    if loaded_chunk.seeder_needed {
+      seeder.seed(pos, &mut chunk);
+    }
+    if loaded_chunk.apply_to(&mut chunk).is_ok() {
+      chunk.from_persistence = true;
+    } else {
+      seeder.seed(pos, &mut chunk);
+    }
+  } else {
+    seeder.seed(pos, &mut chunk);
+  }
+
+  chunk
 }
 
 #[test]
@@ -62,13 +87,11 @@ fn chunk_roundtrip_preserves_painted_pixels() {
     .expect("Failed to save chunk");
   save.flush().expect("Failed to flush save");
 
-  // 5. Create PersistenceSeeder with the save file
-  let save_arc = Arc::new(RwLock::new(save));
-  let persistent_seeder = PersistenceSeeder::new(NoopSeeder, save_arc);
+  // 5. Load chunk data (simulating what dispatch_chunk_loads does)
+  let loaded = save.load_chunk(ChunkPos::new(0, 0), &seeder);
 
-  // 6. Seed a fresh chunk from the save file
-  let mut loaded_chunk = Chunk::new(CHUNK_SIZE, CHUNK_SIZE);
-  persistent_seeder.seed(ChunkPos::new(0, 0), &mut loaded_chunk);
+  // 6. Seed a fresh chunk using the loaded data
+  let loaded_chunk = seed_chunk_with_loaded(&seeder, ChunkPos::new(0, 0), loaded);
 
   // 7. Verify from_persistence flag is set
   assert!(
@@ -101,8 +124,7 @@ fn unpersisted_chunk_uses_fallback_seeder() {
   let temp_dir = TempDir::new().expect("Failed to create temp dir");
   let fs = NativeFs::new(temp_dir.path().to_path_buf()).unwrap();
 
-  let save = WorldSave::create(&fs, "empty.save", 42).expect("Failed to create save");
-  let save_arc = Arc::new(RwLock::new(save));
+  let _save = WorldSave::create(&fs, "empty.save", 42).expect("Failed to create save");
 
   // Seeder that fills with stone
   struct StoneFiller;
@@ -116,11 +138,8 @@ fn unpersisted_chunk_uses_fallback_seeder() {
     }
   }
 
-  let persistent_seeder = PersistenceSeeder::new(StoneFiller, save_arc);
-
-  // Seed a chunk that doesn't exist in persistence
-  let mut chunk = Chunk::new(CHUNK_SIZE, CHUNK_SIZE);
-  persistent_seeder.seed(ChunkPos::new(99, 99), &mut chunk);
+  // Seed a chunk with no loaded data (simulating a chunk not in persistence)
+  let chunk = seed_chunk_with_loaded(&StoneFiller, ChunkPos::new(99, 99), None);
 
   // Should NOT have from_persistence flag (procedurally generated)
   assert!(
@@ -130,4 +149,40 @@ fn unpersisted_chunk_uses_fallback_seeder() {
 
   // Should have stone from fallback seeder
   assert_eq!(chunk.pixels[(256, 256)].material, material_ids::STONE);
+}
+
+#[test]
+fn loaded_chunk_data_applies_correctly() {
+  // Test that LoadedChunk applies data correctly
+
+  // Create compressed chunk data
+  let mut pixels = vec![Pixel::VOID; (CHUNK_SIZE * CHUNK_SIZE) as usize];
+  for y in 50..60 {
+    for x in 50..60 {
+      pixels[y * CHUNK_SIZE as usize + x] = Pixel::new(material_ids::WATER, ColorIndex(100));
+    }
+  }
+
+  // Get bytes and compress
+  let bytes: Vec<u8> = pixels
+    .iter()
+    .flat_map(|p| [p.material.0, p.color.0, p.damage, p.flags.bits()])
+    .collect();
+  let compressed = compression::compress_lz4(&bytes);
+
+  // Create LoadedChunk
+  let loaded = LoadedChunk {
+    storage_type: StorageType::Full,
+    data: compressed,
+    pos: ChunkPos::new(0, 0),
+    seeder_needed: false,
+  };
+
+  // Apply to a fresh chunk
+  let chunk = seed_chunk_with_loaded(&NoopSeeder, ChunkPos::new(0, 0), Some(loaded));
+
+  // Verify data
+  assert!(chunk.from_persistence);
+  assert_eq!(chunk.pixels[(55, 55)].material, material_ids::WATER);
+  assert_eq!(chunk.pixels[(0, 0)].material.0, 0); // Void
 }

@@ -60,7 +60,7 @@ fn main() {
       }),
       ..default()
     }))
-    .add_plugins(PixelWorldPlugin::default().persistence(PersistenceConfig::at(&save_path)))
+    .add_plugins(PixelWorldPlugin::new(PersistenceConfig::at(&save_path)))
     .add_plugins(bevy_pixel_world::PixelBodiesPlugin)
     .add_plugins(EguiPlugin::default())
     .insert_resource(cli_config)

@@ -73,7 +73,7 @@ impl TestHarness {
     app.add_plugins(bevy::image::ImagePlugin::default());
     app.add_plugins(bevy::scene::ScenePlugin);
 
-    app.add_plugins(PixelWorldPlugin::default().persistence(PersistenceConfig::at(save_path)));
+    app.add_plugins(PixelWorldPlugin::new(PersistenceConfig::at(save_path)));
     app.add_plugins(PixelBodiesPlugin);
 
     // Add physics plugins (required for submergence physics effects)

@@ -22,7 +22,6 @@ use std::io::{self, Cursor};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-pub(crate) use backend::PersistenceBackend;
 use backend::{StorageFile, StorageFs};
 use bevy::prelude::*;
 use compression::{
@@ -536,6 +535,7 @@ impl WorldSave {
   }
 
   /// Writes chunk data at the given offset (used by persistence systems).
+  #[allow(dead_code)] // Kept for potential future copy-on-write support
   pub(crate) fn write_chunk_data(&self, offset: u64, data: &[u8]) -> io::Result<()> {
     let size_bytes = (data.len() as u32).to_le_bytes();
     let mut write_buf = Vec::with_capacity(4 + data.len());
@@ -778,6 +778,7 @@ pub struct PendingWasmPersistence {
 
 /// Result of WASM persistence initialization.
 #[cfg(target_family = "wasm")]
+#[allow(private_interfaces)] // Legacy code, kept for potential future use
 pub struct WasmPersistenceInitResult {
   /// The persistence backend.
   pub backend: Arc<dyn backend::PersistenceBackend>,

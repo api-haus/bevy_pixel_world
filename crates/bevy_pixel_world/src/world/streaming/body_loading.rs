@@ -10,7 +10,7 @@ use super::SeededChunks;
 use crate::coords::TilePos;
 use crate::persistence::{PersistenceTasks, PixelBodyRecord};
 use crate::pixel_body::{PixelBodyIdGenerator, compute_transformed_aabb};
-use crate::world::control::PersistenceControl;
+use crate::world::persistence_systems::LoadedChunkDataStore;
 
 /// Entry for a body waiting to spawn.
 pub(crate) struct PendingBodyEntry {
@@ -48,11 +48,14 @@ pub(crate) fn compute_required_tiles(record: &PixelBodyRecord) -> Vec<TilePos> {
 
 /// System: Queues pixel bodies when their chunk finishes seeding.
 ///
+/// Bodies are loaded from `LoadedChunkDataStore` which was populated by
+/// `poll_io_results` when the chunk was loaded from disk.
+///
 /// Bodies are not spawned immediately - they wait in `PendingPixelBodies` until
 /// their required collision tiles are cached.
 pub(crate) fn queue_pixel_bodies_on_chunk_seed(
   seeded_chunks: Res<SeededChunks>,
-  persistence_control: Option<Res<PersistenceControl>>,
+  mut loaded_data: ResMut<LoadedChunkDataStore>,
   mut pending: ResMut<PendingPixelBodies>,
   mut id_generator: ResMut<PixelBodyIdGenerator>,
   mut persistence_tasks: ResMut<PersistenceTasks>,
@@ -61,23 +64,20 @@ pub(crate) fn queue_pixel_bodies_on_chunk_seed(
     return;
   }
 
-  let Some(persistence_control) = persistence_control else {
-    return;
-  };
-
-  let Some(save_arc) = persistence_control.world_save() else {
-    return;
-  };
-
-  let save = match save_arc.read() {
-    Ok(s) => s,
-    Err(_) => return,
-  };
-
   for &chunk_pos in &seeded_chunks.positions {
-    let records = save.load_bodies_for_chunk(chunk_pos);
+    // Get loaded body data for this chunk
+    let body_data = loaded_data.take_bodies(chunk_pos);
 
-    for record in records {
+    for data in body_data {
+      // Deserialize the body record
+      let record = match PixelBodyRecord::read_from(&mut std::io::Cursor::new(&data.record_data)) {
+        Ok(r) => r,
+        Err(e) => {
+          warn!("Failed to deserialize body record: {}", e);
+          continue;
+        }
+      };
+
       id_generator.ensure_above(record.stable_id);
 
       // Skip if already pending (prevents duplicate spawning)

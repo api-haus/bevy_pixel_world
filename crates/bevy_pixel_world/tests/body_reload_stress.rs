@@ -33,7 +33,7 @@ impl TestHarness {
     app.add_plugins(MinimalPlugins.set(TaskPoolPlugin {
       task_pool_options: TaskPoolOptions::with_num_threads(4),
     }));
-    app.add_plugins(PixelWorldPlugin::default().persistence(PersistenceConfig::at(save_path)));
+    app.add_plugins(PixelWorldPlugin::new(PersistenceConfig::at(save_path)));
 
     let camera = app
       .world_mut()

@@ -16,6 +16,8 @@ pub struct WasmIoDispatcher {
   result_queue: Rc<RefCell<VecDeque<IoResult>>>,
   ready: Rc<Cell<bool>>,
   world_seed: Rc<Cell<u64>>,
+  chunk_count: Rc<Cell<usize>>,
+  body_count: Rc<Cell<usize>>,
 }
 
 impl WasmIoDispatcher {
@@ -24,9 +26,11 @@ impl WasmIoDispatcher {
     let result_queue = Rc::new(RefCell::new(VecDeque::new()));
     let ready = Rc::new(Cell::new(false));
     let world_seed = Rc::new(Cell::new(0u64));
+    let chunk_count = Rc::new(Cell::new(0usize));
+    let body_count = Rc::new(Cell::new(0usize));
 
     // Create Web Worker with module type for ES modules
-    let mut options = WorkerOptions::new();
+    let options = WorkerOptions::new();
     options.set_type(WorkerType::Module);
 
     let worker =
@@ -71,6 +75,8 @@ impl WasmIoDispatcher {
       result_queue,
       ready,
       world_seed,
+      chunk_count,
+      body_count,
     }
   }
 
@@ -110,6 +116,17 @@ impl WasmIoDispatcher {
   /// Sets the world seed.
   pub fn set_world_seed(&self, seed: u64) {
     self.world_seed.set(seed);
+  }
+
+  /// Returns the initialization counts (chunk_count, body_count).
+  pub fn init_counts(&self) -> (usize, usize) {
+    (self.chunk_count.get(), self.body_count.get())
+  }
+
+  /// Sets the initialization counts.
+  pub fn set_init_counts(&self, chunk_count: usize, body_count: usize) {
+    self.chunk_count.set(chunk_count);
+    self.body_count.set(body_count);
   }
 }
 
@@ -242,7 +259,34 @@ fn parse_worker_message(event: &MessageEvent) -> Option<IoResult> {
         })
       };
 
-      Some(IoResult::ChunkLoaded { chunk_pos, data })
+      // Parse bodies array if present
+      let bodies_val = js_sys::Reflect::get(obj, &"bodies".into()).ok();
+      let bodies = if let Some(ref val) = bodies_val
+        && !val.is_null()
+        && !val.is_undefined()
+      {
+        if let Some(arr) = val.dyn_ref::<js_sys::Array>() {
+          arr
+            .iter()
+            .filter_map(|item| {
+              let data_arr = item.dyn_ref::<js_sys::Uint8Array>()?;
+              Some(super::BodyLoadData {
+                record_data: data_arr.to_vec(),
+              })
+            })
+            .collect()
+        } else {
+          Vec::new()
+        }
+      } else {
+        Vec::new()
+      };
+
+      Some(IoResult::ChunkLoaded {
+        chunk_pos,
+        data,
+        bodies,
+      })
     }
     "WriteComplete" => {
       let chunk_x = js_sys::Reflect::get(obj, &"chunkX".into()).ok()?.as_f64()? as i32;

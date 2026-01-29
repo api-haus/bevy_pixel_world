@@ -23,6 +23,18 @@ pub(crate) struct SeedingTasks {
   pub(super) tasks: Vec<SeedingTask>,
 }
 
+impl SeedingTasks {
+  /// Returns the number of in-flight seeding tasks.
+  pub fn len(&self) -> usize {
+    self.tasks.len()
+  }
+
+  /// Returns true if there are no in-flight seeding tasks.
+  pub fn is_empty(&self) -> bool {
+    self.tasks.is_empty()
+  }
+}
+
 /// An in-flight seeding task.
 pub(super) struct SeedingTask {
   /// Which PixelWorld entity.

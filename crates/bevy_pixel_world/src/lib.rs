@@ -7,7 +7,6 @@ use std::path::PathBuf;
 
 use bevy::prelude::*;
 use bevy::sprite_render::Material2dPlugin;
-use persistence::PersistenceBackend;
 
 pub mod basic_persistence;
 pub mod bodies_plugin;
@@ -66,7 +65,7 @@ pub use render::{
   upload_surface,
 };
 pub use schedule::{PixelWorldSet, SimulationPhase};
-pub use seeding::{ChunkSeeder, MaterialSeeder, NoiseSeeder, PersistenceSeeder};
+pub use seeding::{ChunkSeeder, MaterialSeeder, NoiseSeeder};
 pub use simulation::{HeatConfig, simulate_tick};
 pub use text::{CpuFont, TextMask, TextStyle, draw_text, rasterize_text, stamp_text};
 #[cfg(feature = "tracy")]
@@ -78,25 +77,32 @@ pub use world::control::{
 pub use world::plugin::{SeededChunks, StreamingCamera, UnloadingChunks};
 // Re-export culling types from streaming module for backward compatibility
 pub use world::streaming::{CullingConfig, StreamCulled};
-pub use world::{PixelWorld, PixelWorldBundle, PixelWorldConfig, SpawnPixelWorld};
+pub use world::{
+  // World initialization state and progress tracking
+  PersistenceInitialized,
+  PixelWorld,
+  PixelWorldBundle,
+  PixelWorldConfig,
+  SpawnPixelWorld,
+  WorldInitState,
+  WorldLoadingProgress,
+  WorldReady,
+  world_is_loading,
+  world_is_ready,
+};
 
 /// Configuration for chunk persistence.
 ///
-/// Persistence is enabled by providing a path to a save file.
-/// When disabled (no path), the world exists only in memory.
+/// Persistence is always enabled. Provide a path to a save file.
 ///
 /// # Example
 /// ```ignore
-/// // Enable persistence with explicit path
 /// let config = PersistenceConfig::at("/home/user/saves/world.save");
-///
-/// // Disable persistence
-/// let config = PersistenceConfig::disabled();
 /// ```
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct PersistenceConfig {
-  /// Path to save file. None = persistence disabled.
-  pub path: Option<PathBuf>,
+  /// Path to save file.
+  pub path: PathBuf,
   /// World seed for procedural generation.
   pub world_seed: u64,
 }
@@ -105,15 +111,7 @@ impl PersistenceConfig {
   /// Creates a persistence config with the given save file path.
   pub fn at(path: impl Into<PathBuf>) -> Self {
     Self {
-      path: Some(path.into()),
-      world_seed: 42,
-    }
-  }
-
-  /// Disables persistence (in-memory only).
-  pub fn disabled() -> Self {
-    Self {
-      path: None,
+      path: path.into(),
       world_seed: 42,
     }
   }
@@ -122,11 +120,6 @@ impl PersistenceConfig {
   pub fn with_seed(mut self, seed: u64) -> Self {
     self.world_seed = seed;
     self
-  }
-
-  /// Returns true if persistence is enabled (path is set).
-  pub fn is_enabled(&self) -> bool {
-    self.path.is_some()
   }
 }
 
@@ -137,25 +130,43 @@ impl PersistenceConfig {
 /// - Automatic chunk streaming based on camera position
 /// - Async background seeding
 /// - GPU texture upload for dirty chunks
-/// - Automatic chunk persistence (when enabled)
+/// - Automatic chunk persistence
 /// - Entity culling outside the streaming window (when enabled)
+///
+/// Persistence is always enabled - you must provide a save path.
 ///
 /// To use automatic streaming, spawn a `PixelWorldBundle` and mark a camera
 /// with `StreamingCamera`.
-#[derive(Default)]
+///
+/// # Example
+/// ```ignore
+/// app.add_plugins(PixelWorldPlugin::new(PersistenceConfig::at("/path/to/world.save")));
+/// ```
 pub struct PixelWorldPlugin {
   /// Default configuration for spawned pixel worlds.
   pub config: PixelWorldConfig,
-  /// Persistence configuration.
+  /// Persistence configuration (required).
   pub persistence: PersistenceConfig,
   /// Culling configuration.
   pub culling: CullingConfig,
 }
 
 impl PixelWorldPlugin {
-  /// Sets the persistence configuration.
-  pub fn persistence(mut self, config: PersistenceConfig) -> Self {
-    self.persistence = config;
+  /// Creates a new plugin with the given persistence configuration.
+  ///
+  /// Persistence is always enabled. Provide the path where the world
+  /// save file will be stored.
+  pub fn new(persistence: PersistenceConfig) -> Self {
+    Self {
+      config: PixelWorldConfig::default(),
+      persistence,
+      culling: CullingConfig::default(),
+    }
+  }
+
+  /// Sets the world configuration.
+  pub fn with_config(mut self, config: PixelWorldConfig) -> Self {
+    self.config = config;
     self
   }
 
@@ -187,61 +198,23 @@ impl Plugin for PixelWorldPlugin {
     // Store culling config
     app.insert_resource(self.culling.clone());
 
-    // Initialize persistence if a path is configured
-    #[cfg(not(target_family = "wasm"))]
-    if let Some(ref path) = self.persistence.path {
-      // Extract directory and filename from the absolute path
-      let base_dir = path
-        .parent()
-        .unwrap_or(std::path::Path::new("."))
-        .to_path_buf();
-      let file_name = path
-        .file_name()
-        .and_then(|f| f.to_str())
-        .unwrap_or("world.save")
-        .to_string();
-
-      let backend = match persistence::NativePersistence::new(base_dir.clone()) {
-        Ok(b) => std::sync::Arc::new(b),
-        Err(e) => {
-          error!(
-            "Failed to create save directory {:?}: {}. Persistence disabled.",
-            base_dir, e
-          );
-          app.add_plugins(world::plugin::PixelWorldStreamingPlugin);
-          if app.is_plugin_added::<bevy::render::RenderPlugin>() {
-            app.add_plugins(visual_debug::VisualDebugPlugin);
-          }
-          return;
-        }
-      };
-
-      // Open or create the save file
-      let save_result = persistence::block_on(
-        backend.open_or_create_async(&file_name, self.persistence.world_seed),
-      );
-      match save_result {
-        Ok(save) => {
-          info!("Opened world save {:?}", path);
-          app.insert_resource(PersistenceControl::with_save(backend, save, path.clone()));
-        }
-        Err(e) => {
-          error!(
-            "Failed to open world save {:?}: {}. Persistence disabled.",
-            path, e
-          );
-        }
-      }
-    }
-
-    // WASM: Persistence uses a dedicated Web Worker for OPFS operations.
-    // The Web Worker is required because `createSyncAccessHandle()` only
-    // works in Web Workers, not the main browser thread.
-    #[cfg(target_family = "wasm")]
-    if let Some(ref path) = self.persistence.path {
+    // Initialize persistence using async IoDispatcher pattern on both platforms.
+    // This avoids blocking during Plugin::build() and unifies the initialization
+    // flow between native and WASM.
+    {
+      let path = &self.persistence.path;
       let seed = self.persistence.world_seed;
 
-      // Create IoDispatcher which spawns the Web Worker
+      // Create IoDispatcher (spawns worker thread on native, Web Worker on WASM)
+      #[cfg(not(target_family = "wasm"))]
+      let io_dispatcher = {
+        let base_dir = path
+          .parent()
+          .unwrap_or(std::path::Path::new("."))
+          .to_path_buf();
+        persistence::IoDispatcher::new(base_dir)
+      };
+      #[cfg(target_family = "wasm")]
       let io_dispatcher = persistence::IoDispatcher::new();
 
       // Send Initialize command to the worker
@@ -252,17 +225,13 @@ impl Plugin for PixelWorldPlugin {
 
       app.insert_resource(io_dispatcher);
 
-      // Insert a pending PersistenceControl - will be activated when worker
-      // initializes
+      // Insert pending init marker - will be consumed when worker responds
       app.insert_resource(world::control::PendingPersistenceInit {
         path: path.clone(),
         world_seed: seed,
       });
 
-      info!(
-        "WASM persistence enabled via Web Worker, initializing {:?}",
-        path
-      );
+      info!("Persistence initializing asynchronously: {:?}", path);
     }
 
     // Add world streaming systems

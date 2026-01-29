@@ -11,7 +11,7 @@ use crate::persistence::compression::compress_lz4;
 use crate::persistence::format::StorageType;
 use crate::primitives::HEAT_GRID_SIZE;
 use crate::render::{ChunkMaterial, create_heat_texture, create_pixel_texture};
-use crate::world::control::PersistenceControl;
+use crate::world::control::{PendingPersistenceInit, PersistenceControl};
 use crate::world::slot::ChunkLifecycle;
 use crate::world::{PixelWorld, SlotIndex};
 
@@ -47,13 +47,16 @@ pub(crate) fn update_streaming_windows(
   mut persistence_tasks: ResMut<PersistenceTasks>,
   mut unloading_chunks: ResMut<UnloadingChunks>,
   persistence_control: Option<Res<PersistenceControl>>,
+  pending_init: Option<Res<PendingPersistenceInit>>,
 ) {
   let Ok(camera_transform) = camera_query.single() else {
     return;
   };
 
   let palette_handle = palette.as_ref().map(|p| p.handle.clone());
-  let has_persistence = persistence_control.as_ref().is_some_and(|p| p.is_active());
+  // Persistence is always enabled. Check both ready state and pending init (WASM
+  // async).
+  let has_persistence = persistence_control.is_some() || pending_init.is_some();
 
   // Convert camera position to chunk position
   // Offset by half chunk so transitions occur at chunk centers

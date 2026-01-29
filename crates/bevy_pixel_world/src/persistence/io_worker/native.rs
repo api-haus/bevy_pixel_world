@@ -6,8 +6,9 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread::{self, JoinHandle};
 
 use async_channel::{Receiver, Sender, TryRecvError};
+use bevy::prelude::warn;
 
-use super::{ChunkLoadData, IoCommand, IoResult};
+use super::{BodyLoadData, ChunkLoadData, IoCommand, IoResult};
 use crate::persistence::format::{PageTableEntry, StorageType};
 use crate::persistence::index::{ChunkIndex, PixelBodyIndex, PixelBodyIndexEntry};
 use crate::persistence::native::NativeFs;
@@ -19,6 +20,8 @@ pub struct NativeIoDispatcher {
   result_rx: Receiver<IoResult>,
   ready: Arc<AtomicBool>,
   world_seed: Arc<AtomicU64>,
+  chunk_count: Arc<AtomicU64>,
+  body_count: Arc<AtomicU64>,
   _worker_handle: JoinHandle<()>,
 }
 
@@ -29,6 +32,8 @@ impl NativeIoDispatcher {
     let (result_tx, result_rx) = async_channel::unbounded::<IoResult>();
     let ready = Arc::new(AtomicBool::new(false));
     let world_seed = Arc::new(AtomicU64::new(0));
+    let chunk_count = Arc::new(AtomicU64::new(0));
+    let body_count = Arc::new(AtomicU64::new(0));
 
     let worker_handle = thread::spawn(move || {
       worker_loop(save_dir, cmd_rx, result_tx);
@@ -39,6 +44,8 @@ impl NativeIoDispatcher {
       result_rx,
       ready,
       world_seed,
+      chunk_count,
+      body_count,
       _worker_handle: worker_handle,
     }
   }
@@ -81,6 +88,22 @@ impl NativeIoDispatcher {
   /// Sets the world seed.
   pub fn set_world_seed(&self, seed: u64) {
     self.world_seed.store(seed, Ordering::Release);
+  }
+
+  /// Returns the initialization counts (chunk_count, body_count).
+  pub fn init_counts(&self) -> (usize, usize) {
+    (
+      self.chunk_count.load(Ordering::Acquire) as usize,
+      self.body_count.load(Ordering::Acquire) as usize,
+    )
+  }
+
+  /// Sets the initialization counts.
+  pub fn set_init_counts(&self, chunk_count: usize, body_count: usize) {
+    self
+      .chunk_count
+      .store(chunk_count as u64, Ordering::Release);
+    self.body_count.store(body_count as u64, Ordering::Release);
   }
 }
 
@@ -187,34 +210,45 @@ fn handle_initialize(state: &mut WorkerState, path: std::path::PathBuf, seed: u6
 fn handle_load_chunk(state: &mut WorkerState, chunk_pos: bevy::math::IVec2) -> IoResult {
   let pos = crate::coords::ChunkPos::new(chunk_pos.x, chunk_pos.y);
 
-  let Some(entry) = state.chunk_index.get(pos) else {
-    return IoResult::ChunkLoaded {
-      chunk_pos,
-      data: None,
-    };
-  };
-
   let Some(ref save) = state.save else {
     return IoResult::Error {
       message: "No save loaded".to_string(),
     };
   };
 
-  // Read compressed data
-  let mut data = vec![0u8; entry.data_size as usize];
-  if let Err(e) = crate::persistence::block_on(save.file.read_at(entry.data_offset, &mut data)) {
-    return IoResult::Error {
-      message: format!("Failed to read chunk {:?}: {}", pos, e),
-    };
+  // Load chunk data if present
+  let chunk_data = if let Some(entry) = state.chunk_index.get(pos) {
+    let mut data = vec![0u8; entry.data_size as usize];
+    if let Err(e) = crate::persistence::block_on(save.file.read_at(entry.data_offset, &mut data)) {
+      return IoResult::Error {
+        message: format!("Failed to read chunk {:?}: {}", pos, e),
+      };
+    }
+    Some(ChunkLoadData {
+      storage_type: entry.storage_type as u8,
+      data,
+      seeder_needed: entry.storage_type == StorageType::Delta,
+    })
+  } else {
+    None
+  };
+
+  // Load bodies for this chunk
+  let mut bodies = Vec::new();
+
+  for entry in state.body_index.get_chunk(pos) {
+    let mut data = vec![0u8; entry.data_size as usize];
+    if let Err(e) = crate::persistence::block_on(save.file.read_at(entry.data_offset, &mut data)) {
+      warn!("Failed to read body {}: {}", entry.stable_id, e);
+      continue;
+    }
+    bodies.push(BodyLoadData { record_data: data });
   }
 
   IoResult::ChunkLoaded {
     chunk_pos,
-    data: Some(ChunkLoadData {
-      storage_type: entry.storage_type as u8,
-      data,
-      seeder_needed: entry.storage_type == StorageType::Delta,
-    }),
+    data: chunk_data,
+    bodies,
   }
 }
 
