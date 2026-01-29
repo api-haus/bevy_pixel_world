@@ -87,6 +87,7 @@ with stamps and WFC-based generation.
 
 ## Related Documentation
 
+- [Pixel Camera](pixel-camera.md) - Camera snapping and subpixel offset
 - [Pixel Format](../foundational/pixel-format.md) - Color field storing palette index
 - [Chunk Seeding](../chunk-management/chunk-seeding.md) - Where identity textures are applied
 - [Materials](../simulation/materials.md) - Material definitions

@@ -116,6 +116,7 @@ Visual output systems.
 | Document | Purpose |
 |----------|---------|
 | [Rendering](rendering/rendering.md) | Chunk texture upload and material identity textures |
+| [Pixel Camera](rendering/pixel-camera.md) | Camera snapping and subpixel offset for artifact-free rendering |
 
 ### World Generation
 
