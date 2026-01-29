@@ -2,13 +2,24 @@
   <img src=".github/images/warn.png" alt="Warning: Experimental Project" width="400"/>
 </p>
 
-# bevy_pixel_world
+# sim2d
 
-A modular pixel simulation engine for [Bevy 0.17](https://bevyengine.org/). Build Noita-style falling sand games without reinventing the wheel.
+An experiment in **spec-driven AI development** of a complex game engine.
 
-**Status:** Experimental, actively in development. The API is unstable but the core systems work.
+This project explores what happens when you give Claude detailed specifications and let it build a Noita-style falling sand engine from scratch. The goal is to understand both the capabilities and failure modes of AI-assisted development on non-trivial systems.
 
-## What This Is
+## The Experiment
+
+Every component of this engine was designed through specification documents and implemented by Claude. Human involvement is limited to:
+
+- Writing specifications that describe *what* to build
+- Reviewing and approving implementation plans
+- Catching AI mistakes before they compound
+- Documenting failure patterns for future reference
+
+The codebase serves as both a functional game engine and a record of AI development patterns—both successful and disastrous.
+
+## What Got Built
 
 A Bevy plugin that handles the hard parts of pixel simulation games:
 
@@ -19,79 +30,13 @@ A Bevy plugin that handles the hard parts of pixel simulation games:
 - **Destructible pixel bodies** - rigid bodies made of pixels that take damage
 - **Full persistence** - save and load worlds on native and WASM (via OPFS)
 
-## Physics Backends
+Physics backends: [Avian2D](https://github.com/Jondolf/avian) or [Rapier2D](https://rapier.rs/).
 
-Supports both [Avian2D](https://github.com/Jondolf/avian) and [Rapier2D](https://rapier.rs/). Collision meshes generate automatically, and pixel bodies integrate directly with your chosen physics engine.
+## AI Failure Log
 
-## Modular Plugins
+See [`docs/llm-cases/`](docs/llm-cases/) for documented cases where Claude made decisions that hurt the codebase.
 
-The engine is composed of opt-in plugins you can mix and match.
-
-### Pixel Awareness
-
-Detects what surrounds your entities in the pixel world. Add the `Submergent` marker to any physics body and the plugin handles the rest:
-
-- Perimeter sampling determines what fraction of the body is submerged in liquid
-- `Submerged` and `Surfaced` events fire on state transitions
-- Automatic drag modification when entering/exiting liquids
-
-Use it for drowning mechanics, splash effects, aquatic AI, or as a foundation for buoyancy.
-
-### Buoyancy
-
-Realistic floating behavior for pixel bodies. Two modes available:
-
-- **Simple mode** - single upward force at body center, cheap and good enough for basic floating
-- **Density-sampling mode** - distributed force grid that creates corrective torque, supports variable liquid densities
-
-Bodies naturally bob at the surface, tilt to self-right, and sink or float based on their density relative to the liquid.
-
-## Material System
-
-Materials are defined in TOML. Each material has an aggregate state that determines its simulation behavior, plus additional parameters:
-
-```toml
-[[materials]]
-name = "Sand"
-state = "powder"
-density = 160
-air_resistance = 8
-air_drift = 4
-
-[materials.effects]
-blast_resistance = 0.3
-```
-
-```toml
-[[materials]]
-name = "Water"
-state = "liquid"
-density = 100
-dispersion = 5
-air_resistance = 16
-
-[materials.effects]
-blast_resistance = 0.1
-```
-
-Materials can transform on events like burning:
-
-```toml
-[[materials]]
-name = "Wood"
-state = "solid"
-density = 80
-ignition_threshold = 40
-
-[materials.effects]
-blast_resistance = 1.0
-
-[materials.effects.on_burn]
-chance = 0.005
-
-[materials.effects.on_burn.effect]
-transform = "Ash"
-```
+These aren't fixable through better prompting—they're artifacts of how LLMs work. The goal is to accumulate enough concrete examples to inform a better methodology for spec-driven LLM development.
 
 ## Quick Start
 
@@ -121,11 +66,11 @@ crates/
 ├── bevy_pixel_world/   # Core plugin
 ├── game/               # Example game
 └── sim2d_noise/        # Noise utilities
+
+docs/
+├── architecture/       # How things work internally
+└── implementation/     # Development methodology
 ```
-
-## Documentation
-
-See [docs/arhitecture/](docs/arhitecture/README.md) for how things work internally.
 
 ## License
 
