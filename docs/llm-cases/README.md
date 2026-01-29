@@ -17,6 +17,9 @@ Build a corpus of concrete examples to inform better methodology for spec-driven
 | [005](005-silent-library-rejection.md) | Silent Library Rejection | Rendering | "instead of X because..." |
 | [006](006-tests-pass-bug-remains.md) | Tests Pass, Bug Remains | Pixel Bodies | "all tests pass" without testing bug |
 | [007](007-symptom-fix-not-root-cause.md) | Symptom Fix, Not Root Cause | Rendering | fixing color instead of sizing |
+| [008](008-fix-breaks-unrelated-systems.md) | Fix Breaks Unrelated Systems | Rendering | coordinate change breaks egui |
+| [009](009-manual-verification-loop.md) | Manual Verification Loop | Testing | repeated demo runs instead of tests |
+| [010](010-non-standard-algorithm-approach.md) | Non-Standard Algorithm Approach | Collision | "why are we connecting segments?" |
 
 ## Common Signals
 
@@ -27,6 +30,9 @@ Phrases that often precede problematic decisions:
 - "Let me also..." → scope creep
 - "Let me fix" followed quickly by "I see another issue" → spiral incoming
 - Proposing storage/structure changes for interface/presentation requests
+- "All tests pass" → may not be testing the actual bug
+- "Let me run the demo to verify" (repeatedly) → not writing automated tests
+- "Instead of X because..." → about to silently pivot from user's request
 
 ## Human Intervention Patterns
 
@@ -38,6 +44,10 @@ Phrases that effectively redirect Claude:
 - "Please use X" → explicit restatement after silent pivot
 - Direct questions about purpose
 - Showing visual evidence of failure (screenshots)
+- "You did not fix the bug at all" → cuts through false verification
+- "Stop running the demo, write a test" → redirects from manual to automated
+- "Why are we doing X?" → questions non-standard approaches
+- "That's not how [algorithm] works" → catches reinvented solutions
 
 ## Case Categories
 
@@ -48,6 +58,9 @@ Phrases that effectively redirect Claude:
 5. **Silent Pivoting** (#005) - Abandoning user's requested approach without asking
 6. **False Verification** (#006) - Using passing tests as proof of fix without verifying tests test the bug
 7. **Symptom vs Cause** (#007) - Fixing visible symptom instead of underlying problem
+8. **Cascading Breakage** (#008) - Changing foundational assumptions breaks unrelated systems
+9. **Manual Over Automated** (#009) - Repeated manual verification instead of writing tests
+10. **Reinventing Standard Solutions** (#010) - Novel approach creates problems standard algorithm avoids
 
 ## Session Archive
 
