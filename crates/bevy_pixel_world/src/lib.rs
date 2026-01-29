@@ -23,6 +23,7 @@ pub mod persistence;
 pub mod pixel;
 pub mod pixel_awareness;
 pub mod pixel_body;
+pub mod pixel_camera;
 pub mod plugin_bundle;
 pub mod primitives;
 pub mod render;
@@ -56,6 +57,10 @@ pub use pixel_body::{
   Bomb, BombInitialState, DisplacementState, LastBlitTransform, PendingPixelBody, Persistable,
   PixelBody, PixelBodyId, PixelBodyIdGenerator, PixelBodyLoader, SpawnPixelBody,
   SpawnPixelBodyFromImage, finalize_pending_pixel_bodies, generate_collider, update_pixel_bodies,
+};
+pub use pixel_camera::{
+  LogicalCameraPosition, PixelBlitMaterial, PixelCamera, PixelCameraConfig, PixelCameraPlugin,
+  PixelCameraState, PixelSizeMode,
 };
 pub use plugin_bundle::PixelWorldFullBundle;
 pub use primitives::{Chunk, Surface};
