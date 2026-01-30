@@ -14,6 +14,7 @@ jobs:
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
+      BINARYEN_CORES: "1"  # Prevent wasm-opt SIGSEGV from race condition
     steps:
       - uses: actions/checkout@v4
 
