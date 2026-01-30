@@ -118,6 +118,7 @@ jobs:
       - name: Patch WASM loading with progress bar
         env:
           COMMIT_HASH: ${{ github.sha }}
+          R2_WASM_URL: https://bevy-pixel-world-assets.yura415.workers.dev/game.wasm
         run: ./scripts/patch-wasm-loading.sh crates/game/dist
 
       - name: Deploy to Cloudflare Pages
