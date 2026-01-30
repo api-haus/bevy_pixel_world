@@ -1,4 +1,4 @@
-/refactor bevy pixel world. Let's find opportunities to reduce cognitive load, improving code readability, with shorter descriptive functions and ensuring clarity in future development endavours.
+/refactor bevy pixel world. Let's find opportunities to reduce cognitive load, improving code readability, with shorter descriptive functions and ensuring clarity in future development endeavors.
 
 /refactor find unused code in bevy pixel world including dead and semi-dead - something that looks like a remnant of a long manual debugging sessions, - useless scaffold, etc.
 
@@ -6,6 +6,6 @@
 
 let's make material toml configuration system for the bevy pixel world, we'll separate the configuration serialization so that end consumer games can do pixelWorld(materialsFrom('file.yaml')) - in our painting example we'll use current default state of materials that is currently hardcoded and also store it in a file
 
-/refactor scan for divergent code paths in bevy pixel world and consolidate them
+/refactor scan for divergent code paths in bevy pixel world and consolidate them using "by design", or using proper a encapsulation technique
 
 /refactor reduce amount of clone() calls in bevy pixel world
