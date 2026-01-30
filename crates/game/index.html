@@ -3,6 +3,7 @@
 <head>
     <meta charset="utf-8">
     <title>sim2d</title>
+    <link rel="manifest" href="/manifest.json">
     <style>
         html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #0a0a0f; }
         #bevy { display: block; width: 100%; height: 100%; }
@@ -20,6 +21,8 @@
     <link data-target-path="js" data-trunk href="../sim2d_noise/js" rel="copy-dir"/>
     <link data-trunk href="worker.js" rel="copy-file"/>
     <link data-trunk href="_headers" rel="copy-file"/>
+    <link data-trunk href="manifest.json" rel="copy-file"/>
+    <link data-trunk href="sw.js" rel="copy-file"/>
 </head>
 <body>
 <div id="loading"><div id="progress-bar"><div id="progress-fill" class="indeterminate"></div></div><div id="progress-text">Loading...</div></div>

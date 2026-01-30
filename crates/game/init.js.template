@@ -1,0 +1,15 @@
+import init, * as bindings from '/__JS_FILE__';
+
+// Register service worker (skip Safari and low-storage browsers)
+if ('serviceWorker' in navigator && 'storage' in navigator) {
+  navigator.storage.estimate().then(({quota}) => {
+    if (quota > 100_000_000) navigator.serviceWorker.register('/sw.js');
+  }).catch(() => {});
+}
+
+const r = await fetch('__R2_URL__'), t = +r.headers.get('content-length')||0, rd = r.body.getReader();
+const chunks = []; let l = 0;
+while(true) { const {done,value} = await rd.read(); if(done)break; chunks.push(value); l+=value.length; if(t&&window.updateLoadingProgress)window.updateLoadingProgress(l,t); }
+const b = new Uint8Array(l); let o=0; for(const c of chunks){b.set(c,o);o+=c.length;}
+const wasm = await init({module_or_path:b}); if(window.hideLoading)window.hideLoading();
+window.wasmBindings = bindings; dispatchEvent(new CustomEvent("TrunkApplicationStarted",{detail:{wasm}}));

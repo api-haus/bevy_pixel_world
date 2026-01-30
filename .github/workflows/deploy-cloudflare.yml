@@ -116,6 +116,8 @@ jobs:
           npx wrangler r2 object put bevy-pixel-world-assets/game.wasm --file "$WASM_FILE" --remote
 
       - name: Patch WASM loading with progress bar
+        env:
+          COMMIT_HASH: ${{ github.sha }}
         run: ./scripts/patch-wasm-loading.sh crates/game/dist
 
       - name: Deploy to Cloudflare Pages
