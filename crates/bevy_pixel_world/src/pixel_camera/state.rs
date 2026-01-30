@@ -19,4 +19,7 @@ pub struct PixelCameraState {
 
   /// Whether the pixel camera has been initialized.
   pub initialized: bool,
+
+  /// Last snapped camera position (used to detect external camera movement).
+  pub last_snapped_pos: Vec2,
 }

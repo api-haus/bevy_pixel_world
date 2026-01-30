@@ -12,7 +12,10 @@
 fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     // Load raw pixel data (material, color, damage, flags)
     let dims = textureDimensions(pixel_texture);
-    let coord = vec2<i32>(mesh.uv * vec2<f32>(dims));
+    // Clamp UV to [0, 1) to avoid out-of-bounds at chunk edges where UV=1.0
+    // Without this, UV=1.0 * 512 = 512, which is out of bounds for 512-pixel texture
+    let clamped_uv = clamp(mesh.uv, vec2<f32>(0.0), vec2<f32>(1.0) - 1.0 / vec2<f32>(dims));
+    let coord = vec2<i32>(clamped_uv * vec2<f32>(dims));
     let pixel = textureLoad(pixel_texture, coord, 0);
 
     let material_id = pixel.r;

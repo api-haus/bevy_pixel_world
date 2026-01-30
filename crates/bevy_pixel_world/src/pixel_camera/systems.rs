@@ -11,13 +11,21 @@ use super::state::PixelCameraState;
 
 /// System: Stores the logical camera position before snapping.
 ///
-/// Runs after camera_follow to capture the smooth camera position.
-/// This position is used by streaming systems to avoid chunk pop-in.
+/// Only updates LogicalCameraPosition if the Transform has changed from the
+/// last snapped position (i.e., something external like camera_follow moved
+/// it). This prevents the snapped position from feeding back as the logical
+/// position.
 pub fn pixel_camera_store_logical(
+  state: Res<PixelCameraState>,
   mut camera_query: Query<(&Transform, &mut LogicalCameraPosition), With<PixelSceneCamera>>,
 ) {
   for (transform, mut logical_pos) in camera_query.iter_mut() {
-    logical_pos.0 = Vec2::new(transform.translation.x, transform.translation.y);
+    let current = Vec2::new(transform.translation.x, transform.translation.y);
+    // Only update if transform differs from last snapped position
+    // (meaning external code like camera_follow moved the camera)
+    if current != state.last_snapped_pos {
+      logical_pos.0 = current;
+    }
   }
 }
 
@@ -43,7 +51,7 @@ pub fn pixel_camera_sync_fullres(
 pub fn pixel_camera_snap(
   config: Res<PixelCameraConfig>,
   mut state: ResMut<PixelCameraState>,
-  mut camera_query: Query<&mut Transform, With<PixelSceneCamera>>,
+  mut camera_query: Query<(&LogicalCameraPosition, &mut Transform), With<PixelSceneCamera>>,
 ) {
   if !state.initialized {
     return;
@@ -54,11 +62,10 @@ pub fn pixel_camera_snap(
     return;
   }
 
-  for mut transform in camera_query.iter_mut() {
-    let logical_pos = Vec2::new(transform.translation.x, transform.translation.y);
+  for (logical_pos, mut transform) in camera_query.iter_mut() {
+    let logical_pos = logical_pos.0;
 
-    // Snap to nearest pixel in world space
-    // Convert to integer pixel coords to avoid float precision errors
+    // Snap to pixel grid (integers) for clean rasterization of chunk quads
     let pixel_x = (logical_pos.x / pixel_world_size).round() as i32;
     let pixel_y = (logical_pos.y / pixel_world_size).round() as i32;
     let snapped_x = pixel_x as f32 * pixel_world_size;
@@ -97,6 +104,9 @@ pub fn pixel_camera_snap(
     // Update camera transform to snapped position
     transform.translation.x = snapped_x;
     transform.translation.y = snapped_y;
+
+    // Store snapped position so store_logical can detect external changes
+    state.last_snapped_pos = Vec2::new(snapped_x, snapped_y);
   }
 }
 
