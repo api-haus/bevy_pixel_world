@@ -6,6 +6,7 @@ mod toggle;
 
 use bevy::prelude::*;
 use bevy_console::{AddConsoleCommand, ConsoleConfiguration, ConsolePlugin};
+use bevy_egui::EguiPrimaryContextPass;
 use commands::{
   CreativeCommand, SpawnCommand, TeleportCommand, TimeCommand, creative_command, spawn_command,
   teleport_command, time_command,
@@ -42,14 +43,16 @@ impl Plugin for ConsolePlugins {
       .init_resource::<CreativeModePosition>()
       .add_plugins(ConsolePlugin)
       .insert_resource(ConsoleConfiguration {
-        // Disable default toggle keys, we use custom `/` handling
-        keys: vec![],
+        // Use F12 as hidden toggle key for synthetic events from our `/` handler
+        keys: vec![KeyCode::F12],
+        height: 300.0,
         ..default()
       })
       .add_console_command::<TeleportCommand, _>(teleport_command)
       .add_console_command::<TimeCommand, _>(time_command)
       .add_console_command::<SpawnCommand, _>(spawn_command)
       .add_console_command::<CreativeCommand, _>(creative_command)
-      .add_systems(Update, toggle::handle_console_toggle);
+      .add_systems(Update, toggle::handle_console_toggle)
+      .add_systems(EguiPrimaryContextPass, toggle::maintain_console_focus);
   }
 }
