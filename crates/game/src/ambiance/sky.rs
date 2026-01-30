@@ -32,7 +32,7 @@ fn spawn_sky(mut commands: Commands, config: Res<ConfigLoaded>) {
   let initial_color =
     interpolate_sky_color(config.day_cycle.start_hour, &config.day_cycle.sky_colors);
 
-  info!(
+  debug!(
     "Sky spawned: size={}, initial_color={:?}, start_hour={}",
     size, initial_color, config.day_cycle.start_hour
   );

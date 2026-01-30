@@ -84,6 +84,6 @@ impl Plugin for EditorPlugin {
 
 /// Loads the default level from the .yol file.
 fn load_default_level(mut commands: Commands, asset_server: Res<AssetServer>) {
-  info!("Loading default level from file");
+  debug!("Loading default level from file");
   commands.spawn(YoleckLoadLevel(asset_server.load("levels/default.yol")));
 }

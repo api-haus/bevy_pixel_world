@@ -1,4 +1,4 @@
-use bevy::log::info;
+use bevy::log::debug;
 use bevy::prelude::*;
 use bevy_yoleck::prelude::*;
 use bevy_yoleck::vpeol::prelude::*;
@@ -33,7 +33,7 @@ fn populate_spawn_point(mut populate: YoleckPopulate<(&Vpeol2dPosition, &SpawnPo
     } else {
       vpeol_pos.0
     };
-    info!(
+    debug!(
       "Populating spawn point at {:?} (vpeol={:?}, data=({}, {}))",
       pos, vpeol_pos.0, data.x, data.y
     );

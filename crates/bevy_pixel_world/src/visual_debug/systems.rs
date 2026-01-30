@@ -125,7 +125,7 @@ pub fn debug_persistence_keyboard(
     if let Some(ref mut persistence) = persistence {
       if persistence.is_active() {
         persistence.save();
-        info!("[Debug] Triggered persistence for all modified chunks");
+        debug!("[Debug] Triggered persistence for all modified chunks");
       } else {
         warn!("[Debug] No save loaded - persistence not active");
       }
@@ -156,7 +156,7 @@ pub fn debug_persistence_keyboard(
       }
     }
     if total_reloaded > 0 {
-      info!(
+      debug!(
         "[Debug] Queued {} chunks for reload from storage",
         total_reloaded
       );

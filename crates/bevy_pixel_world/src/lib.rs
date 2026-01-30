@@ -240,7 +240,7 @@ impl Plugin for PixelWorldPlugin {
         world_seed: seed,
       });
 
-      info!("Persistence initializing asynchronously: {:?}", path);
+      debug!("Persistence initializing asynchronously: {:?}", path);
     }
 
     // Add world streaming systems

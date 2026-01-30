@@ -197,7 +197,7 @@ pub fn pixel_camera_handle_resize(
     return;
   }
 
-  info!(
+  debug!(
     "Pixel camera resize: {}x{} target ({}px margin)",
     target_width, target_height, margin
   );

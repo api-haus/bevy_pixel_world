@@ -61,7 +61,7 @@ pub fn load_settings(mut commands: Commands) {
     Some(path) if path.exists() => match std::fs::read_to_string(&path) {
       Ok(contents) => match toml::from_str(&contents) {
         Ok(settings) => {
-          info!("Loaded debug settings from {}", path.display());
+          debug!("Loaded debug settings from {}", path.display());
           settings
         }
         Err(e) => {

@@ -36,6 +36,14 @@ fn main() {
   app
     .add_plugins(
       DefaultPlugins
+        .set(bevy::log::LogPlugin {
+          filter: if cfg!(target_family = "wasm") {
+            "error".to_string()
+          } else {
+            "info".to_string()
+          },
+          ..default()
+        })
         .set(bevy::asset::AssetPlugin {
           // On web, servers may return HTML 404 pages instead of proper 404 status codes
           // when .meta files don't exist. Bevy then tries to parse HTML as RON and fails.

@@ -98,7 +98,7 @@ pub fn setup_pixel_camera(
   let total_width = target_width + margin * 2;
   let total_height = target_height + margin * 2;
 
-  info!(
+  debug!(
     "Pixel camera: {}x{} target ({}px margin), pixel_world_size={}",
     target_width, target_height, margin, pixel_world_size
   );

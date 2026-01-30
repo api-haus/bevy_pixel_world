@@ -99,7 +99,7 @@ pub(crate) fn process_pending_save_requests(
   }
 
   if total_saved > 0 {
-    info!("Queued {} chunks for saving", total_saved);
+    debug!("Queued {} chunks for saving", total_saved);
   }
 }
 
@@ -355,7 +355,7 @@ pub(crate) fn save_pixel_bodies_on_request(
   );
 
   if count > 0 {
-    info!("Queued {} pixel bodies for saving", count);
+    debug!("Queued {} pixel bodies for saving", count);
   }
 }
 
@@ -510,7 +510,7 @@ pub(crate) fn poll_save_task(
     }
 
     if result.chunks_saved > 0 || result.bodies_saved > 0 {
-      info!(
+      debug!(
         "Saved {} chunks, {} bodies, removed {} bodies",
         result.chunks_saved, result.bodies_saved, result.bodies_removed
       );
@@ -682,7 +682,7 @@ fn handle_initialized_result(
   body_count: usize,
   world_seed: u64,
 ) {
-  info!(
+  debug!(
     "I/O Worker initialized: {} chunks, {} bodies, seed {}",
     chunk_count, body_count, world_seed
   );
@@ -747,7 +747,7 @@ fn handle_chunk_loaded_result(
 
 /// Handles the FlushComplete result from the I/O worker.
 fn handle_flush_complete_result(saving: &mut SavingChunks) {
-  info!("I/O Worker flush complete");
+  debug!("I/O Worker flush complete");
   // Reset busy flag so new saves can be dispatched
   saving.busy = false;
 }

@@ -64,7 +64,7 @@ pub fn handle_movement_input(
         }
         // Log when there's movement
         if raw_value != 0.0 || velocity.0.x.abs() > 1.0 {
-          info!(
+          trace!(
             "Move: raw={}, state={:?}, vel_x={:.1}, loco={:?}",
             raw_value, action_state, velocity.0.x, state
           );
