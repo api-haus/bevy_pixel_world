@@ -8,8 +8,8 @@ use bevy::prelude::*;
 use bevy_console::{AddConsoleCommand, ConsoleConfiguration, ConsolePlugin};
 use bevy_egui::EguiPrimaryContextPass;
 use commands::{
-  CreativeCommand, SpawnCommand, TeleportCommand, TimeCommand, creative_command, spawn_command,
-  teleport_command, time_command,
+  CreativeCommand, SaveCommand, SpawnCommand, TeleportCommand, TimeCommand, creative_command,
+  save_command, spawn_command, teleport_command, time_command,
 };
 
 /// Current game mode.
@@ -42,6 +42,7 @@ impl Plugin for ConsolePlugins {
       .add_console_command::<TimeCommand, _>(time_command)
       .add_console_command::<SpawnCommand, _>(spawn_command)
       .add_console_command::<CreativeCommand, _>(creative_command)
+      .add_console_command::<SaveCommand, _>(save_command)
       .add_systems(Update, toggle::handle_console_toggle)
       .add_systems(EguiPrimaryContextPass, toggle::maintain_console_focus);
   }

@@ -55,9 +55,10 @@ pub(crate) fn update_streaming_windows(
   };
 
   let palette_handle = palette.as_ref().map(|p| p.handle.clone());
-  // Persistence is always enabled. Check both ready state and pending init (WASM
-  // async).
-  let has_persistence = persistence_control.is_some() || pending_init.is_some();
+  // Check if persistence is available AND enabled (not in editor mode).
+  // Also check pending init for WASM async initialization.
+  let persistence_enabled =
+    persistence_control.as_ref().is_some_and(|p| p.is_enabled()) || pending_init.is_some();
 
   // Use logical camera position if available (pixel camera mode)
   // Otherwise fall back to transform position
@@ -98,8 +99,9 @@ pub(crate) fn update_streaming_windows(
 
     // Spawn entities for chunks entering the window
     for (pos, slot_idx) in delta.to_spawn {
-      // When persistence is available, start in Loading state to check for saved data
-      if has_persistence {
+      // When persistence is enabled, start in Loading state to check for saved data.
+      // When disabled (editor mode), skip Loading and go straight to Seeding.
+      if persistence_enabled {
         let slot = world.slot_mut(slot_idx);
         slot.lifecycle = ChunkLifecycle::Loading;
       }

@@ -203,6 +203,9 @@ fn command_to_js(cmd: &IoCommand) -> JsValue {
     IoCommand::Flush => {
       js_sys::Reflect::set(&obj, &"type".into(), &"Flush".into()).unwrap();
     }
+    IoCommand::DeleteSave => {
+      js_sys::Reflect::set(&obj, &"type".into(), &"DeleteSave".into()).unwrap();
+    }
     IoCommand::Shutdown => {
       js_sys::Reflect::set(&obj, &"type".into(), &"Shutdown".into()).unwrap();
     }
@@ -308,6 +311,7 @@ fn parse_worker_message(event: &MessageEvent) -> Option<IoResult> {
       Some(IoResult::BodyRemoveComplete { stable_id })
     }
     "FlushComplete" => Some(IoResult::FlushComplete),
+    "DeleteComplete" => Some(IoResult::DeleteComplete),
     "Error" => {
       let message = js_sys::Reflect::get(obj, &"message".into())
         .ok()?

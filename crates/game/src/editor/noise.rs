@@ -2,6 +2,7 @@
 
 use bevy::prelude::*;
 use bevy_egui::{EguiPrimaryContextPass, egui};
+use bevy_pixel_world::ReseedAllChunks;
 use noise_ipc::NoiseIpc;
 
 /// Current noise profile being edited.
@@ -39,6 +40,7 @@ fn noise_panel_system(
   mut egui_ctx: bevy_egui::EguiContexts,
   mut profile: ResMut<NoiseProfile>,
   mut ipc: ResMut<NoiseIpcConnection>,
+  mut reseed_events: bevy::ecs::message::MessageWriter<ReseedAllChunks>,
 ) {
   // Poll IPC for updates from NoiseTool
   if let Some(client) = &mut ipc.client {
@@ -49,6 +51,12 @@ fn noise_panel_system(
         info!("Received ENT update from NoiseTool");
       }
     }
+  }
+
+  // Trigger re-seed when profile changes
+  if profile.dirty {
+    reseed_events.write(ReseedAllChunks);
+    profile.dirty = false;
   }
 
   let Ok(ctx) = egui_ctx.ctx_mut() else {
@@ -66,15 +74,9 @@ fn noise_panel_system(
         }
       });
 
-      ui.horizontal(|ui| {
-        if ui.button("Edit in NoiseTool").clicked() {
-          open_in_noise_tool(&mut ipc.client, &profile.ent);
-        }
-
-        if profile.dirty {
-          ui.label(egui::RichText::new("(modified)").italics());
-        }
-      });
+      if ui.button("Edit in NoiseTool").clicked() {
+        open_in_noise_tool(&mut ipc.client, &profile.ent);
+      }
     });
 }
 

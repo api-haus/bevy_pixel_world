@@ -40,6 +40,8 @@ pub enum IoCommand {
   RemoveBody { stable_id: u64 },
   /// Flush all pending writes to disk.
   Flush,
+  /// Delete the current save file and reinitialize empty.
+  DeleteSave,
   /// Shutdown the worker.
   Shutdown,
 }
@@ -69,6 +71,8 @@ pub enum IoResult {
   BodyRemoveComplete { stable_id: u64 },
   /// Flush completed.
   FlushComplete,
+  /// Save file deleted and reinitialized.
+  DeleteComplete,
   /// Error occurred.
   Error { message: String },
 }

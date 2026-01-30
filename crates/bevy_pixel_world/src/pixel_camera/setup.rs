@@ -188,34 +188,30 @@ pub fn setup_pixel_camera(
   // The quad should cover the entire screen in normalized device coordinates
   let quad_mesh = meshes.add(Rectangle::new(2.0, 2.0));
 
-  // Spawn blit camera with projection FIRST, then add Camera2d
-  // This ensures our projection is set before Camera2d's required components kick
-  // in
-  let blit_camera = commands
-    .spawn((
-      Name::new("PixelBlitCamera"),
-      PixelBlitCamera,
-      Camera {
-        order: 0, // Render after scene camera
-        clear_color: ClearColorConfig::Custom(Color::BLACK),
-        ..default()
+  // Spawn blit camera - projection must be set in the same spawn to prevent
+  // Camera2d's required component defaults from overriding it
+  commands.spawn((
+    Name::new("PixelBlitCamera"),
+    PixelBlitCamera,
+    Camera2d,
+    Camera {
+      order: 0, // Render after scene camera
+      clear_color: ClearColorConfig::Custom(Color::BLACK),
+      ..default()
+    },
+    Projection::Orthographic(OrthographicProjection {
+      near: -1.0,
+      far: 1.0,
+      scale: 1.0,
+      viewport_origin: Vec2::new(0.5, 0.5),
+      scaling_mode: bevy::camera::ScalingMode::Fixed {
+        width: 2.0,
+        height: 2.0,
       },
-      Projection::Orthographic(OrthographicProjection {
-        near: -1.0,
-        far: 1.0,
-        scale: 1.0,
-        viewport_origin: Vec2::new(0.5, 0.5),
-        scaling_mode: bevy::camera::ScalingMode::Fixed {
-          width: 2.0,
-          height: 2.0,
-        },
-        area: Rect::default(),
-      }),
-      RenderLayers::layer(BLIT_LAYER), // Only render blit layer
-    ))
-    .id();
-  // Add Camera2d AFTER projection is set (for render pipeline registration)
-  commands.entity(blit_camera).insert(Camera2d);
+      area: Rect::default(),
+    }),
+    RenderLayers::layer(BLIT_LAYER), // Only render blit layer
+  ));
 
   // Spawn blit quad
   commands.spawn((
@@ -228,23 +224,20 @@ pub fn setup_pixel_camera(
     RenderLayers::layer(BLIT_LAYER), // Only visible to blit camera
   ));
 
-  // Spawn full-resolution camera with projection FIRST, then add Camera2d
-  let fullres_camera = commands
-    .spawn((
-      Name::new("PixelFullresCamera"),
-      PixelFullresCamera,
-      Camera {
-        order: 1, // Render after blit
-        clear_color: ClearColorConfig::None,
-        ..default()
-      },
-      Projection::Orthographic(ortho.clone()),
-      Transform::from_translation(camera_transform.translation),
-      RenderLayers::layer(FULLRES_SPRITE_LAYER),
-    ))
-    .id();
-  // Add Camera2d AFTER projection is set (for render pipeline registration)
-  commands.entity(fullres_camera).insert(Camera2d);
+  // Spawn full-resolution camera - projection must be set in the same spawn
+  commands.spawn((
+    Name::new("PixelFullresCamera"),
+    PixelFullresCamera,
+    Camera2d,
+    Camera {
+      order: 1, // Render after blit
+      clear_color: ClearColorConfig::None,
+      ..default()
+    },
+    Projection::Orthographic(ortho.clone()),
+    Transform::from_translation(camera_transform.translation),
+    RenderLayers::layer(FULLRES_SPRITE_LAYER),
+  ));
 
   // Update state
   state.render_target = render_target_handle;
@@ -253,17 +246,13 @@ pub fn setup_pixel_camera(
   state.initialized = true;
 }
 
-/// System: Fixes camera projections once after spawn (WASM-only workaround for
-/// Bevy #16556).
+/// System: Fixes camera projections once after spawn.
 ///
-/// On WASM, Camera2d's required components override explicitly set projections
-/// even when using two-phase spawn (spawn with Projection first, then insert
-/// Camera2d). This doesn't happen on native builds. This system runs once after
-/// initialization to force the correct projections on the blit and fullres
-/// cameras.
+/// Camera2d's required components can override explicitly set projections.
+/// This system runs once after initialization to force the correct projections
+/// on the blit and fullres cameras.
 ///
 /// See: https://github.com/bevyengine/bevy/issues/16556
-#[cfg(target_arch = "wasm32")]
 pub fn fix_camera_projections(
   mut has_run: Local<bool>,
   state: Res<PixelCameraState>,

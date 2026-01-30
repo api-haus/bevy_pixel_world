@@ -11,6 +11,8 @@ mod ui;
 
 use bevy::prelude::*;
 #[cfg(feature = "editor")]
+use bevy_pixel_world::{PersistenceControl, ReseedAllChunks, SimulationState};
+#[cfg(feature = "editor")]
 use bevy_yoleck::YoleckEditorLevelsDirectoryPath;
 #[cfg(feature = "editor")]
 use bevy_yoleck::prelude::YoleckSyncWithEditorState;
@@ -70,6 +72,10 @@ impl Plugin for EditorPlugin {
           actions::editor_camera_pan.run_if(in_state(YoleckEditorState::EditorActive)),
         ),
       );
+
+      // Sync simulation/persistence with edit mode
+      app.add_systems(OnEnter(GameMode::Editing), on_enter_editing);
+      app.add_systems(OnEnter(GameMode::Playing), on_enter_playing);
     }
     #[cfg(not(feature = "editor"))]
     {
@@ -91,4 +97,34 @@ impl Plugin for EditorPlugin {
 fn load_default_level(mut commands: Commands, asset_server: Res<AssetServer>) {
   debug!("Loading default level from file");
   commands.spawn(YoleckLoadLevel(asset_server.load("levels/default.yol")));
+}
+
+#[cfg(feature = "editor")]
+fn on_enter_editing(
+  simulation: Option<ResMut<SimulationState>>,
+  persistence: Option<ResMut<PersistenceControl>>,
+  mut reseed: bevy::ecs::message::MessageWriter<ReseedAllChunks>,
+) {
+  if let Some(mut sim) = simulation {
+    sim.pause();
+  }
+  if let Some(mut pers) = persistence {
+    pers.disable();
+  }
+  reseed.write(ReseedAllChunks); // Discard any playtest modifications
+  info!("Edit mode: simulation paused, persistence disabled");
+}
+
+#[cfg(feature = "editor")]
+fn on_enter_playing(
+  simulation: Option<ResMut<SimulationState>>,
+  persistence: Option<ResMut<PersistenceControl>>,
+) {
+  if let Some(mut pers) = persistence {
+    pers.enable();
+  }
+  if let Some(mut sim) = simulation {
+    sim.resume();
+  }
+  info!("Play mode: simulation resumed, persistence enabled");
 }

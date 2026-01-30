@@ -79,9 +79,11 @@ impl SimulationState {
 /// Resource for persistence control.
 ///
 /// Provides methods to save the world to the current file or copy to a new
-/// path.
+/// path. Can be disabled at runtime for level editor mode.
 #[derive(Resource)]
 pub struct PersistenceControl {
+  /// Whether persistence is enabled. When disabled, no I/O occurs.
+  enabled: bool,
   /// Current save file path.
   pub(crate) current_path: Option<PathBuf>,
   /// Counter for generating unique request IDs.
@@ -94,19 +96,40 @@ impl PersistenceControl {
   /// Creates a persistence control that tracks the save file path.
   ///
   /// All I/O is handled by IoDispatcher on both native and WASM platforms.
+  /// Persistence is enabled by default.
   pub fn with_path_only(path: PathBuf) -> Self {
     Self {
+      enabled: true,
       current_path: Some(path),
       next_request_id: 1,
       pending_requests: Vec::new(),
     }
   }
 
-  /// Returns true if a save file is open and ready for I/O.
+  /// Disables persistence. No save/load I/O will occur while disabled.
+  ///
+  /// Use this for level editor mode to prevent player state from being saved.
+  pub fn disable(&mut self) {
+    self.enabled = false;
+  }
+
+  /// Enables persistence. Save/load I/O will resume.
+  pub fn enable(&mut self) {
+    self.enabled = true;
+  }
+
+  /// Returns true if persistence is enabled.
+  ///
+  /// When disabled, all persistence systems skip their work.
+  pub fn is_enabled(&self) -> bool {
+    self.enabled
+  }
+
+  /// Returns true if persistence is enabled and a save file is open.
   ///
   /// Check this before calling save methods.
   pub fn is_active(&self) -> bool {
-    self.current_path.is_some()
+    self.enabled && self.current_path.is_some()
   }
 
   /// Saves all chunks and pixel bodies to the current save file.
@@ -284,3 +307,30 @@ pub struct PendingPersistenceInit {
   /// World seed.
   pub world_seed: u64,
 }
+
+/// Event to trigger re-seeding of all active chunks.
+///
+/// When sent, all chunks in the `Active` lifecycle state transition back to
+/// `Seeding`, causing them to regenerate with the current noise profile.
+/// Any cached persistence data is cleared first.
+///
+/// Use this for level editor mode when the noise profile changes.
+#[derive(bevy::prelude::Message)]
+pub struct ReseedAllChunks;
+
+/// Message to reload all chunks from disk.
+///
+/// When sent, all chunks in the `Active` lifecycle state transition back to
+/// `Loading`, causing them to re-fetch data from the save file. Unsaved
+/// in-memory changes are discarded.
+///
+/// Use this to revert to the last saved state.
+#[derive(bevy::prelude::Message)]
+pub struct ReloadAllChunks;
+
+/// Message to clear the current save file and regenerate.
+///
+/// When sent, the save file is deleted and reinitialized with an empty state.
+/// Should be followed by `ReseedAllChunks` to regenerate from procedural noise.
+#[derive(bevy::prelude::Message)]
+pub struct ClearPersistence;

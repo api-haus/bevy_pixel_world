@@ -134,6 +134,14 @@ Infinite world management.
 |----------|---------|
 | [Streaming Window](streaming/streaming-window.md) | Camera-tracking active region management |
 
+### Editor
+
+Level editing and runtime control.
+
+| Document | Purpose |
+|----------|---------|
+| [Level Editor Mode](editor/level-editor-mode.md) | Simulation and persistence control for level editing |
+
 ## Data Flow
 
 ```mermaid

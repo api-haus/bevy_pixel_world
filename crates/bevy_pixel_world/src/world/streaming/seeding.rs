@@ -11,9 +11,11 @@ use super::SeededChunks;
 use crate::coords::{CHUNK_SIZE, ChunkPos};
 use crate::debug_shim;
 use crate::persistence::LoadedChunk;
+use crate::persistence::tasks::LoadingChunks;
 use crate::primitives::Chunk;
 use crate::world::PixelWorld;
 use crate::world::SlotIndex;
+use crate::world::control::{ReloadAllChunks, ReseedAllChunks};
 use crate::world::persistence_systems::LoadedChunkDataStore;
 use crate::world::slot::ChunkLifecycle;
 
@@ -261,4 +263,88 @@ pub(crate) fn poll_seeding_tasks(
 
     false // remove completed task
   });
+}
+
+/// System: Handles reseed requests by transitioning Active chunks to Seeding.
+///
+/// When `ReseedAllChunks` is sent, all active chunks regenerate with the
+/// current noise profile. Any cached persistence data is cleared first.
+///
+/// Use this for level editor mode when noise profiles change.
+#[cfg_attr(feature = "tracy", tracing::instrument(skip_all))]
+pub(crate) fn handle_reseed_request(
+  mut events: bevy::ecs::message::MessageReader<ReseedAllChunks>,
+  mut worlds: Query<&mut PixelWorld>,
+  mut loaded_data: ResMut<LoadedChunkDataStore>,
+) {
+  // Only process if there are reseed requests
+  if events.is_empty() {
+    return;
+  }
+
+  // Consume all events (we only need to reseed once even if multiple events)
+  for _ in events.read() {}
+
+  // Clear any cached persistence data
+  loaded_data.store.clear();
+  loaded_data.bodies.clear();
+
+  // Transition Active chunks back to Seeding
+  let mut count = 0;
+  for mut world in &mut worlds {
+    for (_pos, slot_idx) in world.active_chunks().collect::<Vec<_>>() {
+      let slot = world.slot_mut(slot_idx);
+      if slot.lifecycle == ChunkLifecycle::Active {
+        slot.lifecycle = ChunkLifecycle::Seeding;
+        slot.chunk.from_persistence = false;
+        count += 1;
+      }
+    }
+  }
+
+  if count > 0 {
+    info!("Re-seeding {} chunks", count);
+  }
+}
+
+/// System: Handles reload requests by transitioning Active chunks to Loading.
+///
+/// When `ReloadAllChunks` is sent, all active chunks reload from disk,
+/// discarding any unsaved in-memory changes.
+///
+/// Use this to revert to the last saved state.
+#[cfg_attr(feature = "tracy", tracing::instrument(skip_all))]
+pub(crate) fn handle_reload_request(
+  mut events: bevy::ecs::message::MessageReader<ReloadAllChunks>,
+  mut worlds: Query<&mut PixelWorld>,
+  mut loaded_data: ResMut<LoadedChunkDataStore>,
+  mut loading: ResMut<LoadingChunks>,
+) {
+  if events.is_empty() {
+    return;
+  }
+
+  // Consume all events
+  for _ in events.read() {}
+
+  // Clear caches so chunks re-request from disk
+  loaded_data.store.clear();
+  loaded_data.bodies.clear();
+  loading.pending.clear();
+
+  // Transition Active → Loading (will be re-dispatched by dispatch_chunk_loads)
+  let mut count = 0;
+  for mut world in &mut worlds {
+    for (_pos, slot_idx) in world.active_chunks().collect::<Vec<_>>() {
+      let slot = world.slot_mut(slot_idx);
+      if slot.lifecycle == ChunkLifecycle::Active {
+        slot.lifecycle = ChunkLifecycle::Loading;
+        count += 1;
+      }
+    }
+  }
+
+  if count > 0 {
+    info!("Reloading {} chunks from disk", count);
+  }
 }

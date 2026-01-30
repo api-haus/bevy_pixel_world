@@ -9,6 +9,7 @@ use async_channel::{Receiver, Sender, TryRecvError};
 use bevy::prelude::warn;
 
 use super::{BodyLoadData, ChunkLoadData, IoCommand, IoResult};
+use crate::persistence::backend::StorageFs;
 use crate::persistence::format::{PageTableEntry, StorageType};
 use crate::persistence::index::{ChunkIndex, PixelBodyIndex, PixelBodyIndexEntry};
 use crate::persistence::native::NativeFs;
@@ -167,6 +168,7 @@ fn handle_command(state: &mut WorkerState, cmd: IoCommand) -> IoResult {
     } => handle_save_body(state, record_data, stable_id),
     IoCommand::RemoveBody { stable_id } => handle_remove_body(state, stable_id),
     IoCommand::Flush => handle_flush(state),
+    IoCommand::DeleteSave => handle_delete_save(state),
     IoCommand::Shutdown => {
       // Flush before shutdown
       let _ = handle_flush(state);
@@ -359,4 +361,44 @@ fn handle_flush(state: &mut WorkerState) -> IoResult {
   }
 
   IoResult::FlushComplete
+}
+
+fn handle_delete_save(state: &mut WorkerState) -> IoResult {
+  let Some(ref save) = state.save else {
+    return IoResult::Error {
+      message: "No save loaded".to_string(),
+    };
+  };
+
+  let file_name = save.name.clone();
+  let seed = save.world_seed();
+
+  // Close the current save first (releases file handle)
+  state.save = None;
+
+  // Delete the save file
+  if let Err(e) = crate::persistence::block_on(state.fs.delete(&file_name)) {
+    // If file doesn't exist, that's fine - just continue
+    if !matches!(e, crate::persistence::backend::BackendError::NotFound) {
+      return IoResult::Error {
+        message: format!("Failed to delete save file: {}", e),
+      };
+    }
+  }
+
+  // Reinitialize with the same seed
+  match WorldSave::open_or_create(&state.fs, &file_name, seed) {
+    Ok(new_save) => {
+      // Reset worker state to fresh
+      state.chunk_index = new_save.chunk_index().clone();
+      state.body_index = new_save.body_index().clone();
+      state.data_write_pos = new_save.data_write_pos();
+      state.save = Some(new_save);
+
+      IoResult::DeleteComplete
+    }
+    Err(e) => IoResult::Error {
+      message: format!("Failed to reinitialize save after delete: {}", e),
+    },
+  }
 }

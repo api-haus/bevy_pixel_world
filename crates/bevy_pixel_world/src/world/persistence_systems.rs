@@ -21,7 +21,7 @@ use bevy::prelude::*;
 use super::PixelWorld;
 #[cfg(not(target_family = "wasm"))]
 use super::control::PersistenceComplete;
-use super::control::{PersistenceControl, RequestPersistence};
+use super::control::{ClearPersistence, PersistenceControl, RequestPersistence};
 use super::streaming::UnloadingChunks;
 use crate::coords::WorldPos;
 use crate::persistence::{
@@ -49,6 +49,36 @@ pub(crate) fn handle_persistence_messages(
   for _message in messages.read() {
     persistence.save();
   }
+}
+
+/// System: Handles `ClearPersistence` messages by sending DeleteSave to
+/// IoDispatcher.
+///
+/// This deletes the save file and reinitializes it empty. Should be paired with
+/// `ReseedAllChunks` to regenerate from procedural noise.
+pub(crate) fn handle_clear_persistence(
+  mut messages: MessageReader<ClearPersistence>,
+  io_dispatcher: Option<Res<IoDispatcher>>,
+) {
+  if messages.is_empty() {
+    return;
+  }
+
+  // Consume all messages
+  for _ in messages.read() {}
+
+  let Some(io_dispatcher) = io_dispatcher else {
+    warn!("ClearPersistence: No IoDispatcher available");
+    return;
+  };
+
+  if !io_dispatcher.is_ready() {
+    warn!("ClearPersistence: IoDispatcher not ready");
+    return;
+  }
+
+  info!("Clearing save file...");
+  io_dispatcher.send(crate::persistence::IoCommand::DeleteSave);
 }
 
 /// System: Processes pending save requests by queuing all modified chunks.
@@ -261,6 +291,7 @@ fn save_matching_bodies(
 pub(crate) fn save_pixel_bodies_on_chunk_unload(
   mut commands: Commands,
   unloading_chunks: Res<UnloadingChunks>,
+  persistence: Option<Res<PersistenceControl>>,
   mut persistence_tasks: ResMut<PersistenceTasks>,
   bodies: Query<
     (
@@ -280,6 +311,11 @@ pub(crate) fn save_pixel_bodies_on_chunk_unload(
     Option<&bevy_rapier2d::prelude::Velocity>,
   >,
 ) {
+  // Skip if persistence is disabled (editor mode)
+  if !persistence.as_ref().is_some_and(|p| p.is_enabled()) {
+    return;
+  }
+
   if unloading_chunks.positions.is_empty() {
     return;
   }
@@ -336,6 +372,11 @@ pub(crate) fn save_pixel_bodies_on_request(
   let Some(persistence) = persistence else {
     return;
   };
+
+  // Skip if persistence is disabled (editor mode)
+  if !persistence.is_enabled() {
+    return;
+  }
 
   // Only save bodies if there are pending save requests
   if persistence.pending_requests.is_empty() {
@@ -535,8 +576,14 @@ pub(crate) fn poll_save_task(
 pub(crate) fn dispatch_chunk_loads(
   mut loading: ResMut<LoadingChunks>,
   io_dispatcher: Option<Res<IoDispatcher>>,
+  persistence: Option<Res<PersistenceControl>>,
   worlds: Query<&PixelWorld>,
 ) {
+  // Skip if persistence is disabled (editor mode)
+  if !persistence.as_ref().is_some_and(|p| p.is_enabled()) {
+    return;
+  }
+
   // Both native and WASM now use IoDispatcher for chunk loading
   let Some(io_dispatcher) = io_dispatcher else {
     return;
@@ -827,6 +874,9 @@ pub(crate) fn poll_io_results(
       }
       IoResult::FlushComplete => {
         handle_flush_complete_result(&mut saving);
+      }
+      IoResult::DeleteComplete => {
+        info!("Save file cleared and reinitialized");
       }
       IoResult::Error { message } => {
         handle_error_result(&message);

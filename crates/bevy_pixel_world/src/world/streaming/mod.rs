@@ -19,7 +19,9 @@ pub(crate) use body_loading::queue_pixel_bodies_on_chunk_seed;
 pub(crate) use culling::update_entity_culling;
 pub use culling::{CullingConfig, StreamCulled};
 pub(crate) use frame_reset::clear_chunk_tracking;
-pub(crate) use seeding::{SeedingTasks, dispatch_seeding, poll_seeding_tasks};
+pub(crate) use seeding::{
+  SeedingTasks, dispatch_seeding, handle_reload_request, handle_reseed_request, poll_seeding_tasks,
+};
 pub use window::StreamingCamera;
 pub(crate) use window::{
   SharedChunkMesh, SharedPaletteTexture, update_simulation_bounds, update_streaming_windows,
