@@ -2,6 +2,7 @@ use bevy::{camera::ScalingMode, prelude::*};
 use bevy_pixel_world::{PixelCamera, StreamingCamera, VirtualCamera};
 
 use crate::config::ConfigLoaded;
+use crate::player::components::{Player, VisualPosition};
 
 /// Marker component for the game camera
 #[derive(Component)]
@@ -59,26 +60,22 @@ pub fn setup_camera(mut commands: Commands, config: Res<ConfigLoaded>) {
   ));
 }
 
-/// Camera follow with dampening - updates the virtual camera's transform
+/// Camera follow - updates the virtual camera's transform to match player's
+/// interpolated position. Uses the EXACT same VisualPosition as the sprite to
+/// prevent jitter.
 pub fn camera_follow(
-  target_query: Query<&GlobalTransform, (With<CameraTarget>, Without<PlayerVirtualCamera>)>,
+  player_query: Query<&VisualPosition, With<Player>>,
   mut camera_query: Query<&mut Transform, With<PlayerVirtualCamera>>,
-  smoothness: Res<CameraSmoothness>,
-  time: Res<Time>,
 ) {
-  let Ok(target) = target_query.single() else {
+  let Ok(visual_pos) = player_query.single() else {
     return;
   };
   let Ok(mut camera_transform) = camera_query.single_mut() else {
     return;
   };
 
-  let target_pos = target.translation();
-  let current_pos = camera_transform.translation;
-
-  // Exponential smoothing: lerp factor based on time and smoothness
-  let t = (smoothness.0 * time.delta_secs()).min(1.0);
-
-  camera_transform.translation.x = current_pos.x.lerp(target_pos.x, t);
-  camera_transform.translation.y = current_pos.y.lerp(target_pos.y, t);
+  // Use exact same position as sprite - no smoothing!
+  // Pixel camera will handle snapping uniformly for both.
+  camera_transform.translation.x = visual_pos.0.x;
+  camera_transform.translation.y = visual_pos.0.y;
 }

@@ -108,11 +108,12 @@ jobs:
 
       # Upload large WASM file to R2 (bypasses Pages 25MB limit)
       - name: Upload WASM to R2
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: r2 object put bevy-pixel-world-assets/game.wasm --file crates/game/dist/*_bg.wasm
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          WASM_FILE=$(ls crates/game/dist/*_bg.wasm)
+          npx wrangler r2 object put bevy-pixel-world-assets/game.wasm --file "$WASM_FILE"
 
       # Patch JS loader to fetch WASM from R2 public URL
       - name: Patch WASM URL to R2

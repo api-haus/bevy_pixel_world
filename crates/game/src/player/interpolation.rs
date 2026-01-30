@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use super::components::{CurrentPosition, Player, PlayerVisual, PreviousPosition};
+use super::components::{CurrentPosition, Player, PlayerVisual, PreviousPosition, VisualPosition};
 
 /// Runs in FixedFirst: Shift positions for interpolation
 pub fn shift_positions(
@@ -22,14 +22,26 @@ pub fn store_current_position(
 
 /// Runs in Update: Interpolate the visual child entity for smooth rendering
 pub fn interpolate_visual(
-  physics_query: Query<(&Transform, &PreviousPosition, &CurrentPosition, &Children), With<Player>>,
+  mut physics_query: Query<
+    (
+      &Transform,
+      &PreviousPosition,
+      &CurrentPosition,
+      &Children,
+      &mut VisualPosition,
+    ),
+    With<Player>,
+  >,
   mut visual_query: Query<&mut Transform, (With<PlayerVisual>, Without<Player>)>,
   fixed_time: Res<Time<Fixed>>,
 ) {
   let t = fixed_time.overstep_fraction();
 
-  for (physics_transform, prev, current, children) in &physics_query {
+  for (physics_transform, prev, current, children, mut visual_pos) in &mut physics_query {
     let interpolated_world = prev.0.lerp(current.0, t);
+
+    // Store the interpolated position for camera to use
+    visual_pos.0 = interpolated_world;
 
     for child in children.iter() {
       if let Ok(mut visual_transform) = visual_query.get_mut(child) {

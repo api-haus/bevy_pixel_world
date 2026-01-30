@@ -33,3 +33,8 @@ pub enum LocomotionState {
   Airborne,
   Flying,
 }
+
+/// The interpolated visual position for this frame.
+/// Both sprite positioning and camera follow should use this exact value.
+#[derive(Component, Default)]
+pub struct VisualPosition(pub Vec3);

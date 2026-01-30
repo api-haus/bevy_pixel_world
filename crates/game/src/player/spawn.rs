@@ -4,7 +4,7 @@ use bevy_rapier2d::prelude::*;
 
 use super::components::{
   CharacterMovementConfig, CharacterVelocity, CurrentPosition, LocomotionState, Player,
-  PlayerVisual, PreviousPosition,
+  PlayerVisual, PreviousPosition, VisualPosition,
 };
 use crate::config::ConfigLoaded;
 use crate::core::CameraTarget;
@@ -76,6 +76,7 @@ fn spawn_player_entity(commands: &mut Commands, config: &ConfigLoaded, spawn_pos
       // Positions for interpolation - initialize with spawn position
       PreviousPosition(spawn_pos),
       CurrentPosition(spawn_pos),
+      VisualPosition(spawn_pos),
       PlayerInput,
       player_input_actions(),
     ))
