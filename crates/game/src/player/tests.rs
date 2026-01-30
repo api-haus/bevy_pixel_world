@@ -16,7 +16,7 @@ fn player_falls_with_gravity() {
     .insert_resource(GravityConfig { value: 980.0 });
 
   app
-    .add_systems(FixedFirst, interpolation::shift_positions)
+    .add_systems(FixedFirst, interpolation::shift_interpolation_state)
     .add_systems(
       FixedUpdate,
       (
@@ -30,7 +30,7 @@ fn player_falls_with_gravity() {
       FixedUpdate,
       (
         movement::sync_ground_from_physics,
-        interpolation::store_current_position,
+        interpolation::store_physics_position,
       )
         .chain()
         .after(PhysicsSet::Writeback),
@@ -47,8 +47,7 @@ fn player_falls_with_gravity() {
       KinematicCharacterController::default(),
       CharacterVelocity::default(),
       LocomotionState::Airborne,
-      PreviousPosition(spawn_pos),
-      CurrentPosition(spawn_pos),
+      InterpolationState::new(spawn_pos),
     ))
     .id();
 
