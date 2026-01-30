@@ -51,7 +51,36 @@ jobs:
             crates/sim2d_noise
           cache-on-failure: true
 
+      # Cache sim2d_noise Emscripten build (fastnoise2-sys C++ takes long)
+      - name: Cache sim2d_noise build
+        uses: actions/cache@v4
+        with:
+          path: |
+            crates/sim2d_noise/target/wasm32-unknown-emscripten
+            crates/sim2d_noise/dist
+          key: sim2d-noise-emscripten-${{ hashFiles('crates/sim2d_noise/Cargo.lock', 'crates/sim2d_noise/src/**') }}
+          restore-keys: |
+            sim2d-noise-emscripten-
+
+      # Cache main workspace WASM target
+      - name: Cache WASM target
+        uses: actions/cache@v4
+        with:
+          path: target/wasm32-unknown-unknown
+          key: wasm-target-${{ hashFiles('Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            wasm-target-${{ hashFiles('Cargo.lock') }}-
+            wasm-target-
+
+      - name: Cache Trunk
+        id: cache-trunk
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/bin/trunk
+          key: trunk-${{ runner.os }}-latest
+
       - name: Install Trunk
+        if: steps.cache-trunk.outputs.cache-hit != 'true'
         run: |
           TRUNK_VERSION=$(curl -sL https://api.github.com/repos/trunk-rs/trunk/releases/latest | jq -r '.tag_name')
           curl -sL "https://github.com/trunk-rs/trunk/releases/download/${TRUNK_VERSION}/trunk-x86_64-unknown-linux-gnu.tar.gz" | tar xz
