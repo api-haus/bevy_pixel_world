@@ -3,7 +3,6 @@ target = "index.html"
 release = true
 no_default_features = true
 
-
 [serve]
 port = 50080
 headers = { "Cross-Origin-Opener-Policy" = "same-origin", "Cross-Origin-Embedder-Policy" = "require-corp" }

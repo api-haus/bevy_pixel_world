@@ -100,6 +100,9 @@ jobs:
         run: |
           find crates/sim2d_noise/target -name "*.d" -exec grep -l "build/_deps" {} \; 2>/dev/null | xargs -r rm -f || true
 
+      - name: Configure wasm-opt for production
+        run: sed -i 's/data-wasm-opt="0"/data-wasm-opt="s"/' crates/game/index.html
+
       - name: Build WASM with Trunk
         working-directory: crates/game
         run: trunk build --release
