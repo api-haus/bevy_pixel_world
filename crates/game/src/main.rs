@@ -11,7 +11,7 @@ mod time_of_day;
 mod visual_debug;
 mod world;
 
-use bevy::{prelude::*, window::WindowResolution};
+use bevy::{asset::AssetMetaCheck, prelude::*, window::WindowResolution};
 
 fn main() {
   let (platform_config, embedded_assets) = platform::init();
@@ -36,6 +36,13 @@ fn main() {
   app
     .add_plugins(
       DefaultPlugins
+        .set(bevy::asset::AssetPlugin {
+          // On web, servers may return HTML 404 pages instead of proper 404 status codes
+          // when .meta files don't exist. Bevy then tries to parse HTML as RON and fails.
+          // Since this project doesn't use .meta files, skip checking for them entirely.
+          meta_check: AssetMetaCheck::Never,
+          ..default()
+        })
         .set(ImagePlugin::default_nearest())
         .set(WindowPlugin {
           primary_window: Some(Window {

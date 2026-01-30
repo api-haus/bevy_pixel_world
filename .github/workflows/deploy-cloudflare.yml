@@ -115,17 +115,8 @@ jobs:
           WASM_FILE=$(ls crates/game/dist/*_bg.wasm)
           npx wrangler r2 object put bevy-pixel-world-assets/game.wasm --file "$WASM_FILE" --remote
 
-      # Patch HTML to fetch WASM from R2 public URL
-      - name: Patch WASM URL to R2
-        run: |
-          WASM_FILE=$(basename crates/game/dist/*_bg.wasm)
-          # Replace WASM path in HTML (trunk injects it there)
-          R2_WORKER_URL="https://bevy-pixel-world-assets.yura415.workers.dev"
-          sed -i "s|/${WASM_FILE}|${R2_WORKER_URL}/game.wasm|g" crates/game/dist/index.html
-          # Also update the preload link
-          sed -i "s|href=\"/${WASM_FILE}\"|href=\"${R2_WORKER_URL}/game.wasm\"|g" crates/game/dist/index.html
-          # Remove the local WASM file (served from R2)
-          rm crates/game/dist/*_bg.wasm
+      - name: Patch WASM loading with progress bar
+        run: ./scripts/patch-wasm-loading.sh crates/game/dist
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3

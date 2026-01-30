@@ -4,18 +4,15 @@
     <meta charset="utf-8">
     <title>sim2d</title>
     <style>
-        html, body {
-            width: 100%;
-            height: 100%;
-            margin: 0;
-            padding: 0;
-            overflow: hidden;
-        }
-        #bevy {
-            display: block;
-            width: 100%;
-            height: 100%;
-        }
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #0a0a0f; }
+        #bevy { display: block; width: 100%; height: 100%; }
+        #loading { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #0a0a0f; z-index: 1000; }
+        #loading.hidden { display: none; }
+        #progress-bar { width: min(300px, 80vw); height: 4px; background: #1a1a2e; border-radius: 2px; overflow: hidden; }
+        #progress-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #4ade80, #22d3ee); transition: width 0.15s ease-out; }
+        #progress-fill.indeterminate { width: 30%; animation: indeterminate 1.5s ease-in-out infinite; }
+        @keyframes indeterminate { 0% { transform: translateX(-100%); } 100% { transform: translateX(400%); } }
+        #progress-text { color: #666; margin-top: 12px; font-family: ui-monospace, monospace; font-size: 14px; }
     </style>
     <link data-trunk data-wasm-opt="0" rel="rust"/>
     <link data-trunk href="assets" rel="copy-dir"/>
@@ -25,10 +22,20 @@
     <link data-trunk href="_headers" rel="copy-file"/>
 </head>
 <body>
+<div id="loading"><div id="progress-bar"><div id="progress-fill" class="indeterminate"></div></div><div id="progress-text">Loading...</div></div>
 <canvas id="bevy" oncontextmenu="return false"></canvas>
 <script>
-    // Prevent default browser behaviors that interfere with game input
     document.addEventListener('contextmenu', e => e.preventDefault());
+    // Progress bar API (used by custom init.js in production)
+    window.updateLoadingProgress = (l, t) => {
+        const fill = document.getElementById('progress-fill');
+        fill.classList.remove('indeterminate');
+        fill.style.width = Math.round((l/t)*100)+'%';
+        document.getElementById('progress-text').textContent = Math.round((l/t)*100)+'%';
+    };
+    window.hideLoading = () => document.getElementById('loading').classList.add('hidden');
+    // Hide loading when trunk/bevy app starts (works for both local dev and production)
+    window.addEventListener('TrunkApplicationStarted', window.hideLoading);
 </script>
 </body>
 </html>
