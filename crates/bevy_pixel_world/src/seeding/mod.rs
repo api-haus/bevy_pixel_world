@@ -8,7 +8,7 @@
 mod noise;
 pub(crate) mod sdf;
 
-pub use noise::{MaterialSeeder, NoiseSeeder};
+pub use noise::{MaterialSeeder, NoiseSeeder, presets};
 
 use crate::persistence::LoadedChunk;
 use crate::{Chunk, ChunkPos};

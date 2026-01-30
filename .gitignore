@@ -25,6 +25,10 @@ rustc-ice-*.txt
 /*.json.gz
 dist/
 
+# NoiseTool config files
+NodeEditor.ini
+NodeGraph.ini
+
 .claude/settings.local.json
 !.claude/
 !.claude/skills/

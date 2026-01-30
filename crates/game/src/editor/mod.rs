@@ -5,6 +5,8 @@ compile_error!("Editor feature is not supported on WASM");
 mod actions;
 mod entities;
 #[cfg(feature = "editor")]
+mod noise;
+#[cfg(feature = "editor")]
 mod ui;
 
 use bevy::prelude::*;
@@ -56,6 +58,9 @@ impl Plugin for EditorPlugin {
 
       // Add editor UI (runs after egui context is ready)
       ui::configure_system_sets(app);
+
+      // Noise profile panel with NoiseTool IPC
+      noise::setup(app);
 
       // Keyboard shortcuts for toggling editor/play state
       app.add_systems(

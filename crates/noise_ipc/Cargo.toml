@@ -1,0 +1,8 @@
+[package]
+name = "noise_ipc"
+version = "0.1.0"
+edition = "2021"
+description = "IPC client for FastNoise2 NoiseTool via shared memory"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+shared_memory = "0.12"

@@ -25,6 +25,7 @@ bevy-yoleck = { version = "0.29", optional = true, features = ["vpeol_2d"] }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 dirs = "6"
+noise_ipc = { path = "../noise_ipc" }
 
 [target.'cfg(target_family = "wasm")'.dependencies]
 console_error_panic_hook = "0.1"

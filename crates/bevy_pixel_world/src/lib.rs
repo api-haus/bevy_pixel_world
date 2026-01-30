@@ -78,7 +78,7 @@ pub use render::{
   upload_surface,
 };
 pub use schedule::{PixelWorldSet, SimulationPhase};
-pub use seeding::{ChunkSeeder, MaterialSeeder, NoiseSeeder};
+pub use seeding::{ChunkSeeder, MaterialSeeder, NoiseSeeder, presets as noise_presets};
 pub use simulation::{HeatConfig, simulate_tick};
 pub use text::{CpuFont, TextMask, TextStyle, draw_text, rasterize_text, stamp_text};
 #[cfg(feature = "tracy")]
