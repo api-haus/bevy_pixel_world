@@ -69,59 +69,49 @@ pub fn default_save_dir(_app_name: &str) -> PathBuf {
 ///
 /// All native backend futures resolve on first poll. This helper avoids
 /// pulling in a full async runtime for what is synchronous I/O.
-#[cfg(not(target_family = "wasm"))]
-pub(crate) fn block_on<T>(
-  fut: std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send + '_>>,
-) -> T {
-  use std::task::{Context, Poll, Wake, Waker};
+pub(crate) fn block_on<T>(fut: backend::BoxFuture<'_, T>) -> T {
+  use std::task::{Context, Poll, Waker};
 
-  struct NoopWaker;
-  impl Wake for NoopWaker {
-    fn wake(self: Arc<Self>) {}
-  }
+  #[cfg(not(target_family = "wasm"))]
+  let waker = {
+    use std::task::Wake;
+    struct NoopWaker;
+    impl Wake for NoopWaker {
+      fn wake(self: Arc<Self>) {}
+    }
+    Waker::from(Arc::new(NoopWaker))
+  };
 
-  let waker = Waker::from(Arc::new(NoopWaker));
+  #[cfg(target_family = "wasm")]
+  let waker = {
+    use std::task::{RawWaker, RawWakerVTable};
+    const VTABLE: RawWakerVTable = RawWakerVTable::new(
+      |_| RawWaker::new(std::ptr::null(), &VTABLE),
+      |_| {},
+      |_| {},
+      |_| {},
+    );
+    // SAFETY: VTABLE is a valid static vtable with no-op implementations.
+    unsafe { Waker::from_raw(RawWaker::new(std::ptr::null(), &VTABLE)) }
+  };
+
   let mut cx = Context::from_waker(&waker);
   let mut fut = fut;
 
-  // For native backend, futures resolve on first poll.
-  // Loop handles edge cases where a backend needs multiple polls.
+  // Native: loop with yield_now() for edge cases where multiple polls are needed.
+  // WASM: single poll only - Pending means the future requires an async runtime.
+  #[cfg(not(target_family = "wasm"))]
   loop {
     match fut.as_mut().poll(&mut cx) {
       Poll::Ready(val) => return val,
-      Poll::Pending => {
-        // Yield and try again — should not happen with native backend
-        std::thread::yield_now();
-      }
+      Poll::Pending => std::thread::yield_now(),
     }
   }
-}
 
-/// WASM version of block_on (no Send requirement, no thread yielding).
-#[cfg(target_family = "wasm")]
-pub(crate) fn block_on<T>(fut: std::pin::Pin<Box<dyn std::future::Future<Output = T> + '_>>) -> T {
-  use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
-
-  // Minimal no-op waker for WASM
-  const VTABLE: RawWakerVTable = RawWakerVTable::new(
-    |_| RawWaker::new(std::ptr::null(), &VTABLE),
-    |_| {},
-    |_| {},
-    |_| {},
-  );
-  let raw_waker = RawWaker::new(std::ptr::null(), &VTABLE);
-  let waker = unsafe { Waker::from_raw(raw_waker) };
-  let mut cx = Context::from_waker(&waker);
-  let mut fut = fut;
-
-  loop {
-    match fut.as_mut().poll(&mut cx) {
-      Poll::Ready(val) => return val,
-      Poll::Pending => {
-        // On WASM, if a future pends it won't resolve without an async runtime
-        panic!("block_on: future returned Pending on WASM (requires async runtime)");
-      }
-    }
+  #[cfg(target_family = "wasm")]
+  match fut.as_mut().poll(&mut cx) {
+    Poll::Ready(val) => val,
+    Poll::Pending => panic!("block_on: future returned Pending on WASM (requires async runtime)"),
   }
 }
 

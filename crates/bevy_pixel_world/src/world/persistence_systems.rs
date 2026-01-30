@@ -363,45 +363,34 @@ pub(crate) fn save_pixel_bodies_on_request(
 ///
 /// Runs after save systems complete. Only marks requests as complete when
 /// there's no async save in progress and no pending work in the queue.
-#[cfg(not(target_family = "wasm"))]
+///
+/// On WASM, persistence request tracking is not yet implemented (TODO).
+#[allow(clippy::needless_return)] // Early return needed for native, no-op for WASM
 pub(crate) fn notify_persistence_complete(
-  persistence: Option<ResMut<PersistenceControl>>,
+  #[cfg(not(target_family = "wasm"))] persistence: Option<ResMut<PersistenceControl>>,
   saving: Res<SavingChunks>,
   tasks: Res<PersistenceTasks>,
-  mut complete_messages: MessageWriter<PersistenceComplete>,
+  #[cfg(not(target_family = "wasm"))] mut complete_messages: MessageWriter<PersistenceComplete>,
 ) {
-  let Some(mut persistence) = persistence else {
-    return;
-  };
-
-  // Don't complete requests if there's an async save in progress
-  // or pending work in the queue
   if saving.is_busy() || has_pending_work(&tasks) {
     return;
   }
 
-  for request in persistence.pending_requests.drain(..) {
-    request.completed.store(true, Ordering::Release);
-    complete_messages.write(PersistenceComplete {
-      request_id: request.id,
-      success: true,
-      error: None,
-    });
+  #[cfg(not(target_family = "wasm"))]
+  {
+    let Some(mut persistence) = persistence else {
+      return;
+    };
+    for request in persistence.pending_requests.drain(..) {
+      request.completed.store(true, Ordering::Release);
+      complete_messages.write(PersistenceComplete {
+        request_id: request.id,
+        success: true,
+        error: None,
+      });
+    }
   }
-}
-
-/// System: Notifies pending save requests that they have completed (WASM
-/// version).
-///
-/// On WASM, we don't have PersistenceControl, so this is a no-op for now.
-/// TODO: Track WASM persistence requests separately.
-#[cfg(target_family = "wasm")]
-pub(crate) fn notify_persistence_complete(saving: Res<SavingChunks>, tasks: Res<PersistenceTasks>) {
-  // On WASM, we just check if saves are complete
-  if saving.is_busy() || has_pending_work(&tasks) {
-    return;
-  }
-  // TODO: Implement WASM persistence request tracking
+  // WASM: TODO - Track WASM persistence requests separately
 }
 
 // ===== Async Save Systems =====
@@ -529,8 +518,6 @@ pub(crate) fn poll_save_task(
   }
 
   // WASM: Save completion is handled by poll_io_results
-  #[cfg(target_family = "wasm")]
-  {}
 }
 
 /// System: Dispatches async load tasks for chunks entering the streaming
@@ -649,8 +636,6 @@ pub(crate) fn poll_chunk_loads(
   }
 
   // WASM: Chunk loading is handled by poll_io_results
-  #[cfg(target_family = "wasm")]
-  {}
 }
 
 /// Resource storing loaded chunk data waiting to be applied during seeding.
