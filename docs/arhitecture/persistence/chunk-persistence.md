@@ -343,8 +343,8 @@ At 1 pixel = 1 cm, a 1M chunk world covers 5.12 km × 5.12 km.
 Game code can trigger saves via `PersistenceControl`:
 
 ```rust
-// Request save with completion tracking
-let handle = persistence.request_save();
+// Save to current file with completion tracking
+let handle = persistence.save();
 
 // Poll in subsequent frames
 if handle.is_complete() {
@@ -353,8 +353,8 @@ if handle.is_complete() {
 ```
 
 Two save variants:
-- `request_save()` - Full save: chunks + pixel bodies
-- `request_chunk_save()` - Chunks only (faster when bodies unchanged)
+- `save()` - Save to the current file path
+- `save_to(path)` - Copy-on-write save to a new path (for "Save As" functionality)
 
 ### Auto-Save
 

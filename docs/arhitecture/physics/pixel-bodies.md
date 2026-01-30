@@ -383,9 +383,9 @@ tick_pixel_worlds
 ### Simulation Group
 ```
 detect_external_erasure
-  → clear_pixel_bodies
-  → blit_pixel_bodies
+  → update_pixel_bodies (clear + blit)
   → run_simulation
+  → sync_simulation_to_bodies
   → readback_pixel_bodies
   → apply_readback_changes
   → split_pixel_bodies

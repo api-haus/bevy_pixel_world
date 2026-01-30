@@ -105,19 +105,11 @@ flowchart TB
         end
 
         subgraph CA["Cellular Automata"]
-            S3["Run 4-phase CA"]
-            S3b["process_burning<br/>(every tick)"]
-            S3c{"heat tick?"}
-            S3d["propagate_heat"]
-            S3e["ignite_from_heat"]
-            S3 --> S3b --> S3c
-            S3c -->|"yes"| S3d --> S3e
-            S3c -->|"no"| S3end["done"]
-            S3e --> S3end
-            style S3end fill:none,stroke:none
+            S3["run_simulation<br/>(4-phase CA + heat)"]
         end
 
         subgraph Readback["Destruction Readback"]
+            S3b["Sync simulation to bodies"]
             S4["Detect destroyed pixels"]
             S5["Update shape masks"]
             S6["Split fragments"]
@@ -128,7 +120,7 @@ flowchart TB
         end
 
         S1 --> S2 --> S3
-        S3 --> S4 --> S5 --> S6 --> S7
+        S3 --> S3b --> S4 --> S5 --> S6 --> S7
     end
 
     subgraph PostSim["Post-Simulation"]
@@ -177,10 +169,8 @@ flowchart TB
 | Barrier | Entity visibility | `ApplyDeferred` | bevy built-in |
 | Body Preparation | Detect brush erasure | `detect_external_erasure` | `pixel_body::readback` |
 | Body Preparation | Clear + blit pixels | `update_pixel_bodies` | `pixel_body::blit` |
-| Cellular Automata | Run 4-phase CA | `run_simulation` | `world::plugin` |
-| Cellular Automata | Burning propagation | `process_burning` | `simulation::burning` |
-| Cellular Automata | Heat diffusion | `propagate_heat` | `simulation::heat` |
-| Cellular Automata | Heat ignition | `ignite_from_heat` | `simulation::heat` |
+| Cellular Automata | Run 4-phase CA + heat | `run_simulation` | `world::plugin` |
+| Destruction Readback | Sync world state to bodies | `sync_simulation_to_bodies` | `pixel_body::readback` |
 | Destruction Readback | Detect destroyed pixels | `readback_pixel_bodies` | `pixel_body::readback` |
 | Destruction Readback | Update shape masks | `apply_readback_changes` | `pixel_body::readback` |
 | Destruction Readback | Split fragments | `split_pixel_bodies` | `pixel_body::split` |
@@ -366,11 +356,13 @@ block-beta
 
 Tiles of the same phase are never adjacent, guaranteeing thread-safe read/write access within each phase. See [Scheduling](simulation/scheduling.md) for details.
 
-After the 4-phase CA, `simulate_tick` runs heat and burning sub-steps:
+After the 4-phase CA, `simulate_tick` runs heat and burning sub-steps internally (not as separate registered Bevy systems):
 
 1. **`process_burning`** (every tick, per chunk) — spreads fire to flammable neighbors with per-neighbor probability (`ignite_spread_chance`), transforms fully-burned pixels to ash
 2. **`propagate_heat`** (every `heat_tick_interval` ticks) — accumulates heat from burning pixels, diffuses across the 16×16 heat grid with a `cooling_factor`, and propagates heat across chunk boundaries
 3. **`ignite_from_heat`** (immediately after `propagate_heat`) — ignites flammable pixels when their heat cell meets or exceeds the material's `ignition_threshold`
+
+These are synchronous function calls within `run_simulation`, not schedulable systems.
 
 ### Design Decisions
 

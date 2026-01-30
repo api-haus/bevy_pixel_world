@@ -76,9 +76,10 @@ fn extract_tile_grid(
         }
 
         let material = materials.get(pixel.material);
-        // Solid and Powder materials form collision surfaces
-        // Liquids and gases do not
-        *cell = matches!(material.state, PhysicsState::Solid | PhysicsState::Powder);
+        // Solid and Powder materials form collision surfaces when settled
+        // Liquids, gases, and falling particles do not
+        *cell = matches!(material.state, PhysicsState::Solid | PhysicsState::Powder)
+          && !pixel.flags.contains(PixelFlags::FALLING);
       }
     }
   }
