@@ -1,41 +1,50 @@
+//! Fixed-timestep interpolation for smooth character rendering.
+
 use bevy::prelude::*;
 
-use super::components::{CurrentPosition, Player, PlayerVisual, PreviousPosition};
+use super::components::{InterpolationState, Player, PlayerVisual, VisualPosition};
 
-/// Runs in FixedFirst: Shift positions for interpolation
-pub fn shift_positions(
-  mut players: Query<(&mut PreviousPosition, &CurrentPosition), With<Player>>,
-) {
-  for (mut prev, current) in &mut players {
-    prev.0 = current.0;
+/// FixedFirst: Shift previous = current before physics runs.
+pub fn shift_interpolation_state(mut query: Query<&mut InterpolationState, With<Player>>) {
+  for mut state in &mut query {
+    state.previous = state.current;
   }
 }
 
-/// Runs after Rapier writeback: Store new current position
-pub fn store_current_position(
-  mut players: Query<(&Transform, &mut CurrentPosition), With<Player>>,
+/// FixedUpdate (after Writeback): Store new physics position.
+pub fn store_physics_position(
+  mut query: Query<(&Transform, &mut InterpolationState), With<Player>>,
 ) {
-  for (transform, mut current) in &mut players {
-    current.0 = transform.translation;
+  for (transform, mut state) in &mut query {
+    state.current = transform.translation;
   }
 }
 
-/// Runs in Update: Interpolate the visual child entity for smooth rendering
-pub fn interpolate_visual(
-  physics_query: Query<(&Transform, &PreviousPosition, &CurrentPosition, &Children), With<Player>>,
-  mut visual_query: Query<&mut Transform, (With<PlayerVisual>, Without<Player>)>,
+/// Update: Calculate interpolated position using overstep fraction.
+pub fn interpolate_visual_position(
+  mut query: Query<(&InterpolationState, &mut VisualPosition), With<Player>>,
   fixed_time: Res<Time<Fixed>>,
 ) {
   let t = fixed_time.overstep_fraction();
-
-  for (physics_transform, prev, current, children) in &physics_query {
-    let interpolated_world = prev.0.lerp(current.0, t);
-
-    for child in children.iter() {
-      if let Ok(mut visual_transform) = visual_query.get_mut(child) {
-        // Local offset = interpolated world position - parent world position
-        visual_transform.translation = interpolated_world - physics_transform.translation;
-      }
-    }
+  for (state, mut visual) in &mut query {
+    visual.0 = state.previous.lerp(state.current, t);
   }
+}
+
+/// Update: Sync sprite transform to interpolated position.
+///
+/// The sprite is a separate root entity, so we set its position directly.
+pub fn sync_sprite_to_visual(
+  player_query: Query<&VisualPosition, With<Player>>,
+  mut visual_query: Query<&mut Transform, With<PlayerVisual>>,
+) {
+  let Ok(visual_pos) = player_query.single() else {
+    return;
+  };
+  let Ok(mut sprite_tf) = visual_query.single_mut() else {
+    return;
+  };
+  sprite_tf.translation.x = visual_pos.0.x;
+  sprite_tf.translation.y = visual_pos.0.y;
+  // Keep z unchanged (render order)
 }

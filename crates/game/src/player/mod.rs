@@ -31,39 +31,49 @@ impl Plugin for PlayerPlugin {
     #[cfg(not(feature = "editor"))]
     app.add_systems(Startup, spawn::spawn_player);
 
-    // Player systems - always registered, but only run when player exists
+    // FixedFirst: Shift interpolation state
+    app.add_systems(FixedFirst, interpolation::shift_interpolation_state);
+
+    // FixedUpdate: Physics input
     app
-      // FixedFirst: Shift positions for interpolation
-      .add_systems(FixedFirst, interpolation::shift_positions)
       .add_systems(
         FixedUpdate,
         (
-          flight::process_locomotion_transitions, // Handle input (may enter/exit Flying)
-          movement::handle_movement_input,        // Horizontal movement
-          movement::apply_locomotion_physics,     // Gravity (Airborne only)
-          movement::apply_velocity_to_controller, // Send to physics
+          flight::process_locomotion_transitions,
+          movement::handle_movement_input,
+          movement::apply_locomotion_physics,
+          movement::apply_velocity_to_controller,
         )
           .chain()
           .before(PhysicsSet::SyncBackend),
       )
-      // Read physics output AFTER Rapier writeback (still in FixedUpdate)
       .add_systems(
         FixedUpdate,
         (
           movement::sync_ground_from_physics,
-          interpolation::store_current_position,
+          interpolation::store_physics_position,
         )
           .chain()
           .after(PhysicsSet::Writeback),
-      )
-      // Update: Interpolate the visual child for smooth rendering
-      .add_systems(
-        Update,
-        (
-          interpolation::interpolate_visual,
-          spawn_body::spawn_body_on_input,
-          spawn_body::tag_new_bodies_as_bombs,
-        ),
       );
+
+    // Update: Calculate interpolated position and sync sprite
+    app.add_systems(
+      Update,
+      (
+        interpolation::interpolate_visual_position,
+        interpolation::sync_sprite_to_visual,
+      )
+        .chain(),
+    );
+
+    // Misc systems
+    app.add_systems(
+      Update,
+      (
+        spawn_body::spawn_body_on_input,
+        spawn_body::tag_new_bodies_as_bombs,
+      ),
+    );
   }
 }

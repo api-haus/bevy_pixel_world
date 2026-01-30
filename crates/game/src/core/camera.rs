@@ -2,31 +2,18 @@ use bevy::{camera::ScalingMode, prelude::*};
 use bevy_pixel_world::{PixelCamera, StreamingCamera};
 
 use crate::config::ConfigLoaded;
+use crate::player::components::{Player, VisualPosition};
 
 /// Marker component for the game camera
 #[derive(Component)]
 pub struct GameCamera;
 
-/// Marker component for entities the camera should follow
-#[derive(Component)]
-pub struct CameraTarget;
-
-/// Camera smoothing factor (higher = snappier, lower = smoother)
-#[derive(Resource)]
-pub struct CameraSmoothness(pub f32);
-
-impl Default for CameraSmoothness {
-  fn default() -> Self {
-    Self(8.0)
-  }
-}
-
-/// Simple orthographic 2D camera setup
+/// Simple orthographic 2D camera setup with pixel-perfect rendering.
 pub fn setup_camera(mut commands: Commands, config: Res<ConfigLoaded>) {
   commands.spawn((
     GameCamera,
     StreamingCamera,        // Required for PixelWorld chunk streaming
-    PixelCamera::default(), // Enable pixel-perfect rendering
+    PixelCamera::default(), // Pixel-perfect subpixel compensation
     Camera2d,
     Camera {
       order: 0,
@@ -47,26 +34,18 @@ pub fn setup_camera(mut commands: Commands, config: Res<ConfigLoaded>) {
   ));
 }
 
-/// Camera follow with dampening
+/// Camera follows the interpolated visual position of the player.
 pub fn camera_follow(
-  target_query: Query<&GlobalTransform, (With<CameraTarget>, Without<GameCamera>)>,
-  mut camera_query: Query<&mut Transform, With<GameCamera>>,
-  smoothness: Res<CameraSmoothness>,
-  time: Res<Time>,
+  player_query: Query<&VisualPosition, With<Player>>,
+  mut camera_query: Query<&mut Transform, (With<GameCamera>, Without<Player>)>,
 ) {
-  let Ok(target) = target_query.single() else {
+  let Ok(visual_pos) = player_query.single() else {
     return;
   };
-  let Ok(mut camera_transform) = camera_query.single_mut() else {
+  let Ok(mut camera_tf) = camera_query.single_mut() else {
     return;
   };
 
-  let target_pos = target.translation();
-  let current_pos = camera_transform.translation;
-
-  // Exponential smoothing: lerp factor based on time and smoothness
-  let t = (smoothness.0 * time.delta_secs()).min(1.0);
-
-  camera_transform.translation.x = current_pos.x.lerp(target_pos.x, t);
-  camera_transform.translation.y = current_pos.y.lerp(target_pos.y, t);
+  camera_tf.translation.x = visual_pos.0.x;
+  camera_tf.translation.y = visual_pos.0.y;
 }
