@@ -1,7 +1,7 @@
 pub mod actions;
 mod bindings;
 
-pub use actions::{Fly, Move, MoveVertical, PlayerInput};
+pub use actions::{Fly, Move, PlayerInput};
 use bevy::prelude::*;
 use bevy_enhanced_input::prelude::*;
 pub use bindings::player_input_actions;

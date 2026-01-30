@@ -10,14 +10,6 @@ pub struct PlayerVisual;
 #[derive(Component, Default)]
 pub struct CharacterVelocity(pub Vec2);
 
-/// Position at the START of the current physics frame (for interpolation)
-#[derive(Component, Default)]
-pub struct PreviousPosition(pub Vec3);
-
-/// Position at the END of the current physics frame (for interpolation)
-#[derive(Component, Default)]
-pub struct CurrentPosition(pub Vec3);
-
 #[derive(Component)]
 pub struct CharacterMovementConfig {
   pub walk_speed: f32,
@@ -34,7 +26,22 @@ pub enum LocomotionState {
   Flying,
 }
 
+/// Stores physics positions for fixed-timestep interpolation.
+#[derive(Component)]
+pub struct InterpolationState {
+  pub previous: Vec3,
+  pub current: Vec3,
+}
+
+impl InterpolationState {
+  pub fn new(position: Vec3) -> Self {
+    Self {
+      previous: position,
+      current: position,
+    }
+  }
+}
+
 /// The interpolated visual position for this frame.
-/// Both sprite positioning and camera follow should use this exact value.
 #[derive(Component, Default)]
 pub struct VisualPosition(pub Vec3);

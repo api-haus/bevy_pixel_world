@@ -3,14 +3,13 @@ mod flight;
 pub mod interpolation;
 pub mod movement;
 mod spawn;
+mod spawn_body;
 
 #[cfg(test)]
 mod tests;
 
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
-
-use crate::console::{in_creative_mode, in_survival_mode};
 
 pub struct PlayerPlugin;
 
@@ -32,45 +31,49 @@ impl Plugin for PlayerPlugin {
     #[cfg(not(feature = "editor"))]
     app.add_systems(Startup, spawn::spawn_player);
 
-    // Player systems - always registered, but only run when player exists
+    // FixedFirst: Shift interpolation state
+    app.add_systems(FixedFirst, interpolation::shift_interpolation_state);
+
+    // FixedUpdate: Physics input
     app
-      // FixedFirst: Shift positions for interpolation
-      .add_systems(FixedFirst, interpolation::shift_positions)
-      // Survival mode: physics-based movement
       .add_systems(
         FixedUpdate,
         (
-          flight::process_locomotion_transitions, // Handle input (may enter/exit Flying)
-          movement::handle_movement_input,        // Horizontal movement
-          movement::apply_locomotion_physics,     // Gravity (Airborne only)
-          movement::apply_velocity_to_controller, // Send to physics
+          flight::process_locomotion_transitions,
+          movement::handle_movement_input,
+          movement::apply_locomotion_physics,
+          movement::apply_velocity_to_controller,
         )
           .chain()
-          .run_if(in_survival_mode)
           .before(PhysicsSet::SyncBackend),
       )
-      // Creative mode: WASD-controlled position
       .add_systems(
         FixedUpdate,
         (
-          movement::creative_mode_handle_input,
-          movement::creative_mode_sync_player,
-        )
-          .chain()
-          .run_if(in_creative_mode)
-          .before(PhysicsSet::SyncBackend),
-      )
-      // Read physics output AFTER Rapier writeback (still in FixedUpdate)
-      .add_systems(
-        FixedUpdate,
-        (
-          movement::sync_ground_from_physics.run_if(in_survival_mode),
-          interpolation::store_current_position,
+          movement::sync_ground_from_physics,
+          interpolation::store_physics_position,
         )
           .chain()
           .after(PhysicsSet::Writeback),
+      );
+
+    // Update: Calculate interpolated position and sync sprite
+    app.add_systems(
+      Update,
+      (
+        interpolation::interpolate_visual_position,
+        interpolation::sync_sprite_to_visual,
       )
-      // Update: Interpolate the visual child for smooth rendering
-      .add_systems(Update, interpolation::interpolate_visual);
+        .chain(),
+    );
+
+    // Misc systems
+    app.add_systems(
+      Update,
+      (
+        spawn_body::spawn_body_on_input,
+        spawn_body::tag_new_bodies_as_bombs,
+      ),
+    );
   }
 }

@@ -1,5 +1,5 @@
 use bevy::{camera::ScalingMode, prelude::*};
-use bevy_pixel_world::{PixelCamera, StreamingCamera, VirtualCamera};
+use bevy_pixel_world::{PixelCamera, StreamingCamera};
 
 use crate::config::ConfigLoaded;
 use crate::player::components::{Player, VisualPosition};
@@ -8,31 +8,12 @@ use crate::player::components::{Player, VisualPosition};
 #[derive(Component)]
 pub struct GameCamera;
 
-/// Marker component for the player's virtual camera
-#[derive(Component)]
-pub struct PlayerVirtualCamera;
-
-/// Marker component for entities the camera should follow
-#[derive(Component)]
-pub struct CameraTarget;
-
-/// Camera smoothing factor (higher = snappier, lower = smoother)
-#[derive(Resource)]
-pub struct CameraSmoothness(pub f32);
-
-impl Default for CameraSmoothness {
-  fn default() -> Self {
-    Self(8.0)
-  }
-}
-
-/// Simple orthographic 2D camera setup
+/// Simple orthographic 2D camera setup with pixel-perfect rendering.
 pub fn setup_camera(mut commands: Commands, config: Res<ConfigLoaded>) {
-  // Spawn the real camera for rendering
   commands.spawn((
     GameCamera,
     StreamingCamera,        // Required for PixelWorld chunk streaming
-    PixelCamera::default(), // Enable pixel-perfect rendering
+    PixelCamera::default(), // Pixel-perfect subpixel compensation
     Camera2d,
     Camera {
       order: 0,
@@ -51,31 +32,20 @@ pub fn setup_camera(mut commands: Commands, config: Res<ConfigLoaded>) {
       area: Rect::default(),
     }),
   ));
-
-  // Spawn a virtual camera at player priority (lowest, default)
-  commands.spawn((
-    PlayerVirtualCamera,
-    VirtualCamera::new(VirtualCamera::PRIORITY_PLAYER),
-    Transform::default(),
-  ));
 }
 
-/// Camera follow - updates the virtual camera's transform to match player's
-/// interpolated position. Uses the EXACT same VisualPosition as the sprite to
-/// prevent jitter.
+/// Camera follows the interpolated visual position of the player.
 pub fn camera_follow(
   player_query: Query<&VisualPosition, With<Player>>,
-  mut camera_query: Query<&mut Transform, With<PlayerVirtualCamera>>,
+  mut camera_query: Query<&mut Transform, (With<GameCamera>, Without<Player>)>,
 ) {
   let Ok(visual_pos) = player_query.single() else {
     return;
   };
-  let Ok(mut camera_transform) = camera_query.single_mut() else {
+  let Ok(mut camera_tf) = camera_query.single_mut() else {
     return;
   };
 
-  // Use exact same position as sprite - no smoothing!
-  // Pixel camera will handle snapping uniformly for both.
-  camera_transform.translation.x = visual_pos.0.x;
-  camera_transform.translation.y = visual_pos.0.y;
+  camera_tf.translation.x = visual_pos.0.x;
+  camera_tf.translation.y = visual_pos.0.y;
 }

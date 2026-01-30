@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use bevy_enhanced_input::prelude::*;
 
-use super::actions::{Fly, Move, MoveVertical, PlayerInput};
+use super::actions::{Fly, Move, PlayerInput, SpawnBody};
 
 pub fn player_input_actions() -> impl Bundle {
   actions!(PlayerInput[
@@ -17,11 +17,8 @@ pub fn player_input_actions() -> impl Bundle {
           bindings![KeyCode::Space],
       ),
       (
-          Action::<MoveVertical>::new(),
-          Bindings::spawn((
-              Bidirectional::ws_keys(),
-              Bidirectional::up_down_arrow(),
-          )),
+          Action::<SpawnBody>::new(),
+          bindings![KeyCode::KeyF],
       ),
   ])
 }

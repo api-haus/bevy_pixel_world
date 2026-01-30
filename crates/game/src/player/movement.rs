@@ -3,9 +3,8 @@ use bevy_enhanced_input::prelude::*;
 use bevy_rapier2d::prelude::*;
 
 use super::components::{CharacterMovementConfig, CharacterVelocity, LocomotionState, Player};
-use crate::console::CreativeModePosition;
 use crate::core::GravityConfig;
-use crate::input::{Move, MoveVertical, PlayerInput};
+use crate::input::{Move, PlayerInput};
 
 /// Runs in FixedPostUpdate AFTER physics to read fresh ground state.
 pub fn sync_ground_from_physics(
@@ -120,49 +119,5 @@ pub fn apply_velocity_to_controller(
 ) {
   for (velocity, mut controller) in &mut players {
     controller.translation = Some(velocity.0 * time.delta_secs());
-  }
-}
-
-/// Speed for creative mode movement (pixels per second).
-const CREATIVE_MOVE_SPEED: f32 = 300.0;
-
-/// Updates `CreativeModePosition` based on WASD input.
-pub fn creative_mode_handle_input(
-  mut pos: ResMut<CreativeModePosition>,
-  players: Query<&Actions<PlayerInput>, With<Player>>,
-  move_actions: Query<(&Action<Move>, &ActionState)>,
-  move_vertical_actions: Query<(&Action<MoveVertical>, &ActionState)>,
-  time: Res<Time>,
-) {
-  for actions in &players {
-    let mut move_x = 0.0;
-    let mut move_y = 0.0;
-
-    for action_entity in actions.iter() {
-      if let Ok((action, action_state)) = move_actions.get(action_entity) {
-        if matches!(action_state, ActionState::Fired | ActionState::Ongoing) {
-          move_x = **action;
-        }
-      }
-      if let Ok((action, action_state)) = move_vertical_actions.get(action_entity) {
-        if matches!(action_state, ActionState::Fired | ActionState::Ongoing) {
-          move_y = **action;
-        }
-      }
-    }
-
-    pos.0.x += move_x * CREATIVE_MOVE_SPEED * time.delta_secs();
-    pos.0.y += move_y * CREATIVE_MOVE_SPEED * time.delta_secs();
-  }
-}
-
-/// Sets player transform to creative position.
-pub fn creative_mode_sync_player(
-  pos: Res<CreativeModePosition>,
-  mut players: Query<&mut Transform, With<Player>>,
-) {
-  for mut transform in &mut players {
-    transform.translation.x = pos.0.x;
-    transform.translation.y = pos.0.y;
   }
 }

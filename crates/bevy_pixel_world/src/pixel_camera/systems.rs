@@ -6,7 +6,7 @@ use bevy::prelude::*;
 use super::components::LogicalCameraPosition;
 use super::config::PixelCameraConfig;
 use super::material::PixelBlitMaterial;
-use super::setup::{PixelBlitCamera, PixelBlitQuad, PixelSceneCamera};
+use super::setup::{PixelBlitCamera, PixelBlitQuad, PixelFullresCamera, PixelSceneCamera};
 use super::state::PixelCameraState;
 
 /// System: Stores the logical camera position before snapping.
@@ -19,6 +19,21 @@ pub fn pixel_camera_store_logical(
   for (transform, mut logical_pos) in camera_query.iter_mut() {
     logical_pos.0 = Vec2::new(transform.translation.x, transform.translation.y);
   }
+}
+
+/// System: Syncs fullres camera to the logical (un-snapped) position.
+pub fn pixel_camera_sync_fullres(
+  scene_query: Query<&LogicalCameraPosition, With<PixelSceneCamera>>,
+  mut fullres_query: Query<&mut Transform, With<PixelFullresCamera>>,
+) {
+  let Ok(logical_pos) = scene_query.single() else {
+    return;
+  };
+  let Ok(mut transform) = fullres_query.single_mut() else {
+    return;
+  };
+  transform.translation.x = logical_pos.0.x;
+  transform.translation.y = logical_pos.0.y;
 }
 
 /// System: Snaps the camera to the pixel grid and calculates UV offset.

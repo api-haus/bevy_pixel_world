@@ -8,8 +8,10 @@ use bevy::render::render_resource::{
   Extent3d, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
 };
 
+/// Layer for full-resolution sprites that bypass pixel snapping.
+pub const FULLRES_SPRITE_LAYER: usize = 30;
+
 /// Layer reserved for the blit system (quad and camera).
-/// Scene camera sees all layers EXCEPT this one.
 pub const BLIT_LAYER: usize = 31;
 
 use super::components::{LogicalCameraPosition, PixelCamera};
@@ -28,6 +30,10 @@ pub struct PixelBlitQuad;
 /// Marker for the blit camera that renders to the screen.
 #[derive(Component)]
 pub struct PixelBlitCamera;
+
+/// Marker for the full-resolution sprite camera.
+#[derive(Component)]
+pub struct PixelFullresCamera;
 
 /// System: Sets up the pixel camera rendering infrastructure.
 ///
@@ -126,8 +132,8 @@ pub fn setup_pixel_camera(
   let render_target_handle = images.add(render_target);
 
   // Convert the existing camera into the scene camera (renders to low-res target)
-  // Scene camera sees all layers except the blit layer (31)
-  let scene_layers: RenderLayers = (0..BLIT_LAYER).collect();
+  // Scene camera sees layers 0-29 (excludes fullres and blit layers)
+  let scene_layers: RenderLayers = (0..FULLRES_SPRITE_LAYER).collect();
 
   // Fixed orthographic projection that exactly matches render target dimensions
   // This ensures 1 world unit = 1 pixel (no scaling artifacts)
@@ -216,6 +222,21 @@ pub fn setup_pixel_camera(
     Transform::from_xyz(0.0, 0.0, 0.0),
     Visibility::default(),
     RenderLayers::layer(BLIT_LAYER), // Only visible to blit camera
+  ));
+
+  // Spawn full-resolution camera for sprites that bypass pixel snapping
+  commands.spawn((
+    Name::new("PixelFullresCamera"),
+    PixelFullresCamera,
+    Camera2d,
+    Camera {
+      order: 1, // Render after blit
+      clear_color: ClearColorConfig::None,
+      ..default()
+    },
+    Transform::from_translation(camera_transform.translation),
+    RenderLayers::layer(FULLRES_SPRITE_LAYER),
+    Projection::Orthographic(ortho.clone()),
   ));
 
   // Update state

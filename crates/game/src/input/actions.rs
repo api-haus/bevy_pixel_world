@@ -13,5 +13,5 @@ pub struct Move;
 pub struct Fly;
 
 #[derive(Debug, InputAction)]
-#[action_output(f32)]
-pub struct MoveVertical;
+#[action_output(bool)]
+pub struct SpawnBody;

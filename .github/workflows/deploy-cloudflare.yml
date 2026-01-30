@@ -120,9 +120,10 @@ jobs:
         run: |
           WASM_FILE=$(basename crates/game/dist/*_bg.wasm)
           # Replace WASM path in HTML (trunk injects it there)
-          sed -i "s|/${WASM_FILE}|${{ secrets.R2_PUBLIC_URL }}/game.wasm|g" crates/game/dist/index.html
+          R2_WORKER_URL="https://bevy-pixel-world-assets.yura415.workers.dev"
+          sed -i "s|/${WASM_FILE}|${R2_WORKER_URL}/game.wasm|g" crates/game/dist/index.html
           # Also update the preload link
-          sed -i "s|href=\"/${WASM_FILE}\"|href=\"${{ secrets.R2_PUBLIC_URL }}/game.wasm\"|g" crates/game/dist/index.html
+          sed -i "s|href=\"/${WASM_FILE}\"|href=\"${R2_WORKER_URL}/game.wasm\"|g" crates/game/dist/index.html
           # Remove the local WASM file (served from R2)
           rm crates/game/dist/*_bg.wasm
 

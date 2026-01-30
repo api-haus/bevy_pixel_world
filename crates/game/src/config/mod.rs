@@ -50,6 +50,13 @@ pub struct PlayerConfig {
   pub acceleration: f32,
   pub air_acceleration: f32,
   pub flight_speed: f32,
+  pub snap_to_ground: f32,
+  pub max_slope_angle: f32,
+  pub autostep_height: f32,
+  pub autostep_width: f32,
+  pub sprite: String,
+  pub sprite_scale: f32,
+  pub sprite_pivot: [f32; 2],
 }
 
 #[derive(Deserialize, Debug, Clone)]

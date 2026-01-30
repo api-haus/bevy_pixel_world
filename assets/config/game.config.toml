@@ -17,8 +17,8 @@ width = 30.0
 height = 50.0
 spawn_x = 0.0
 spawn_y = 100.0
-collider_radius = 15.0
-collider_length = 20.0
+collider_radius = 13.0
+collider_length = 14.0
 sensor_width = 28.0
 sensor_height = 0.1
 float_height = 30.0
@@ -26,6 +26,13 @@ walk_speed = 100.0
 acceleration = 30.0
 air_acceleration = 15.0
 flight_speed = 200.0
+snap_to_ground = 8.0
+max_slope_angle = 60.0  # degrees
+autostep_height = 6.0
+autostep_width = 4.0
+sprite = "sprites/cc0/char.png"
+sprite_scale = 2.0
+sprite_pivot = [0.5, 0.6]  # relative units: (0.5, 0.5) = centered
 
 [ground]
 color = [0.3, 0.5, 0.3]

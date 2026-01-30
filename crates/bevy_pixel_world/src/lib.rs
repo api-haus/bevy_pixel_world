@@ -62,8 +62,8 @@ pub use pixel_body::{
   SpawnPixelBodyFromImage, finalize_pending_pixel_bodies, generate_collider, update_pixel_bodies,
 };
 pub use pixel_camera::{
-  LogicalCameraPosition, PixelBlitMaterial, PixelCamera, PixelCameraConfig, PixelCameraPlugin,
-  PixelCameraState, PixelSizeMode,
+  FULLRES_SPRITE_LAYER, LogicalCameraPosition, PixelBlitMaterial, PixelCamera, PixelCameraConfig,
+  PixelCameraPlugin, PixelCameraSet, PixelCameraState, PixelSizeMode,
 };
 pub use plugin_bundle::PixelWorldFullBundle;
 pub use primitives::{Chunk, Surface};

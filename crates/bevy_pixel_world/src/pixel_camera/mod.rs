@@ -38,11 +38,21 @@ mod systems;
 
 use bevy::prelude::*;
 use bevy::sprite_render::Material2dPlugin;
+use bevy::transform::TransformSystems;
 pub use components::{LogicalCameraPosition, PixelCamera};
 pub use config::{PixelCameraConfig, PixelSizeMode};
 pub use material::PixelBlitMaterial;
-pub use setup::{PixelBlitCamera, PixelBlitQuad, PixelSceneCamera};
+pub use setup::{
+  FULLRES_SPRITE_LAYER, PixelBlitCamera, PixelBlitQuad, PixelFullresCamera, PixelSceneCamera,
+};
 pub use state::PixelCameraState;
+
+/// System set for pixel camera systems.
+///
+/// Runs in `PostUpdate` after `TransformSystems::Propagate`.
+/// Schedule camera follow systems to run **before** this set.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PixelCameraSet;
 
 /// Plugin for pixel-perfect camera rendering.
 ///
@@ -67,23 +77,32 @@ impl Plugin for PixelCameraPlugin {
     app.init_resource::<PixelCameraConfig>();
     app.init_resource::<PixelCameraState>();
 
+    // Configure PixelCameraSet to run after transform propagation
+    app.configure_sets(
+      PostUpdate,
+      PixelCameraSet.after(TransformSystems::Propagate),
+    );
+
     // Setup system runs in Update to wait for ortho area to be computed
     app.add_systems(
       Update,
       setup::setup_pixel_camera.run_if(not(pixel_camera_initialized)),
     );
 
-    // Per-frame systems run in PostUpdate after camera_follow
+    // Per-frame systems run in PostUpdate after transforms are propagated.
+    // Camera follow systems should run BEFORE PixelCameraSet.
     app.add_systems(
       PostUpdate,
       (
         systems::pixel_camera_store_logical,
+        systems::pixel_camera_sync_fullres,
         systems::pixel_camera_snap,
         systems::pixel_camera_sync_state,
         systems::pixel_camera_handle_resize,
         systems::configure_egui_camera,
       )
         .chain()
+        .in_set(PixelCameraSet)
         .run_if(pixel_camera_initialized),
     );
   }
