@@ -94,6 +94,9 @@ impl Plugin for PixelCameraPlugin {
     app.add_systems(
       PostUpdate,
       (
+        // WASM-only: workaround for Bevy #16556 (Camera2d overrides explicit projections)
+        #[cfg(target_arch = "wasm32")]
+        setup::fix_camera_projections,
         systems::pixel_camera_store_logical,
         systems::pixel_camera_sync_fullres,
         systems::pixel_camera_snap,

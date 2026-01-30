@@ -23,8 +23,23 @@
 ## Conditional Compilation
 
 - Never duplicate functions, types, or entrypoints for `#[cfg]` gating.
-- Apply `#[cfg]` to inner fields, statements, and scopes instead.
+- Apply `#[cfg]` to inner fields, statements, and tuple items instead.
 - One function/type definition with conditional internals, not two definitions with conditional attributes.
+
+```rust
+// GOOD: #[cfg] on tuple item
+app.add_systems(Update, (
+    #[cfg(target_arch = "wasm32")]
+    wasm_only_system,
+    always_runs,
+).chain());
+
+// BAD: duplicating the entire call
+#[cfg(target_arch = "wasm32")]
+app.add_systems(Update, (wasm_only_system, always_runs).chain());
+#[cfg(not(target_arch = "wasm32"))]
+app.add_systems(Update, always_runs);
+```
 
 ## Documentation
 

@@ -188,30 +188,34 @@ pub fn setup_pixel_camera(
   // The quad should cover the entire screen in normalized device coordinates
   let quad_mesh = meshes.add(Rectangle::new(2.0, 2.0));
 
-  // Spawn main camera (renders blit quad to screen)
-  commands.spawn((
-    Name::new("PixelBlitCamera"),
-    PixelBlitCamera,
-    Camera2d,
-    Camera {
-      order: 0, // Render after scene camera
-      clear_color: ClearColorConfig::Custom(Color::BLACK),
-      ..default()
-    },
-    RenderLayers::layer(BLIT_LAYER), // Only render blit layer
-    // Fixed orthographic projection for the blit camera
-    Projection::Orthographic(OrthographicProjection {
-      near: -1.0,
-      far: 1.0,
-      scale: 1.0,
-      viewport_origin: Vec2::new(0.5, 0.5),
-      scaling_mode: bevy::camera::ScalingMode::Fixed {
-        width: 2.0,
-        height: 2.0,
+  // Spawn blit camera with projection FIRST, then add Camera2d
+  // This ensures our projection is set before Camera2d's required components kick
+  // in
+  let blit_camera = commands
+    .spawn((
+      Name::new("PixelBlitCamera"),
+      PixelBlitCamera,
+      Camera {
+        order: 0, // Render after scene camera
+        clear_color: ClearColorConfig::Custom(Color::BLACK),
+        ..default()
       },
-      area: Rect::default(),
-    }),
-  ));
+      Projection::Orthographic(OrthographicProjection {
+        near: -1.0,
+        far: 1.0,
+        scale: 1.0,
+        viewport_origin: Vec2::new(0.5, 0.5),
+        scaling_mode: bevy::camera::ScalingMode::Fixed {
+          width: 2.0,
+          height: 2.0,
+        },
+        area: Rect::default(),
+      }),
+      RenderLayers::layer(BLIT_LAYER), // Only render blit layer
+    ))
+    .id();
+  // Add Camera2d AFTER projection is set (for render pipeline registration)
+  commands.entity(blit_camera).insert(Camera2d);
 
   // Spawn blit quad
   commands.spawn((
@@ -224,26 +228,87 @@ pub fn setup_pixel_camera(
     RenderLayers::layer(BLIT_LAYER), // Only visible to blit camera
   ));
 
-  // Spawn full-resolution camera for sprites that bypass pixel snapping
-  commands.spawn((
-    Name::new("PixelFullresCamera"),
-    PixelFullresCamera,
-    Camera2d,
-    Camera {
-      order: 1, // Render after blit
-      clear_color: ClearColorConfig::None,
-      ..default()
-    },
-    Transform::from_translation(camera_transform.translation),
-    RenderLayers::layer(FULLRES_SPRITE_LAYER),
-    Projection::Orthographic(ortho.clone()),
-  ));
+  // Spawn full-resolution camera with projection FIRST, then add Camera2d
+  let fullres_camera = commands
+    .spawn((
+      Name::new("PixelFullresCamera"),
+      PixelFullresCamera,
+      Camera {
+        order: 1, // Render after blit
+        clear_color: ClearColorConfig::None,
+        ..default()
+      },
+      Projection::Orthographic(ortho.clone()),
+      Transform::from_translation(camera_transform.translation),
+      RenderLayers::layer(FULLRES_SPRITE_LAYER),
+    ))
+    .id();
+  // Add Camera2d AFTER projection is set (for render pipeline registration)
+  commands.entity(fullres_camera).insert(Camera2d);
 
   // Update state
   state.render_target = render_target_handle;
   state.target_size = UVec2::new(total_width, total_height);
   state.pixel_world_size = pixel_world_size;
   state.initialized = true;
+}
+
+/// System: Fixes camera projections once after spawn (WASM-only workaround for
+/// Bevy #16556).
+///
+/// On WASM, Camera2d's required components override explicitly set projections
+/// even when using two-phase spawn (spawn with Projection first, then insert
+/// Camera2d). This doesn't happen on native builds. This system runs once after
+/// initialization to force the correct projections on the blit and fullres
+/// cameras.
+///
+/// See: https://github.com/bevyengine/bevy/issues/16556
+#[cfg(target_arch = "wasm32")]
+pub fn fix_camera_projections(
+  mut has_run: Local<bool>,
+  state: Res<PixelCameraState>,
+  mut blit_camera_query: Query<
+    &mut Projection,
+    (With<PixelBlitCamera>, Without<PixelFullresCamera>),
+  >,
+  mut fullres_camera_query: Query<(&mut Projection, &PixelFullresCamera), Without<PixelBlitCamera>>,
+  scene_camera_query: Query<
+    &Projection,
+    (
+      With<PixelSceneCamera>,
+      Without<PixelBlitCamera>,
+      Without<PixelFullresCamera>,
+    ),
+  >,
+) {
+  if *has_run || !state.initialized {
+    return;
+  }
+
+  // Fix blit camera projection - must be Fixed 2x2 to fill the screen with the
+  // blit quad
+  for mut projection in blit_camera_query.iter_mut() {
+    *projection = Projection::Orthographic(OrthographicProjection {
+      near: -1.0,
+      far: 1.0,
+      scale: 1.0,
+      viewport_origin: Vec2::new(0.5, 0.5),
+      scaling_mode: bevy::camera::ScalingMode::Fixed {
+        width: 2.0,
+        height: 2.0,
+      },
+      area: Rect::default(),
+    });
+  }
+
+  // Fix fullres camera projection - must match scene camera
+  if let Ok(scene_projection) = scene_camera_query.single() {
+    for (mut projection, _) in fullres_camera_query.iter_mut() {
+      *projection = scene_projection.clone();
+    }
+  }
+
+  *has_run = true;
 }
 
 /// Calculates target dimensions based on pixel size mode.
