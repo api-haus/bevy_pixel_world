@@ -2,7 +2,7 @@ pub(crate) mod camera;
 mod physics;
 
 use bevy::prelude::*;
-use bevy_pixel_world::PixelCameraPlugin;
+use bevy_pixel_world::{PixelCameraPlugin, VirtualCameraPlugin};
 pub use camera::CameraTarget;
 pub use physics::GravityConfig;
 
@@ -14,6 +14,7 @@ impl Plugin for CorePlugin {
       .init_resource::<camera::CameraSmoothness>()
       .add_plugins(physics::PhysicsPlugin)
       .add_plugins(PixelCameraPlugin)
+      .add_plugins(VirtualCameraPlugin)
       .add_systems(Startup, camera::setup_camera)
       .add_systems(PostUpdate, camera::camera_follow);
   }

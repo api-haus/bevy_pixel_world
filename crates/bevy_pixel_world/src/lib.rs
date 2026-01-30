@@ -16,6 +16,7 @@ pub mod coords;
 pub mod creative_mode;
 pub mod debug_camera;
 pub mod debug_controller;
+pub mod debug_controller_ui;
 pub mod debug_shim;
 pub mod diagnostics;
 pub mod material;
@@ -34,6 +35,7 @@ pub mod simulation;
 pub mod text;
 #[cfg(feature = "tracy")]
 mod tracy_init;
+pub mod virtual_camera;
 pub mod visual_debug;
 pub mod world;
 
@@ -47,8 +49,9 @@ pub use coords::{
   WorldPos, WorldRect,
 };
 pub use creative_mode::CreativeModePlugins;
-pub use debug_camera::{CameraZoom, PixelDebugControllerCameraPlugin};
+pub use debug_camera::{CameraZoom, DebugVirtualCamera, PixelDebugControllerCameraPlugin};
 pub use debug_controller::{BrushState, PixelDebugControllerPlugin, UiPointerState};
+pub use debug_controller_ui::{BrushUiPlugin, BrushUiVisible, brush_controls_ui};
 pub use material::{Material, Materials, MaterialsConfig, PhysicsState, ids as material_ids};
 pub use persistence::{PixelBodyRecord, WorldSave};
 pub use pixel::{Pixel, PixelFlags, PixelSurface};
@@ -75,6 +78,7 @@ pub use simulation::{HeatConfig, simulate_tick};
 pub use text::{CpuFont, TextMask, TextStyle, draw_text, rasterize_text, stamp_text};
 #[cfg(feature = "tracy")]
 pub use tracy_init::init_tracy;
+pub use virtual_camera::{ActiveVirtualCamera, VirtualCamera, VirtualCameraPlugin};
 pub use world::control::{
   PersistenceComplete, PersistenceControl, PersistenceFuture, PersistenceHandle,
   RequestPersistence, SimulationState,

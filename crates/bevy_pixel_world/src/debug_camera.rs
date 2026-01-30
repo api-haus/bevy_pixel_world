@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use web_time::Instant;
 
 use crate::StreamingCamera;
+use crate::virtual_camera::{VirtualCamera, VirtualCameraPlugin};
 
 pub const CAMERA_SPEED: f32 = 500.0;
 pub const SPEED_BOOST: f32 = 5.0;
@@ -19,6 +20,7 @@ pub struct PixelDebugControllerCameraPlugin;
 impl Plugin for PixelDebugControllerCameraPlugin {
   fn build(&self, app: &mut App) {
     app
+      .add_plugins(VirtualCameraPlugin)
       .init_resource::<CameraZoom>()
       .add_systems(
         Startup,
@@ -111,7 +113,12 @@ pub fn get_camera_settings_path() -> Option<PathBuf> {
   }
 }
 
+/// Marker for the debug controller's virtual camera entity.
+#[derive(Component)]
+pub struct DebugVirtualCamera;
+
 fn setup_camera(mut commands: Commands) {
+  // Spawn a real camera for rendering
   commands.spawn((
     Camera2d,
     StreamingCamera,
@@ -126,6 +133,13 @@ fn setup_camera(mut commands: Commands) {
       },
       area: Rect::default(),
     }),
+  ));
+
+  // Spawn a virtual camera at debug priority
+  commands.spawn((
+    DebugVirtualCamera,
+    VirtualCamera::new(VirtualCamera::PRIORITY_DEBUG),
+    Transform::default(),
   ));
 }
 
@@ -158,7 +172,7 @@ fn load_camera_position(mut commands: Commands) {
 
 fn apply_camera_position(
   persistence: Res<CameraPersistence>,
-  mut camera: Query<&mut Transform, With<StreamingCamera>>,
+  mut camera: Query<&mut Transform, With<DebugVirtualCamera>>,
 ) {
   if let Ok(mut transform) = camera.single_mut() {
     transform.translation.x = persistence.last_position.x;
@@ -168,7 +182,7 @@ fn apply_camera_position(
 
 fn camera_input(
   keys: Res<ButtonInput<KeyCode>>,
-  mut camera: Query<&mut Transform, With<StreamingCamera>>,
+  mut camera: Query<&mut Transform, With<DebugVirtualCamera>>,
   time: Res<Time>,
 ) {
   let mut direction = Vec2::ZERO;
@@ -224,7 +238,7 @@ fn apply_camera_zoom(
 }
 
 fn track_camera_changes(
-  camera: Query<&Transform, With<StreamingCamera>>,
+  camera: Query<&Transform, With<DebugVirtualCamera>>,
   mut persistence: ResMut<CameraPersistence>,
 ) {
   let Ok(transform) = camera.single() else {
