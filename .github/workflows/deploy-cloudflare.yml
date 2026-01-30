@@ -4,17 +4,16 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: tenki-standard-medium-4c-8g
     permissions:
       contents: read
-      actions: write  # Required for sccache GHA cache
+      actions: write # Required for sccache GHA cache
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
-      BINARYEN_CORES: "1"  # Prevent wasm-opt SIGSEGV from race condition
+      BINARYEN_CORES: "1" # Prevent wasm-opt SIGSEGV from race condition
     steps:
       - uses: actions/checkout@v4
 
