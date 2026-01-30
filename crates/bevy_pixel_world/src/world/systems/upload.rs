@@ -9,50 +9,33 @@ use web_time::Instant;
 use super::super::{PixelWorld, SlotIndex};
 use crate::render::{ChunkMaterial, upload_heat, upload_pixels};
 
-/// Collects dirty, seeded slots that need GPU upload.
-#[allow(clippy::type_complexity)]
-fn collect_dirty_slots(
-  world: &PixelWorld,
-) -> Vec<(
-  SlotIndex,
-  Handle<Image>,
-  Handle<ChunkMaterial>,
-  Option<Handle<Image>>,
-)> {
-  world
-    .active_chunks()
-    .filter_map(|(_, idx)| {
-      let slot = world.slot(idx);
-      if !slot.dirty || !slot.is_seeded() {
-        return None;
-      }
-      Some((
-        idx,
-        slot.texture.clone()?,
-        slot.material.clone()?,
-        slot.heat_texture.clone(),
-      ))
-    })
-    .collect()
+/// Returns indices of dirty, seeded slots that need GPU upload.
+fn dirty_slot_indices(world: &PixelWorld) -> impl Iterator<Item = SlotIndex> + '_ {
+  world.active_chunks().filter_map(|(_, idx)| {
+    let slot = world.slot(idx);
+    (slot.dirty && slot.is_seeded() && slot.texture.is_some() && slot.material.is_some())
+      .then_some(idx)
+  })
 }
 
 /// Uploads a slot's pixel data to its GPU texture.
 fn upload_slot_to_gpu(
   world: &mut PixelWorld,
   idx: SlotIndex,
-  texture_handle: &Handle<Image>,
-  material_handle: &Handle<ChunkMaterial>,
-  heat_texture_handle: Option<&Handle<Image>>,
   images: &mut Assets<Image>,
   materials: &mut Assets<ChunkMaterial>,
 ) {
   let slot = world.slot_mut(idx);
 
+  // SAFETY: dirty_slot_indices() ensures these are Some
+  let texture_handle = slot.texture.as_ref().unwrap();
+  let material_handle = slot.material.as_ref().unwrap();
+
   if let Some(image) = images.get_mut(texture_handle) {
     upload_pixels(&slot.chunk.pixels, image);
   }
 
-  if let Some(heat_handle) = heat_texture_handle
+  if let Some(heat_handle) = slot.heat_texture.as_ref()
     && let Some(image) = images.get_mut(heat_handle)
   {
     upload_heat(&slot.chunk.heat, image);
@@ -77,18 +60,11 @@ pub(crate) fn upload_dirty_chunks(
   let start = Instant::now();
 
   for mut world in worlds.iter_mut() {
-    let dirty_slots = collect_dirty_slots(&world);
+    // Collect indices first to avoid borrowing issues
+    let dirty_indices: Vec<_> = dirty_slot_indices(&world).collect();
 
-    for (idx, texture_handle, material_handle, heat_handle) in dirty_slots {
-      upload_slot_to_gpu(
-        &mut world,
-        idx,
-        &texture_handle,
-        &material_handle,
-        heat_handle.as_ref(),
-        &mut images,
-        &mut materials,
-      );
+    for idx in dirty_indices {
+      upload_slot_to_gpu(&mut world, idx, &mut images, &mut materials);
     }
   }
 

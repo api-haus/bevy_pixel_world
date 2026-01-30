@@ -101,44 +101,42 @@ pub fn readback_pixel_bodies(
     return;
   };
 
-  // Collect body data for parallel processing
+  // Collect body data for parallel processing (no cloning - just references)
   let body_data: Vec<_> = bodies
     .iter()
     .filter(|(_, blitted, _)| !blitted.written_positions.is_empty())
-    .map(|(entity, blitted, existing)| (entity, blitted, existing.map(|d| d.0.clone())))
+    .map(|(entity, blitted, _)| (entity, blitted))
     .collect();
 
-  // Parallel detection phase - read-only world access
+  // Parallel detection phase - read-only world access, no merging
   let results: Vec<_> = body_data
     .par_iter()
-    .filter_map(|(entity, blitted, existing)| {
+    .filter_map(|&(entity, blitted)| {
       let destroyed_pixels = detect_destroyed_from_written(world, &blitted.written_positions);
-
-      if destroyed_pixels.is_empty() {
-        return None;
-      }
-
-      // Merge with any existing destroyed pixels (from external erasure)
-      let mut seen: HashSet<(u32, u32)> = existing
-        .as_deref()
-        .unwrap_or_default()
-        .iter()
-        .copied()
-        .collect();
-      let mut all_destroyed: Vec<_> = seen.iter().copied().collect();
-
-      for pixel in destroyed_pixels {
-        if seen.insert(pixel) {
-          all_destroyed.push(pixel);
-        }
-      }
-
-      Some((*entity, all_destroyed))
+      (!destroyed_pixels.is_empty()).then_some((entity, destroyed_pixels))
     })
     .collect();
 
-  // Sequential command application phase
-  for (entity, all_destroyed) in results {
+  // Sequential phase: merge with existing destroyed pixels (clone only when
+  // needed)
+  for (entity, new_destroyed) in results {
+    let existing = bodies.get(entity).ok().and_then(|(_, _, e)| e);
+
+    let all_destroyed = match existing {
+      Some(e) if !e.0.is_empty() => {
+        // Merge: clone existing and add new unique pixels
+        let mut seen: HashSet<(u32, u32)> = e.0.iter().copied().collect();
+        let mut merged = e.0.clone();
+        for pixel in new_destroyed {
+          if seen.insert(pixel) {
+            merged.push(pixel);
+          }
+        }
+        merged
+      }
+      _ => new_destroyed,
+    };
+
     commands
       .entity(entity)
       .insert(DestroyedPixels(all_destroyed));
