@@ -115,13 +115,14 @@ jobs:
           WASM_FILE=$(ls crates/game/dist/*_bg.wasm)
           npx wrangler r2 object put bevy-pixel-world-assets/game.wasm --file "$WASM_FILE"
 
-      # Patch JS loader to fetch WASM from R2 public URL
+      # Patch HTML to fetch WASM from R2 public URL
       - name: Patch WASM URL to R2
         run: |
           WASM_FILE=$(basename crates/game/dist/*_bg.wasm)
-          JS_FILE=$(ls crates/game/dist/*.js | grep -v snippets | head -1)
-          # Replace relative WASM path with R2 public URL
-          sed -i "s|${WASM_FILE}|${{ secrets.R2_PUBLIC_URL }}/game.wasm|g" "$JS_FILE"
+          # Replace WASM path in HTML (trunk injects it there)
+          sed -i "s|/${WASM_FILE}|${{ secrets.R2_PUBLIC_URL }}/game.wasm|g" crates/game/dist/index.html
+          # Also update the preload link
+          sed -i "s|href=\"/${WASM_FILE}\"|href=\"${{ secrets.R2_PUBLIC_URL }}/game.wasm\"|g" crates/game/dist/index.html
           # Remove the local WASM file (served from R2)
           rm crates/game/dist/*_bg.wasm
 
