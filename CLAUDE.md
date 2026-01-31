@@ -1,105 +1,70 @@
-# Project Guidelines
+# CLAUDE.md
+
+## Philosophy
+
+- **YAGNI.** Write only what's needed now. Resist "completeness."
+- **Rule of three.** Don't abstract until you've seen the pattern three times.
+- **One working primitive > many partial ones.**
 
 ## Testing
 
-- No trivial unit tests. Don't test that getters return what setters set.
-- Integration and E2E tests only. Tests should catch real bugs.
-- Visual verification via runnable examples is preferred for graphical systems.
-- Keep tests in `tests/` directory, not inline `#[cfg(test)]` modules.
-- E2E tests: `just test-pixel-world` or `cargo test -p bevy_pixel_world`. Rendering is detected at runtime — no special features needed.
+- No trivial unit tests. Integration/E2E only — tests should catch real bugs.
+- Visual verification via runnable examples preferred for graphics.
+- Tests live in `tests/`, not inline `#[cfg(test)]` modules.
+- Run: `just test-pixel-world` or `cargo test -p bevy_pixel_world`
 
-## API Design
+## Code Style
 
-- Write only what's needed for the current task. Stop when done.
-- Resist completeness. Don't add operations "because a complete API would have them."
-- Don't predict the future. Code for hypothetical requirements is usually wrong.
-- One working primitive beats many partial ones.
-
-## Code Organization
-
-- Defer abstraction until patterns repeat. Three concrete cases reveal the right abstraction.
-- Minimal public surface. Expose only what callers need.
-
-## Conditional Compilation
-
-- Never duplicate functions, types, or entrypoints for `#[cfg]` gating.
-- Apply `#[cfg]` to inner fields, statements, and tuple items instead.
-- One function/type definition with conditional internals, not two definitions with conditional attributes.
+### Conditional Compilation
+Never duplicate functions/types for `#[cfg]`. Apply to inner fields/statements instead:
 
 ```rust
-// GOOD: #[cfg] on tuple item
+// ✓ Good
 app.add_systems(Update, (
     #[cfg(target_arch = "wasm32")]
     wasm_only_system,
     always_runs,
 ).chain());
 
-// BAD: duplicating the entire call
+// ✗ Bad — duplicated call
 #[cfg(target_arch = "wasm32")]
 app.add_systems(Update, (wasm_only_system, always_runs).chain());
 #[cfg(not(target_arch = "wasm32"))]
 app.add_systems(Update, always_runs);
 ```
 
+### API Surface
+Minimal public exposure. Only what callers actually need.
+
 ## Documentation
 
-- Plans describe *what* to build, not *how*.
-- Data structure definitions are permitted in plans. Implementation code is not.
-- Use mermaid diagrams for complex systems (state machines, data flow).
+- Plans describe *what*, not *how*. Data structures OK, implementation code not.
+- Use mermaid for complex flows (state machines, data flow).
 
 ## Git
 
-Never push. The user will push manually after reviewing changes.
+**Never push.** User pushes after review.
 
-## Git Worktrees
+### Worktrees (Opt-in Only)
 
-Worktrees are **opt-in**. Only create or enter a worktree when the user explicitly asks at the beginning of the conversation. Do not proactively create worktrees.
-
-### If a Worktree Is Requested
-
-1. Establish the worktree before any other work:
-   ```bash
-   git worktree list
-   git worktree add ../sim2d-<descriptive-name> -b <type>/<description>
-   cd ../sim2d-<descriptive-name>
-   ```
-
-2. **Carry the working directory through the entire session** — all plans, file reads, edits, and commands must use the worktree path, not the main repo path.
-
-3. Plans must include a Working Directory header:
-   ```markdown
-   ## Working Directory
-   `/home/midori/_dev/sim2d-<suffix>` (branch: `<type>/<description>`)
-   ```
-
-### Matching Task to Worktree
-
-If a worktree already exists for your task type, use it:
-- Docs tasks → worktree with `docs/*` branch
-- Refactoring → worktree with `refactor/*` branch
-- Feature work → worktree with `feat/*` branch
-- Bug fixes → worktree with `fix/*` branch
-
-If no matching worktree exists, create one.
-
-### Creating a Worktree
+Only create when explicitly requested. If requested:
 
 ```bash
-# Examples:
-git worktree add ../sim2d-arch-docs -b docs/architecture-reorg
-git worktree add ../sim2d-plugin-helpers -b refactor/plugin-helpers
-git worktree add ../sim2d-physics-desync -b fix/physics-desync-on-load
+git worktree add ../sim2d-<name> -b <type>/<description>
+cd ../sim2d-<name>
+# All work happens here, not main repo
 ```
 
-> **Note**: Global `~/.cargo/config.toml` sets `target-dir` to `/home/midori/_dev/sim2d-target`. All worktrees automatically share this compilation cache — no manual copying needed.
+| Task type | Branch prefix |
+|-----------|---------------|
+| Features  | `feat/`       |
+| Fixes     | `fix/`        |
+| Refactors | `refactor/`   |
+| Docs      | `docs/`       |
 
-### Conventions
+Location: sibling dirs (`../sim2d-<descriptive-suffix>`).
+Shared target dir via `~/.cargo/config.toml` — no cache copying needed.
 
-- **Location**: Sibling directories (`../sim2d-<suffix>`)
-- **Descriptive names**: `../sim2d-physics-desync-fix` not `../sim2d-fix`
-- **Branch naming**: `<type>/<description>`
-- **Cleanup**: `git worktree remove ../sim2d-<suffix>` when merged
+---
 
-## References
-
-See `docs/implementation/methodology.md` for full rationale.
+*See `docs/implementation/methodology.md` for rationale.*
