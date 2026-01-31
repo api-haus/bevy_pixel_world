@@ -28,6 +28,8 @@ pub struct CrtParams {
   pub glow_brightness: Vec2,
   /// Output gamma and corner size.
   pub gamma_corner: Vec2,
+  /// Humbar speed (frames per cycle) and intensity.
+  pub humbar: Vec2,
   /// Whether CRT effect is enabled (1 = on, 0 = bypass).
   pub enabled: u32,
 }
@@ -40,6 +42,7 @@ impl Default for CrtParams {
       mask: Vec2::new(0.3, 0.0),
       glow_brightness: Vec2::new(0.08, 1.4),
       gamma_corner: Vec2::new(1.75, 0.01),
+      humbar: Vec2::new(50.0, 0.1),
       enabled: 1,
     }
   }

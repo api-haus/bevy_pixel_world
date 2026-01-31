@@ -92,6 +92,7 @@ struct CrtParams {
     mask: vec2<f32>,             // strength, type
     glow_brightness: vec2<f32>,  // glow, brightness
     gamma_corner: vec2<f32>,     // gamma_out, corner_size
+    humbar: vec2<f32>,           // speed (frames/cycle), intensity
     enabled: u32,                // 1 = on, 0 = bypass
 }
 @group(2) @binding(11) var<uniform> crt_params: CrtParams;
@@ -113,23 +114,23 @@ fn overscan(pos: vec2<f32>, dx: f32, dy: f32) -> vec2<f32> {
     return p * vec2<f32>(dx, dy) * 0.5 + 0.5;
 }
 
-fn humbar(pos: f32, frame: u32) -> f32 {
-    if BAR_INTENSITY == 0.0 {
+fn humbar(pos: f32, frame: u32, bar_speed: f32, bar_intensity: f32) -> f32 {
+    if bar_intensity == 0.0 {
         return 1.0;
     }
     var p = pos;
-    if BAR_INTENSITY < 0.0 {
+    if bar_intensity < 0.0 {
         p = 1.0 - pos;
     } else {
         p = pos;
     }
-    p = fract(p + (f32(frame) % BAR_SPEED) / (BAR_SPEED - 1.0));
-    if BAR_INTENSITY < 0.0 {
+    p = fract(p + (f32(frame) % bar_speed) / (bar_speed - 1.0));
+    if bar_intensity < 0.0 {
         p = p;
     } else {
         p = 1.0 - p;
     }
-    return (1.0 - abs(BAR_INTENSITY)) + abs(BAR_INTENSITY) * p;
+    return (1.0 - abs(bar_intensity)) + abs(bar_intensity) * p;
 }
 
 fn corner(pos: vec2<f32>, output_size: vec4<f32>) -> f32 {
@@ -396,7 +397,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     if BAR_DIR > 0.5 {
         bar_pos = pos.x;
     }
-    var c = color * (1.0 - scanline_intensity) * humbar(bar_pos, frame_count) * POST_BR * corner(pos0, output_size);
+    var c = color * (1.0 - scanline_intensity) * humbar(bar_pos, frame_count, crt_params.humbar.x, crt_params.humbar.y) * POST_BR * corner(pos0, output_size);
 
     return vec4<f32>(c, 1.0);
 }

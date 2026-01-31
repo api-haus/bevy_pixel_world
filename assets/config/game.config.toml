@@ -48,5 +48,7 @@ mask_strength = 0.3       # CRT mask strength (0.0 = none, 1.0 = strong)
 mask_type = 0             # 0 = phosphor, 2 = aperture grille, 6 = trinitron, -1 = none
 glow = 0.08               # Bloom/glow intensity (0.0 = none, 0.3 = strong)
 brightness = 1.1          # Brightness boost (1.0 = normal)
-gamma = 1.4             # Output gamma (1.0 = linear, 2.2 = sRGB)
+gamma = 1.4               # Output gamma (1.0 = linear, 2.2 = sRGB)
 corner_size = 0.01        # Corner rounding (0.0 = sharp, 0.05 = rounded)
+humbar_speed = 196.0       # Rolling bar speed (frames/cycle, higher = slower)
+humbar_intensity = 0.025    # Rolling bar intensity (0.0 = off, negative = reverse)

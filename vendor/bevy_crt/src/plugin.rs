@@ -135,6 +135,10 @@ pub struct CrtConfig {
   pub gamma: f32,
   /// Corner border size (0.0 = sharp corners, 0.01 = subtle rounding).
   pub corner_size: f32,
+  /// Humbar speed in frames per cycle (higher = slower, 50 = default).
+  pub humbar_speed: f32,
+  /// Humbar intensity (0.0 = disabled, 0.1 = subtle, negative = reverse).
+  pub humbar_intensity: f32,
 }
 
 impl Default for CrtConfig {
@@ -151,6 +155,8 @@ impl Default for CrtConfig {
       brightness: 1.4,
       gamma: 1.75,
       corner_size: 0.01,
+      humbar_speed: 50.0,
+      humbar_intensity: 0.1,
     }
   }
 }
@@ -164,6 +170,7 @@ impl CrtConfig {
       mask: Vec2::new(self.mask_strength, self.mask_type as f32),
       glow_brightness: Vec2::new(self.glow, self.brightness),
       gamma_corner: Vec2::new(self.gamma, self.corner_size),
+      humbar: Vec2::new(self.humbar_speed, self.humbar_intensity),
       enabled: u32::from(self.enabled),
     }
   }
