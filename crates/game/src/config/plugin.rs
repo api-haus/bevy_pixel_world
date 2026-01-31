@@ -3,8 +3,10 @@ use bevy::{
   window::PrimaryWindow,
 };
 use bevy_common_assets::toml::TomlAssetPlugin;
+use bevy_pixel_world::pixel_camera::PixelSceneCamera;
 
 use super::{ConfigLoaded, GameConfig};
+use crate::core::camera::GameCamera;
 use crate::core::GravityConfig;
 use crate::platform::{EmbeddedAssets, PlatformConfig};
 
@@ -100,7 +102,7 @@ fn update_gravity_on_config_change(config: Res<ConfigLoaded>, mut gravity: ResMu
 
 fn update_camera_on_config_change(
   config: Res<ConfigLoaded>,
-  mut camera_query: Query<&mut Projection, With<Camera2d>>,
+  mut camera_query: Query<&mut Projection, (With<GameCamera>, Without<PixelSceneCamera>)>,
 ) {
   if config.is_changed() {
     for mut projection in camera_query.iter_mut() {

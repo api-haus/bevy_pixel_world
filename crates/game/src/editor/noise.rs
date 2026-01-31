@@ -71,6 +71,7 @@ pub fn setup(app: &mut App) {
 fn sync_profile_from_world_config(
   mut profile: ResMut<NoiseProfile>,
   world_config: Query<(Entity, &WorldConfigData)>,
+  game_mode: Res<State<crate::editor::GameMode>>,
 ) {
   match world_config.single() {
     Ok((entity, config)) => {
@@ -81,16 +82,34 @@ fn sync_profile_from_world_config(
       };
 
       if needs_sync {
+        let was_first_sync = profile.synced_from.is_none();
+        let in_edit_mode = *game_mode.get() == crate::editor::GameMode::Editing;
+
         profile.ent = config.noise_ent.clone();
         profile.world_seed = config.world_seed;
         profile.threshold = config.threshold;
         profile.synced_from = Some(entity);
-        profile.dirty = true; // Trigger seeder update
+
+        // On first sync in EDIT mode, set dirty to update the seeder.
+        // The world spawns with a default MaterialSeeder::new(42), so we need
+        // to update it to match the yoleck config.
+        //
+        // In PLAY mode, don't set dirty - we want to load from persistence,
+        // not reseed with procedural noise.
+        //
+        // On re-sync (returning to edit mode), don't set dirty here - the
+        // poll_pending_reseed system handles seeder update before reseed.
+        if was_first_sync && in_edit_mode {
+          profile.dirty = true;
+        }
+
         info!(
-          "Synced noise profile from level: seed={}, threshold={}, ent={}",
+          "Synced noise profile from level: seed={}, threshold={}, ent={} (first_sync={}, edit_mode={})",
           config.world_seed,
           config.threshold,
-          &config.noise_ent[..config.noise_ent.len().min(20)]
+          &config.noise_ent[..config.noise_ent.len().min(20)],
+          was_first_sync,
+          in_edit_mode
         );
       }
     }

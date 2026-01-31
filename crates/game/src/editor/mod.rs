@@ -11,7 +11,10 @@ mod ui;
 
 use bevy::prelude::*;
 #[cfg(feature = "editor")]
-use bevy_pixel_world::{PersistenceControl, ReloadAllChunks, SimulationState};
+use bevy_pixel_world::{
+  FreshReseedAllChunks, MaterialSeeder, PersistenceControl, PersistenceHandle, ReloadAllChunks,
+  SimulationState, UpdateSeeder,
+};
 #[cfg(feature = "editor")]
 use bevy_yoleck::YoleckEditorLevelsDirectoryPath;
 #[cfg(feature = "editor")]
@@ -19,6 +22,14 @@ use bevy_yoleck::prelude::YoleckSyncWithEditorState;
 use bevy_yoleck::prelude::*;
 use bevy_yoleck::vpeol::prelude::*;
 pub use entities::{PlayerSpawnPoint, WorldConfigData};
+
+/// Pending reseed after save completes.
+///
+/// When entering edit mode, we save first, then reseed. This resource holds
+/// the save handle so we can poll for completion before reseeding.
+#[cfg(feature = "editor")]
+#[derive(Resource)]
+struct PendingReseedAfterSave(PersistenceHandle);
 
 /// Game mode state controlling editor vs play mode.
 #[derive(States, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -76,6 +87,11 @@ impl Plugin for EditorPlugin {
       // Sync simulation/persistence with edit mode
       app.add_systems(OnEnter(GameMode::Editing), on_enter_editing);
       app.add_systems(OnEnter(GameMode::Playing), on_enter_playing);
+      // Poll for save completion, then reseed
+      app.add_systems(
+        Update,
+        poll_pending_reseed.run_if(in_state(GameMode::Editing)),
+      );
     }
     #[cfg(not(feature = "editor"))]
     {
@@ -101,18 +117,17 @@ fn load_default_level(mut commands: Commands, asset_server: Res<AssetServer>) {
 
 #[cfg(feature = "editor")]
 fn on_enter_editing(
+  mut commands: Commands,
   simulation: Option<ResMut<SimulationState>>,
   mut persistence: Option<ResMut<PersistenceControl>>,
   brush: Option<ResMut<bevy_pixel_world::BrushState>>,
 ) {
   // Trigger save BEFORE disabling persistence.
-  // This adds to pending_requests which will be processed by Update systems
-  // even after persistence is disabled (process_pending_save_requests doesn't
-  // check is_enabled). Chunks stay in Active state so needs_save() returns true.
-  // When entering play mode, ReloadAllChunks will load from disk.
+  // Store the handle so we can reseed AFTER save completes.
   if let Some(ref mut pers) = persistence {
     if pers.is_active() {
-      let _handle = pers.save();
+      let handle = pers.save();
+      commands.insert_resource(PendingReseedAfterSave(handle));
       info!("Triggered save before entering edit mode");
     }
   }
@@ -126,10 +141,42 @@ fn on_enter_editing(
   if let Some(mut brush) = brush {
     brush.enabled = false;
   }
-  // Note: We intentionally do NOT reseed here. The save triggered above needs
-  // chunks to stay in Active state so needs_save() returns true. When re-entering
-  // play mode, ReloadAllChunks will load the saved state from disk.
+
   info!("Edit mode: simulation paused, persistence disabled, brush disabled");
+}
+
+/// System: Polls for pending save completion, then reseeds with correct noise profile.
+#[cfg(feature = "editor")]
+fn poll_pending_reseed(
+  mut commands: Commands,
+  pending: Option<Res<PendingReseedAfterSave>>,
+  profile: Res<noise::NoiseProfile>,
+  mut update_seeder: bevy::ecs::message::MessageWriter<UpdateSeeder>,
+  mut fresh_reseed: bevy::ecs::message::MessageWriter<FreshReseedAllChunks>,
+) {
+  let Some(pending) = pending else { return };
+
+  if pending.0.is_complete() {
+    // Update seeder from the current noise profile BEFORE reseeding.
+    // This ensures chunks are seeded with the yoleck-saved noise config,
+    // not the default MaterialSeeder::new(42) from world spawn.
+    if let Some(seeder) = MaterialSeeder::from_encoded(&profile.ent, profile.world_seed) {
+      let seeder = seeder.threshold(profile.threshold);
+      update_seeder.write(UpdateSeeder {
+        seeder: std::sync::Arc::new(seeder),
+      });
+      info!(
+        "Updated seeder from noise profile: seed={}, threshold={}",
+        profile.world_seed, profile.threshold
+      );
+    } else {
+      warn!("Failed to create seeder from noise profile ENT");
+    }
+
+    fresh_reseed.write(FreshReseedAllChunks);
+    commands.remove_resource::<PendingReseedAfterSave>();
+    info!("Save complete, reseeding chunks with fresh procedural data");
+  }
 }
 
 #[cfg(feature = "editor")]
