@@ -42,11 +42,11 @@ sky_colors = [
 enabled = true
 curvature_x = 0.03      # Horizontal curvature (0.0 = flat, 0.03 = subtle)
 curvature_y = 0.04      # Vertical curvature (0.0 = flat, 0.04 = subtle)
-scanline_intensity = 0.6  # Scanline visibility (0.0 = none, 1.0 = max)
-scanline_sharpness = 0.75 # Scanline sharpness (0.5 = soft, 1.0 = sharp)
+scanline_intensity = 0.1  # Scanline visibility (0.0 = none, 1.0 = max)
+scanline_sharpness = 0.24 # Scanline sharpness (0.5 = soft, 1.0 = sharp)
 mask_strength = 0.3       # CRT mask strength (0.0 = none, 1.0 = strong)
 mask_type = 0             # 0 = phosphor, 2 = aperture grille, 6 = trinitron, -1 = none
 glow = 0.08               # Bloom/glow intensity (0.0 = none, 0.3 = strong)
-brightness = 1.4          # Brightness boost (1.0 = normal)
-gamma = 1.75              # Output gamma (1.0 = linear, 2.2 = sRGB)
+brightness = 1.1          # Brightness boost (1.0 = normal)
+gamma = 1.4             # Output gamma (1.0 = linear, 2.2 = sRGB)
 corner_size = 0.01        # Corner rounding (0.0 = sharp, 0.05 = rounded)

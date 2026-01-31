@@ -375,14 +375,21 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let gamma_out = crt_params.gamma_corner.x;
     color = pow(color, vec3<f32>(1.0 / gamma_out));
 
-    // Scanlines - aligned to game pixels, use configurable intensity/sharpness
+    // Scanlines - analytically anti-aliased using screen-space derivatives
     let scanline_max_intensity = crt_params.scanline.x;
     let scanline_sharpness = crt_params.scanline.y;
     let game_pixel_y = uv.y * source_size.y;
+
+    // Calculate screen-space derivative for anti-aliasing
+    let dpy = fwidth(game_pixel_y);
+    let aa_width = max(dpy * 0.5, 0.001);  // Half-pixel transition width
+
     let scanline_fract = fract(game_pixel_y);
-    let scanline_intensity_linear = max(abs(4.0 * scanline_fract - 2.0) - 1.0, 0.0);
-    let scanline_intensity_full = smoothstep(0.0, 1.0, pow(scanline_intensity_linear, scanline_sharpness));
-    let scanline_intensity = scanline_intensity_full * scanline_max_intensity;
+    // Triangular wave: 0 at center, 1 at edges
+    let scanline_wave = abs(2.0 * scanline_fract - 1.0);
+    // Smooth the wave using the derivative-based width
+    let scanline_smooth = smoothstep(1.0 - aa_width, 1.0, scanline_wave);
+    let scanline_intensity = pow(scanline_smooth, scanline_sharpness) * scanline_max_intensity;
 
     // Hum bar and corner
     var bar_pos = pos.y;
