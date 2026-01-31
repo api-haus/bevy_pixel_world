@@ -19,8 +19,8 @@ const ISCANS: f32 = 0.25;        // Interlacing saturation
 
 @group(2) @binding(0) var source_texture: texture_2d<f32>;
 @group(2) @binding(1) var source_sampler: sampler;
-@group(2) @binding(2) var<uniform> texture_size: vec2<f32>;
-@group(2) @binding(3) var<uniform> frame_count: u32;
+@group(2) @binding(2) var<uniform> texture_size: vec4<f32>;  // Padded for WebGL (xy used)
+@group(2) @binding(3) var<uniform> frame_count: vec4<u32>;  // Padded for WebGL 16-byte alignment
 
 fn plant(tar: vec3<f32>, r: f32) -> vec3<f32> {
     let t = max(max(tar.r, tar.g), tar.b) + 0.00001;
@@ -64,7 +64,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     if INTER <= original_size.y / yres_div && INTERM > 0.5 && INTRES != 1.0 && INTRES != 0.5 {
         intera = 0.25;
         let line_no = clamp(floor(original_size.y * uv.y % 2.0), 0.0, 1.0);
-        let frame_no = clamp(floor(f32(frame_count) % 2.0), 0.0, 1.0);
+        let frame_no = clamp(floor(f32(frame_count.x) % 2.0), 0.0, 1.0);
         let ii = abs(line_no - frame_no);
 
         if INTERM < 3.5 {

@@ -20,7 +20,7 @@ const CS: f32 = 0.0;         // Color space
 
 @group(2) @binding(0) var source_texture: texture_2d<f32>;
 @group(2) @binding(1) var source_sampler: sampler;
-@group(2) @binding(2) var<uniform> texture_size: vec2<f32>;
+@group(2) @binding(2) var<uniform> texture_size: vec4<f32>;  // Padded for WebGL (xy used)
 @group(2) @binding(3) var afterglow_texture: texture_2d<f32>;
 @group(2) @binding(4) var afterglow_sampler: sampler;
 

@@ -20,7 +20,7 @@ const SPIKE: f32 = 1.0;
 
 @group(2) @binding(0) var source_texture: texture_2d<f32>;
 @group(2) @binding(1) var source_sampler: sampler;
-@group(2) @binding(2) var<uniform> texture_size: vec2<f32>;
+@group(2) @binding(2) var<uniform> texture_size: vec4<f32>;  // Padded for WebGL (xy used)
 
 fn gaussian(x: f32) -> f32 {
     let inv_sigma_sq = 1.0 / (2.0 * SIGMA_HOR * SIGMA_HOR * INTERNAL_RES * INTERNAL_RES);
@@ -31,7 +31,7 @@ fn gaussian(x: f32) -> f32 {
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let uv = in.uv;
 
-    let inv_text_size = 1.0 / texture_size;
+    let inv_text_size = 1.0 / texture_size.xy;
     let original_size = vec4<f32>(texture_size.x, texture_size.y, inv_text_size.x, inv_text_size.y);
     let source_size = original_size * vec4<f32>(PRESCALE_X, PRESCALE_Y, 1.0 / PRESCALE_X, 1.0 / PRESCALE_Y);
 

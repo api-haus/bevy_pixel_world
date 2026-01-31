@@ -16,6 +16,7 @@ pub struct TextureSizeUniform {
 /// Configurable CRT parameters passed to deconvergence shader.
 ///
 /// Field order matters for WGSL alignment - Vec2 fields first, then scalars.
+/// Total size must be multiple of 16 bytes for WebGL compatibility.
 #[derive(Clone, Copy, ShaderType)]
 pub struct CrtParams {
   /// Curvature amount (x, y).
@@ -30,8 +31,8 @@ pub struct CrtParams {
   pub gamma_corner: Vec2,
   /// Humbar speed (frames per cycle) and intensity.
   pub humbar: Vec2,
-  /// Whether CRT effect is enabled (1 = on, 0 = bypass).
-  pub enabled: u32,
+  /// Whether CRT effect is enabled (1 = on, 0 = bypass). Padded for WebGL.
+  pub enabled: UVec4,
 }
 
 impl Default for CrtParams {
@@ -43,7 +44,7 @@ impl Default for CrtParams {
       glow_brightness: Vec2::new(0.08, 1.4),
       gamma_corner: Vec2::new(1.75, 0.01),
       humbar: Vec2::new(50.0, 0.1),
-      enabled: 1,
+      enabled: UVec4::new(1, 0, 0, 0),
     }
   }
 }
@@ -58,7 +59,7 @@ pub struct AfterglowMaterial {
 
   /// Texture dimensions.
   #[uniform(2)]
-  pub texture_size: Vec2,
+  pub texture_size: Vec4, // Padded for WebGL 16-byte alignment (xy used)
 
   /// Previous afterglow output (feedback loop).
   #[texture(3)]
@@ -82,7 +83,7 @@ pub struct PreMaterial {
 
   /// Texture dimensions.
   #[uniform(2)]
-  pub texture_size: Vec2,
+  pub texture_size: Vec4, // Padded for WebGL 16-byte alignment (xy used)
 
   /// Afterglow pass output.
   #[texture(3)]
@@ -106,11 +107,12 @@ pub struct LinearizeMaterial {
 
   /// Texture dimensions.
   #[uniform(2)]
-  pub texture_size: Vec2,
+  pub texture_size: Vec4, // Padded for WebGL 16-byte alignment (xy used)
 
-  /// Current frame count (for interlacing).
+  /// Current frame count (for interlacing). Padded to UVec4 for WebGL
+  /// alignment.
   #[uniform(3)]
-  pub frame_count: u32,
+  pub frame_count: UVec4,
 }
 
 impl Material2d for LinearizeMaterial {
@@ -129,7 +131,7 @@ pub struct PostMaterial {
 
   /// Texture dimensions.
   #[uniform(2)]
-  pub texture_size: Vec2,
+  pub texture_size: Vec4, // Padded for WebGL 16-byte alignment (xy used)
 }
 
 impl Material2d for PostMaterial {
@@ -148,7 +150,7 @@ pub struct BloomHorizontal {
 
   /// Texture dimensions.
   #[uniform(2)]
-  pub texture_size: Vec2,
+  pub texture_size: Vec4, // Padded for WebGL 16-byte alignment (xy used)
 }
 
 impl Material2d for BloomHorizontal {
@@ -167,7 +169,7 @@ pub struct BloomVertical {
 
   /// Texture dimensions.
   #[uniform(2)]
-  pub texture_size: Vec2,
+  pub texture_size: Vec4, // Padded for WebGL 16-byte alignment (xy used)
 }
 
 impl Material2d for BloomVertical {
@@ -186,7 +188,7 @@ pub struct PostMaterial2 {
 
   /// Texture dimensions.
   #[uniform(2)]
-  pub texture_size: Vec2,
+  pub texture_size: Vec4, // Padded for WebGL 16-byte alignment (xy used)
 
   /// Linearize pass output (for gamma info).
   #[texture(3)]
@@ -195,7 +197,7 @@ pub struct PostMaterial2 {
 
   /// Source game resolution (for pixel-aligned scanlines).
   #[uniform(5)]
-  pub source_size: Vec2,
+  pub source_size: Vec4, // Padded for WebGL 16-byte alignment (xy used)
 }
 
 impl Material2d for PostMaterial2 {
@@ -214,7 +216,7 @@ pub struct DeconvergenceMaterial {
 
   /// Texture dimensions.
   #[uniform(2)]
-  pub texture_size: Vec2,
+  pub texture_size: Vec4, // Padded for WebGL 16-byte alignment (xy used)
 
   /// Linearize pass output (for gamma info).
   #[texture(3)]
@@ -231,13 +233,13 @@ pub struct DeconvergenceMaterial {
   #[sampler(8)]
   pub pre_pass: Handle<Image>,
 
-  /// Current frame count (for effects).
+  /// Current frame count (for effects). Padded to UVec4 for WebGL alignment.
   #[uniform(9)]
-  pub frame_count: u32,
+  pub frame_count: UVec4,
 
   /// Source game resolution (for pixel-aligned mask/scanlines).
   #[uniform(10)]
-  pub source_size: Vec2,
+  pub source_size: Vec4, // Padded for WebGL 16-byte alignment (xy used)
 
   /// Configurable CRT parameters.
   #[uniform(11)]

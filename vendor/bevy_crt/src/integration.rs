@@ -113,12 +113,13 @@ pub fn setup_crt_with_pixel_camera<BlitMarker: Component>(
 
   // Create fullscreen quad mesh
   let quad = meshes.add(Rectangle::new(2.0, 2.0));
-  let texture_size = Vec2::new(width as f32, height as f32);
+  // Pad to Vec4 for WebGL 16-byte alignment
+  let texture_size = Vec4::new(width as f32, height as f32, 0.0, 0.0);
 
   // Get source game resolution (low-res pixel dimensions)
   let source_size = pixel_camera_state
     .as_ref()
-    .map(|s| Vec2::new(s.target_size.x as f32, s.target_size.y as f32))
+    .map(|s| Vec4::new(s.target_size.x as f32, s.target_size.y as f32, 0.0, 0.0))
     .unwrap_or(texture_size);
 
   // CRT passes start after the blit camera's order (0)
@@ -158,7 +159,7 @@ pub fn setup_crt_with_pixel_camera<BlitMarker: Component>(
   let linearize_mat = linearize_materials.add(LinearizeMaterial {
     source_image: pre_target.clone(),
     texture_size,
-    frame_count: 0,
+    frame_count: UVec4::ZERO,
   });
   spawn_crt_pass(
     &mut commands,
@@ -234,7 +235,7 @@ pub fn setup_crt_with_pixel_camera<BlitMarker: Component>(
     linearize_pass: linearize_target.clone(),
     bloom_pass: bloom_v_target.clone(),
     pre_pass: pre_target.clone(),
-    frame_count: 0,
+    frame_count: UVec4::ZERO,
     source_size,
     params: crt_config.to_params(),
   });

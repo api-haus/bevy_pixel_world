@@ -47,7 +47,7 @@ const EPS: f32 = 1e-10;
 
 @group(2) @binding(0) var pass1_texture: texture_2d<f32>;
 @group(2) @binding(1) var pass1_sampler: sampler;
-@group(2) @binding(2) var<uniform> texture_size: vec2<f32>;
+@group(2) @binding(2) var<uniform> texture_size: vec4<f32>;  // Padded for WebGL (xy used)
 @group(2) @binding(3) var linearize_texture: texture_2d<f32>;
 @group(2) @binding(4) var linearize_sampler: sampler;
 
@@ -109,7 +109,7 @@ fn gaussian(x: f32) -> f32 {
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let uv = in.uv;
 
-    let inv_text_size = 1.0 / texture_size;
+    let inv_text_size = 1.0 / texture_size.xy;
     let original_size = vec4<f32>(texture_size.x, texture_size.y, inv_text_size.x, inv_text_size.y);
     let o_source_size = original_size * vec4<f32>(PRESCALE_X, PRESCALE_Y, 1.0 / PRESCALE_X, 1.0 / PRESCALE_Y);
     var source_size = vec4<f32>(o_source_size.x, original_size.y, o_source_size.z, original_size.w);

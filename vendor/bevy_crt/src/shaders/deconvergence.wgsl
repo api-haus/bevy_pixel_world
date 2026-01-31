@@ -75,15 +75,15 @@ const EPS: f32 = 1e-10;
 
 @group(2) @binding(0) var source_texture: texture_2d<f32>;
 @group(2) @binding(1) var source_sampler: sampler;
-@group(2) @binding(2) var<uniform> texture_size: vec2<f32>;
+@group(2) @binding(2) var<uniform> texture_size: vec4<f32>;  // Padded for WebGL (xy used)
 @group(2) @binding(3) var linearize_texture: texture_2d<f32>;
 @group(2) @binding(4) var linearize_sampler: sampler;
 @group(2) @binding(5) var bloom_texture: texture_2d<f32>;
 @group(2) @binding(6) var bloom_sampler: sampler;
 @group(2) @binding(7) var pre_texture: texture_2d<f32>;
 @group(2) @binding(8) var pre_sampler: sampler;
-@group(2) @binding(9) var<uniform> frame_count: u32;
-@group(2) @binding(10) var<uniform> source_size: vec2<f32>;
+@group(2) @binding(9) var<uniform> frame_count: vec4<u32>;  // Padded for WebGL 16-byte alignment
+@group(2) @binding(10) var<uniform> source_size: vec4<f32>;  // Padded for WebGL (xy used)
 
 // Configurable CRT parameters from Rust (field order must match Rust struct)
 struct CrtParams {
@@ -93,7 +93,7 @@ struct CrtParams {
     glow_brightness: vec2<f32>,  // glow, brightness
     gamma_corner: vec2<f32>,     // gamma_out, corner_size
     humbar: vec2<f32>,           // speed (frames/cycle), intensity
-    enabled: u32,                // 1 = on, 0 = bypass
+    enabled: vec4<u32>,          // x = 1/0 on/bypass, padded for WebGL
 }
 @group(2) @binding(11) var<uniform> crt_params: CrtParams;
 
@@ -179,7 +179,7 @@ fn mask_fn(pos_in: vec2<f32>, mx: f32) -> vec3<f32> {
     let mask_type = i32(crt_params.mask.y);
 
     // Scale screen coords to game pixel coords for alignment
-    let pixel_scale = texture_size / source_size;
+    let pixel_scale = texture_size.xy / source_size.xy;
     var pos = pos_in / pixel_scale;
     var pos0 = pos;
     pos.y = floor(pos.y / MASK_SIZE);
@@ -252,7 +252,7 @@ fn slot_mask_fn(pos_in: vec2<f32>, m: f32) -> f32 {
     }
 
     // Scale screen coords to game pixel coords for alignment
-    let pixel_scale = texture_size / source_size;
+    let pixel_scale = texture_size.xy / source_size.xy;
     let pos = floor((pos_in / pixel_scale) / SLOT_MS);
     let mlen = SLOT_WIDTH * 2.0;
     let px = fract(pos.x / mlen);
@@ -274,11 +274,11 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let uv = in.uv;
 
     // Bypass CRT effect when disabled - pass through pre-shader output directly
-    if crt_params.enabled == 0u {
+    if crt_params.enabled.x == 0u {
         return textureSample(pre_texture, pre_sampler, uv);
     }
 
-    let inv_text_size = 1.0 / texture_size;
+    let inv_text_size = 1.0 / texture_size.xy;
     let original_size = vec4<f32>(texture_size.x, texture_size.y, inv_text_size.x, inv_text_size.y);
     let output_size = original_size; // Same for simplicity
 
@@ -397,7 +397,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     if BAR_DIR > 0.5 {
         bar_pos = pos.x;
     }
-    var c = color * (1.0 - scanline_intensity) * humbar(bar_pos, frame_count, crt_params.humbar.x, crt_params.humbar.y) * POST_BR * corner(pos0, output_size);
+    var c = color * (1.0 - scanline_intensity) * humbar(bar_pos, frame_count.x, crt_params.humbar.x, crt_params.humbar.y) * POST_BR * corner(pos0, output_size);
 
     return vec4<f32>(c, 1.0);
 }
