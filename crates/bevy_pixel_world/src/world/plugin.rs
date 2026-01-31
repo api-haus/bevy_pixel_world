@@ -288,10 +288,12 @@ fn watch_palette_config(
   for event in events.read() {
     if let AssetEvent::Modified { id } | AssetEvent::LoadedWithDependencies { id } = event {
       // Check if this is our config
-      if let Some(ref handle) = global_palette.config_handle {
-        if handle.id() != *id {
-          continue;
-        }
+      if global_palette
+        .config_handle
+        .as_ref()
+        .is_some_and(|h| h.id() != *id)
+      {
+        continue;
       }
 
       // Reload the config
