@@ -201,6 +201,15 @@ impl Plugin for PixelWorldStreamingPlugin {
         .in_set(PixelWorldSet::PreSimulation),
     );
 
+    // LUT polling system - runs after watch_palette_config
+    app.add_systems(
+      Update,
+      poll_lut_task
+        .after(watch_palette_config)
+        .before(update_streaming_windows)
+        .in_set(PixelWorldSet::PreSimulation),
+    );
+
     // Render-only systems
     app.add_systems(
       Update,
@@ -300,10 +309,42 @@ fn watch_palette_config(
         };
 
         global_palette.colors = colors;
-        global_palette.rebuild_lut(config.lut.clone());
-        info!("Palette reloaded from config");
+        global_palette.lut_config = config.lut.clone();
+        global_palette.start_lut_build();
+        global_palette.dirty = true;
+        info!("Palette reloaded from config (async LUT rebuild started)");
       }
     }
+  }
+}
+
+/// System: Polls the LUT build task for completion.
+///
+/// Initial LUT build is always synchronous to avoid starving other async
+/// tasks that need the compute pool (chunk seeding, persistence I/O).
+/// Hot-reload rebuilds use async to keep the old LUT usable during rebuild.
+#[cfg_attr(feature = "tracy", tracing::instrument(skip_all))]
+fn poll_lut_task(
+  mut global_palette: Option<ResMut<GlobalPalette>>,
+  rendering: Option<Res<RenderingEnabled>>,
+  async_behavior: Option<Res<AsyncTaskBehavior>>,
+) {
+  let Some(ref mut palette) = global_palette else {
+    return;
+  };
+
+  // Initial build (no LUT exists yet) - always synchronous
+  if !palette.lut_ready() && !palette.lut_building() {
+    let config = palette.lut_config.clone();
+    palette.rebuild_lut(config);
+    info!("LUT built synchronously (initial)");
+    return;
+  }
+
+  // Poll pending async rebuild (from hot-reload)
+  let block = should_block_tasks(rendering, async_behavior);
+  if palette.poll_lut(block) {
+    info!("LUT async rebuild completed");
   }
 }
 

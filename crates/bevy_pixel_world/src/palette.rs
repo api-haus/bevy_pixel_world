@@ -7,7 +7,9 @@ use bevy::asset::{Asset, AssetLoader, RenderAssetUsages, io::Reader};
 use bevy::image::ImageSampler;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+use bevy::tasks::Task;
 use palette::{IntoColor, Oklab, Srgb};
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::material::Materials;
@@ -48,7 +50,7 @@ pub enum PaletteSource {
 }
 
 /// LUT generation configuration.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LutConfig {
   /// Distance function for color matching.
   #[serde(default)]
@@ -56,6 +58,13 @@ pub struct LutConfig {
   /// Dithering mode.
   #[serde(default)]
   pub mode: DitherMode,
+}
+
+/// In-flight LUT computation task.
+pub struct LutTask {
+  task: Task<Box<[u8; 16_777_216]>>,
+  /// Config used to spawn this task (for detecting config changes).
+  pub config: LutConfig,
 }
 
 /// Configuration for the global palette, loaded from TOML.
@@ -102,13 +111,19 @@ impl AssetLoader for PaletteConfigLoader {
 ///
 /// Provides direct color lookup via ColorIndex and fast RGB→palette mapping
 /// through a precomputed 16MB LUT.
+///
+/// The LUT is built asynchronously to avoid blocking the main thread during
+/// startup. Until the LUT is ready, `map_rgb()` returns `None`.
 #[derive(Resource)]
 pub struct GlobalPalette {
   /// 256 RGBA colors indexed by ColorIndex.
   pub colors: [Rgba; 256],
   /// 16MB LUT: RGB (24-bit) → palette index (8-bit).
   /// Index = (r << 16) | (g << 8) | b
-  pub lut: Box<[u8; 16_777_216]>,
+  /// None until first async build completes.
+  lut: Option<Box<[u8; 16_777_216]>>,
+  /// In-progress LUT computation task.
+  pending_lut: Option<LutTask>,
   /// Handle to the config asset for hot-reload.
   pub config_handle: Option<Handle<PaletteConfig>>,
   /// Triggers GPU re-upload when true.
@@ -124,10 +139,11 @@ impl Default for GlobalPalette {
     for i in 0..256 {
       colors[i] = Rgba::new(i as u8, i as u8, i as u8, 255);
     }
-    let lut = build_lut(&colors, DistanceFunction::Rgb, DitherMode::Nearest);
+    // Start with no LUT - call start_lut_build() to begin async computation
     Self {
       colors,
-      lut,
+      lut: None,
+      pending_lut: None,
       config_handle: None,
       dirty: true,
       lut_config: LutConfig::default(),
@@ -137,11 +153,14 @@ impl Default for GlobalPalette {
 
 impl GlobalPalette {
   /// Creates a palette from a color array.
+  ///
+  /// The LUT is not built immediately - call `start_lut_build()` to begin
+  /// async computation.
   pub fn from_colors(colors: [Rgba; 256], lut_config: LutConfig) -> Self {
-    let lut = build_lut(&colors, lut_config.distance, lut_config.mode);
     Self {
       colors,
-      lut,
+      lut: None,
+      pending_lut: None,
       config_handle: None,
       dirty: true,
       lut_config,
@@ -153,6 +172,9 @@ impl GlobalPalette {
   /// Each material's 8 colors are placed at consecutive palette indices:
   /// material 0 → indices 0-7, material 1 → indices 8-15, etc.
   /// Supports up to 32 materials (256 / 8 = 32).
+  ///
+  /// The LUT is not built immediately - call `start_lut_build()` to begin
+  /// async computation.
   pub fn from_materials(materials: &Materials, lut_config: LutConfig) -> Self {
     let mut colors = [Rgba::new(0, 0, 0, 255); 256];
 
@@ -169,10 +191,10 @@ impl GlobalPalette {
       }
     }
 
-    let lut = build_lut(&colors, lut_config.distance, lut_config.mode);
     Self {
       colors,
-      lut,
+      lut: None,
+      pending_lut: None,
       config_handle: None,
       dirty: true,
       lut_config,
@@ -180,10 +202,25 @@ impl GlobalPalette {
   }
 
   /// Maps an RGB color to the nearest palette index using the LUT.
+  ///
+  /// Returns `None` if the LUT is not yet ready (still building).
   #[inline]
-  pub fn map_rgb(&self, r: u8, g: u8, b: u8) -> u8 {
+  pub fn map_rgb(&self, r: u8, g: u8, b: u8) -> Option<u8> {
+    let lut = self.lut.as_ref()?;
     let idx = ((r as usize) << 16) | ((g as usize) << 8) | (b as usize);
-    self.lut[idx]
+    Some(lut[idx])
+  }
+
+  /// Returns true if the LUT is ready for use.
+  #[inline]
+  pub fn lut_ready(&self) -> bool {
+    self.lut.is_some()
+  }
+
+  /// Returns true if a LUT build is in progress.
+  #[inline]
+  pub fn lut_building(&self) -> bool {
+    self.pending_lut.is_some()
   }
 
   /// Gets the color at a palette index.
@@ -192,10 +229,80 @@ impl GlobalPalette {
     self.colors[index as usize]
   }
 
-  /// Rebuilds the LUT with new configuration.
+  /// Starts an async LUT build task.
+  ///
+  /// If a build is already in progress, it is dropped and a new one starts.
+  /// The old LUT (if any) remains usable until the new one completes.
+  ///
+  /// Note: The async task uses Rayon for parallelization. This is designed
+  /// for web builds where we want to avoid blocking the main thread during
+  /// startup, but still complete reasonably fast using worker threads.
+  pub fn start_lut_build(&mut self) {
+    use bevy::tasks::AsyncComputeTaskPool;
+
+    // Copy data for the async task (must be 'static)
+    let colors = self.colors;
+    let distance_fn = self.lut_config.distance;
+    let mode = self.lut_config.mode;
+    let config = self.lut_config.clone();
+
+    let task_pool = AsyncComputeTaskPool::get();
+    // Use the sequential build_lut to avoid Rayon contention with Bevy's task pool.
+    // The parallel version would block an AsyncComputeTaskPool thread while
+    // Rayon does its work, potentially starving other async tasks.
+    let task = task_pool.spawn(async move { build_lut(&colors, distance_fn, mode) });
+
+    self.pending_lut = Some(LutTask { task, config });
+  }
+
+  /// Polls the pending LUT task.
+  ///
+  /// If `block` is true, cancels the async task and builds synchronously
+  /// to avoid contending with other async tasks for compute threads.
+  /// Returns `true` if a new LUT just became ready this call.
+  pub fn poll_lut(&mut self, block: bool) -> bool {
+    let Some(ref mut lut_task) = self.pending_lut else {
+      return false;
+    };
+
+    if block {
+      // In blocking mode, cancel the async task and build synchronously.
+      // This avoids starving other async tasks (like chunk seeding) that
+      // share the AsyncComputeTaskPool.
+      let config = lut_task.config.clone();
+      self.pending_lut = None;
+      self.lut = Some(build_lut_parallel(
+        self.colors,
+        config.distance,
+        config.mode,
+      ));
+      self.dirty = true;
+      return true;
+    }
+
+    if !lut_task.task.is_finished() {
+      return false;
+    }
+
+    // Task finished, retrieve result
+    let new_lut = bevy::tasks::block_on(&mut lut_task.task);
+    self.lut = Some(new_lut);
+    self.pending_lut = None;
+    self.dirty = true;
+    true
+  }
+
+  /// Rebuilds the LUT synchronously with new configuration.
+  ///
+  /// Prefer `start_lut_build()` + `poll_lut()` for non-blocking builds.
   pub fn rebuild_lut(&mut self, lut_config: LutConfig) {
-    self.lut = build_lut(&self.colors, lut_config.distance, lut_config.mode);
     self.lut_config = lut_config;
+    self.lut = Some(build_lut(
+      &self.colors,
+      self.lut_config.distance,
+      self.lut_config.mode,
+    ));
+    self.pending_lut = None;
     self.dirty = true;
   }
 }
@@ -271,6 +378,58 @@ pub fn build_lut(
 
   // Convert Vec to fixed-size array
   let ptr = Box::into_raw(lut) as *mut [u8; 16_777_216];
+  unsafe { Box::from_raw(ptr) }
+}
+
+/// Builds the 16MB RGB→palette LUT using parallel iteration.
+///
+/// Uses Rayon to parallelize over the R dimension (256 independent chunks).
+/// This is significantly faster than the sequential version on multi-core CPUs.
+pub fn build_lut_parallel(
+  colors: [Rgba; 256],
+  distance_fn: DistanceFunction,
+  mode: DitherMode,
+) -> Box<[u8; 16_777_216]> {
+  // Precompute palette colors in OkLab space (used for OkLab distance)
+  let palette_oklab: [Oklab; 256] = std::array::from_fn(|i| {
+    let c = &colors[i];
+    let srgb = Srgb::new(
+      c.red as f32 / 255.0,
+      c.green as f32 / 255.0,
+      c.blue as f32 / 255.0,
+    );
+    srgb.into_color()
+  });
+
+  let bayer_2x2 = [[0.0f32, 0.5], [0.75, 0.25]];
+
+  // Parallel over R dimension (256 independent 65536-byte chunks)
+  let lut_vec: Vec<u8> = (0u8..=255)
+    .into_par_iter()
+    .flat_map_iter(|r| {
+      (0u8..=255).flat_map(move |g| {
+        (0u8..=255).map(move |b| match mode {
+          DitherMode::Nearest => find_nearest(r, g, b, &colors, &palette_oklab, distance_fn),
+          DitherMode::Dither => {
+            let candidates = find_nearest_candidates(r, g, b, &colors, &palette_oklab, distance_fn);
+            let threshold = bayer_2x2[(r % 2) as usize][(g % 2) as usize];
+            if threshold < 0.25 {
+              candidates[0].0
+            } else if threshold < 0.5 {
+              candidates[1].0
+            } else if threshold < 0.75 {
+              candidates[2].0
+            } else {
+              candidates[3].0
+            }
+          }
+        })
+      })
+    })
+    .collect();
+
+  // Convert to fixed-size array
+  let ptr = Box::into_raw(lut_vec.into_boxed_slice()) as *mut [u8; 16_777_216];
   unsafe { Box::from_raw(ptr) }
 }
 
@@ -547,6 +706,8 @@ pub fn upload_palette(palette: &GlobalPalette, image: &mut Image) {
 /// Creates a new image with the same dimensions where each pixel's RGB
 /// is remapped to the nearest palette color. Alpha is preserved.
 ///
+/// Returns `None` if the palette LUT is not yet ready.
+///
 /// # Example
 /// ```ignore
 /// fn palettize_sprite(
@@ -555,37 +716,41 @@ pub fn upload_palette(palette: &GlobalPalette, image: &mut Image) {
 ///     sprite_handle: Handle<Image>,
 /// ) {
 ///     if let Some(image) = images.get(&sprite_handle) {
-///         let palettized = palettize_image(image, &palette);
-///         // Use the palettized image...
+///         if let Some(palettized) = palettize_image(image, &palette) {
+///             // Use the palettized image...
+///         }
 ///     }
 /// }
 /// ```
-pub fn palettize_image(image: &Image, palette: &GlobalPalette) -> Image {
+pub fn palettize_image(image: &Image, palette: &GlobalPalette) -> Option<Image> {
   let mut result = image.clone();
-  palettize_image_in_place(&mut result, palette);
-  result
+  palettize_image_in_place(&mut result, palette)?;
+  Some(result)
 }
 
 /// Converts an image's colors to the nearest palette colors in-place.
 ///
 /// Each pixel's RGB is remapped to the nearest palette color. Alpha is
 /// preserved.
-pub fn palettize_image_in_place(image: &mut Image, palette: &GlobalPalette) {
+///
+/// Returns `None` if the palette LUT is not yet ready, leaving the image
+/// unchanged.
+pub fn palettize_image_in_place(image: &mut Image, palette: &GlobalPalette) -> Option<()> {
   let width = image.width() as usize;
   let height = image.height() as usize;
   let pixel_count = width * height;
 
   if pixel_count == 0 {
-    return;
+    return Some(());
   }
 
   let Some(ref mut data) = image.data else {
-    return;
+    return Some(());
   };
 
   let bytes_per_pixel = data.len() / pixel_count;
   if bytes_per_pixel < 3 {
-    return; // Need at least RGB
+    return Some(()); // Need at least RGB
   }
 
   for i in 0..pixel_count {
@@ -595,7 +760,7 @@ pub fn palettize_image_in_place(image: &mut Image, palette: &GlobalPalette) {
     let b = data[offset + 2];
 
     // Find nearest palette color
-    let palette_idx = palette.map_rgb(r, g, b);
+    let palette_idx = palette.map_rgb(r, g, b)?;
     let pc = palette.colors[palette_idx as usize];
 
     // Write palettized color (preserve alpha if present)
@@ -604,6 +769,8 @@ pub fn palettize_image_in_place(image: &mut Image, palette: &GlobalPalette) {
     data[offset + 2] = pc.blue;
     // Keep original alpha if bytes_per_pixel >= 4
   }
+
+  Some(())
 }
 
 /// System that palettizes images when they're loaded.

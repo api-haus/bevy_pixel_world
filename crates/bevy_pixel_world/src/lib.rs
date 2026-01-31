@@ -273,7 +273,11 @@ pub struct DefaultPixelWorldConfig(pub PixelWorldConfig);
 pub struct DefaultPersistenceConfig(pub PersistenceConfig);
 
 /// Startup system: Initializes GlobalPalette from the Materials registry.
+///
+/// Note: The LUT build is deferred until the first frame of Update when
+/// poll_lut_task runs. This ensures proper initialization of task pools.
 fn init_palette_from_materials(mut commands: Commands, materials: Res<Materials>) {
   let palette = palette::GlobalPalette::from_materials(&materials, palette::LutConfig::default());
+  // Don't start LUT build here - poll_lut_task will start it on first run
   commands.insert_resource(palette);
 }
