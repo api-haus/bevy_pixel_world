@@ -2,146 +2,376 @@
 
 Pluggable simulation rules and reusable library functions.
 
-## Overview
+## Core Model
 
-The simulation system exposes extension points for custom cell simulation rules. Crate consumers can implement game-specific behaviors while reusing the engine's optimized infrastructure.
-
-## Current Model
-
-The default simulation uses `compute_swap` to determine pixel movement:
+A simulation is a Bevy system combined with a schedule mode:
 
 ```
-fn compute_swap(
+Simulation = Bevy System + ScheduleMode
+```
+
+**Bevy System:**
+- Function parameters declare layer access (`Res`/`ResMut`)
+- Writes directly to layer data
+- Layer dependencies inferred → Bevy handles inter-system parallelism
+
+**Schedule Mode** (pixel iteration within the system):
+- `FullyParallel`: All pixels at once, **UNSAFE** (consumer handles races)
+- `PhasedParallel`: Checkerboard 4-phase (spatial isolation)
+- `Sequential`: One pixel at a time (always safe)
+
+**Swap-follow:** When PixelLayer swaps, registered swap-follow layers (ColorLayer, DamageLayer, etc.) swap automatically. All layers support direct swap if needed.
+
+## Two Levels of Parallelism
+
+| Level | Mechanism | Safety |
+|-------|-----------|--------|
+| Between systems | Bevy scheduler (disjoint layer writes → parallel) | Automatic |
+| Within system | Schedule mode (how pixels iterated) | Mode-dependent |
+
+**Example:**
+
+```
+FallingSandSim: writes Material, Flags  → PhasedParallel
+HeatDiffusionSim: writes Heat           → PhasedParallel
+→ Run in parallel (disjoint write sets)
+
+DecaySim: writes Material, Damage       → Sequential
+InteractionSim: writes Material, Damage → Sequential
+→ Run sequentially (shared writes, Bevy orders them)
+```
+
+## Schedule Modes
+
+The iterator type determines the schedule mode:
+
+| Iterator | Mechanism | Safety | Use Case |
+|----------|-----------|--------|----------|
+| `PhasedIter<L>` | Checkerboard 4-phase | Safe for local ops | Standard CA physics |
+| `ParallelIter<L>` | All pixels at once | **Unsafe** | Intentionally racy effects |
+| (regular loop) | Sequential iteration | Always safe | Global state, complex deps |
+
+### PhasedIter
+
+System runs 4 times per tick. Each run, the iterator yields only tiles of one phase. Barrier between phases ensures spatial isolation.
+
+See [Scheduling](../simulation/scheduling.md) for checkerboard mechanics.
+
+### ParallelIter
+
+All pixels yielded simultaneously across threads. No synchronization. Consumer must handle data races (or embrace them for visual noise effects).
+
+### Sequential
+
+No special iterator - just use `canvas.iter_all()` or similar. Single-threaded, can safely mutate global state.
+
+## Defining Simulations
+
+Simulations are plain Bevy systems. The **iterator type** determines the schedule mode, and **layers** provide global pixel addressing with swap operations.
+
+### Iterator API (Closure-based)
+
+Iterators use a closure pattern (not Rust's Iterator trait) for internal parallelism:
+
+```rust
+/// Checkerboard 4-phase iteration (safe for local ops)
+struct PhasedIter<'w, L: Layer> { ... }
+
+impl<L: Layer> PhasedIter<'_, L> {
+    /// Iterate all positions, internally parallelized by phase
+    fn for_each<F>(&self, f: F)
+    where
+        F: Fn(WorldFragment) + Send + Sync;
+}
+
+/// All pixels at once (unsafe - consumer handles races)
+struct ParallelIter<'w, L: Layer> { ... }
+
+// Sequential: just use layer.iter_all(), no special iterator needed
+```
+
+### WorldFragment
+
+The closure receives a `WorldFragment` with position and context:
+
+```rust
+struct WorldFragment {
     pos: WorldPos,
-    canvas: &Canvas,
+    // Normalized coordinates, etc.
+}
+
+impl WorldFragment {
+    fn pos(&self) -> WorldPos;
+}
+```
+
+### SimContext (Separate Resource)
+
+Simulation context (tick, seed, jitter) is a separate resource, not part of WorldFragment:
+
+```rust
+#[derive(Resource)]
+struct SimContext {
+    tick: u64,
+    seed: u64,
+    jitter: u8,
+}
+```
+
+### Layers and PixelAccess
+
+Layers define their data type and sample rate. The framework automatically provides `PixelAccess`:
+
+```rust
+// User defines layer properties
+trait Layer {
+    type Element: Copy + Default;
+    const SAMPLE_RATE: u32;  // 1 = per-pixel, 4 = 4×4 regions, etc.
+    const NAME: &'static str;
+}
+
+// Framework provides automatically for all layers
+trait PixelAccess {
+    fn get(&self, pos: WorldPos) -> Self::Element;
+    fn set(&mut self, pos: WorldPos, value: Self::Element);
+    fn swap(&mut self, a: WorldPos, b: WorldPos);
+    fn swap_unchecked(&mut self, a: WorldPos, b: WorldPos);
+    fn iter_all(&self) -> impl Iterator<Item = WorldPos>;
+}
+```
+
+**Swap-follow:** When PixelLayer swaps, registered swap-follow layers swap automatically. All layers support direct `swap()` if needed—use at your own risk for consistency.
+
+For downsampled layers, divide coordinates explicitly:
+
+```rust
+// Heat layer has sample_rate: 4
+let heat = heat_layer.get(local_pos / 4);
+```
+
+No implicit conversions—addressing stays transparent.
+
+### PhasedIter (safe parallel)
+
+```rust
+fn falling_sand_sim(
+    iter: PhasedIter<PixelLayer>,
+    mut pixels: ResMut<PixelLayer>,
+    materials: Res<MaterialRegistry>,
+) {
+    iter.for_each(|frag| {
+        let pos = frag.pos();
+        let pixel = pixels.get(pos);
+        if pixel.is_void() { return; }
+
+        let below = pos.below();  // may be in neighbor chunk — handled uniformly
+        if can_displace(&pixel, &pixels.get(below), &materials) {
+            pixels.swap(pos, below);
+        }
+    });
+}
+```
+
+`PhasedIter<L>::for_each()` internally:
+1. Iterates phase A tiles via `rayon::par_iter()`
+2. Dirty rect tracking skips dormant tiles (~90% under typical load)
+3. Barrier
+4. Phase B, C, D...
+
+### ParallelIter (unsafe parallel)
+
+```rust
+fn chaos_shuffle_sim(
+    iter: ParallelIter<PixelLayer>,
+    mut pixels: ResMut<PixelLayer>,
+) {
+    iter.for_each(|frag| {
+        // All pixels yielded simultaneously across threads
+        // Races are intentional for this effect
+        let target = random_neighbor(frag.pos());
+        pixels.swap_unchecked(frag.pos(), target);
+    });
+}
+```
+
+No synchronization. Use for intentionally racy effects.
+
+### Sequential (no special iterator)
+
+```rust
+fn complex_interaction_sim(
+    mut pixels: ResMut<PixelLayer>,
+    mut global_state: ResMut<InteractionState>,
+) {
+    for pos in pixels.iter_all() {
+        // Regular iteration, single-threaded
+        // Can safely mutate global state
+        global_state.process(pos, &mut pixels);
+    }
+}
+```
+
+Just a normal Bevy system with regular iteration. Use when you need global state or complex dependencies.
+
+## System Ordering API
+
+Mimics Bevy's tuple and `.chain()` semantics:
+
+- **Tuples** = run in parallel (if layer deps allow)
+- **`.chain()`** = force sequential order
+
+```rust
+PixelWorldPlugin::builder()
+    .with_bundle(DefaultBundle)
+    .with_layer::<HeatLayer>()
+
+    // Parallel group: tuple without .chain()
+    .with_simulations((
+        falling_sand_sim,   // PhasedIter<PixelLayer>, writes PixelLayer
+        heat_diffusion_sim, // PhasedIter<HeatLayer>, writes HeatLayer
+    ))
+
+    // Sequential group: .chain() forces order
+    .with_simulations((
+        decay_sim,        // sequential, writes PixelLayer
+        interaction_sim,  // sequential, writes PixelLayer
+    ).chain())
+
+    .build()
+```
+
+**Execution flow:**
+
+```
+┌─────────────────────────────────────────────────────┐
+│  falling_sand_sim ──┬──► run in parallel            │
+│  heat_diffusion_sim ┘   (disjoint layer writes)     │
+└─────────────────────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────┐
+│  decay_sim ────────► interaction_sim                │
+│                      (chained, same layer)          │
+└─────────────────────────────────────────────────────┘
+```
+
+### Example: Minimal Physics Game
+
+```rust
+PixelWorldPlugin::builder()
+    .with_bundle(MinimalBundle)
+    .with_simulations((
+        simple_falling_sim,  // PhasedIter<PixelLayer>
+    ))
+    .build()
+```
+
+### Example: Thermal Sandbox
+
+```rust
+PixelWorldPlugin::builder()
+    .with_bundle(DefaultBundle)
+    .with_layer::<HeatLayer>()
+    .with_layer::<PressureLayer>()
+
+    // Physics + diffusion in parallel (disjoint layer writes)
+    .with_simulations((
+        falling_sand_sim,    // PhasedIter<PixelLayer>
+        heat_diffusion_sim,  // PhasedIter<HeatLayer>
+        pressure_sim,        // PhasedIter<PressureLayer>
+    ))
+
+    // Reactions chained after (same layer)
+    .with_simulations((
+        thermal_melting_sim, // sequential, writes PixelLayer
+        explosion_sim,       // sequential, writes PixelLayer
+    ).chain())
+
+    .build()
+```
+
+### Example: Chaos Mode (unsafe parallel)
+
+```rust
+PixelWorldPlugin::builder()
+    .with_bundle(MinimalBundle)
+    .with_simulations((
+        chaos_shuffle_sim,  // ParallelIter<PixelLayer> (intentionally racy)
+    ))
+    .build()
+```
+
+## Library vs Demo Functions
+
+The framework provides **library functions**—generic building blocks that operate on `Pixel` values. The **demo game** provides example physics implementations that users copy and customize.
+
+### Library Functions (Engine Crate)
+
+Generic helpers that work with any material configuration:
+
+```rust
+/// Parametric dispersion for gases and liquids.
+/// Returns offset direction based on dispersion factor.
+pub fn disperse(
+    dispersion: u8,
+    tick: u64,
+    pos: WorldPos,
+) -> (i64, i64)  // (dx, dy) offset
+
+/// Count neighbors matching a predicate.
+pub fn neighbors_matching<F>(
+    pos: WorldPos,
+    get_pixel: F,
+) -> u8
+where
+    F: Fn(WorldPos) -> Option<Pixel>
+
+/// Check if source can displace target based on density.
+pub fn can_displace(
+    src: &Pixel,
+    dst: &Pixel,
     materials: &MaterialRegistry,
-    ctx: &SimContext,
-) -> Option<WorldPos>
+) -> bool
+
+/// Pixel-level raycasting.
+pub fn raycast(
+    origin: WorldPos,
+    direction: (f32, f32),
+    get_pixel: impl Fn(WorldPos) -> Option<Pixel>,
+    max_dist: f32,
+) -> RaycastHit
 ```
 
-| Parameter | Purpose |
-|-----------|---------|
-| `pos` | Current pixel position |
-| `canvas` | Read access to surrounding pixels |
-| `materials` | Material property lookup |
-| `ctx` | Tick count, RNG seed, configuration |
+### Demo Functions (Demo Game)
 
-**Returns:** Target position to swap with, or `None` to stay in place.
+Example implementations that users copy into their games and modify:
 
-## Simulation Trait
-
-Custom simulations implement the `SimulationRule` trait:
-
-```
-trait SimulationRule {
-    /// Layers this simulation reads (must be registered)
-    fn required_layers() -> &'static [LayerId] {
-        &[]  // Default: no layer dependencies
+```rust
+// Demo game's falling sand - users copy and modify
+fn try_fall_and_slide(
+    pos: WorldPos,
+    pixels: &PixelLayer,
+    materials: &MaterialRegistry,
+    params: FallParams,
+) -> Option<WorldPos> {
+    // Uses library helpers internally
+    let below = WorldPos::new(pos.x, pos.y - 1);
+    let dst = pixels.get(below)?;
+    if can_displace(&pixels.get(pos)?, &dst, materials) {
+        return Some(below);
     }
-
-    /// Layers this simulation writes (used for parallelization)
-    fn writes_layers() -> &'static [LayerId] {
-        &[]  // Default: read-only simulation
-    }
-
-    /// Compute movement for a single pixel
-    fn compute_swap(
-        &self,
-        pos: WorldPos,
-        canvas: &Canvas,
-        materials: &MaterialRegistry,
-        ctx: &SimContext,
-    ) -> Option<WorldPos>;
-
-    /// Optional: custom interaction logic
-    fn compute_interaction(
-        &self,
-        pos: WorldPos,
-        neighbor: WorldPos,
-        canvas: &Canvas,
-        materials: &MaterialRegistry,
-        ctx: &SimContext,
-    ) -> Option<Interaction> {
-        None  // Default: use material registry interactions
-    }
+    // ... diagonal sliding logic using disperse()
+    None
 }
 ```
 
-### Layer Dependencies
-
-Simulations declare their layer requirements:
-
-| Method | Purpose |
-|--------|---------|
-| `required_layers()` | Layers that must be registered for this simulation to run |
-| `writes_layers()` | Layers this simulation modifies (for parallel scheduling) |
-
-**Scheduling behavior:**
-
-- Simulations with **disjoint write sets** can run in parallel
-- Simulations with **overlapping write sets** run sequentially
-- Missing required layers: configurable (skip silently or panic)
-
-```
-// Example: FallingSand requires Flags, writes Flags
-impl SimulationRule for FallingSandSim {
-    fn required_layers() -> &'static [LayerId] {
-        &[LayerId::Flags]
-    }
-
-    fn writes_layers() -> &'static [LayerId] {
-        &[LayerId::Flags]
-    }
-
-    fn compute_swap(...) -> Option<WorldPos> { ... }
-}
-
-// Example: HeatDiffusion requires Heat, writes Heat (can parallelize with above)
-impl SimulationRule for HeatDiffusionSim {
-    fn required_layers() -> &'static [LayerId] {
-        &[LayerId::Heat]
-    }
-
-    fn writes_layers() -> &'static [LayerId] {
-        &[LayerId::Heat]
-    }
-
-    fn compute_swap(...) -> Option<WorldPos> { ... }
-}
-```
-
-See [Pixel Layers](pixel-layers.md) for layer registration and bundle configuration.
-```
-
-### Registration
-
-Custom rules are registered at world creation:
-
-```
-// Use default falling sand rules
-PixelWorldPlugin::new()
-
-// Use custom simulation
-PixelWorldPlugin::with_simulation::<MyCustomRules>()
-```
-
-### Execution Context
-
-Custom rules execute within the same parallel scheduling infrastructure:
-
-- Checkerboard phasing ensures thread safety
-- Dirty flag optimization still applies
-- Cross-chunk boundaries handled automatically
-
-## Library Functions
-
-Reusable building blocks for implementing custom rules:
+**Key insight:** Library provides building blocks (`disperse`, `can_displace`). Demo shows how to compose them. Users copy demo code into their games and customize.
 
 ### Hash Functions
 
 Deterministic hashing for simulation randomness (`simulation/hash.rs`):
 
-```
+```rust
 /// 2 inputs → 1 output
 pub fn hash21uu64(a: u64, b: u64) -> u64
 
@@ -157,7 +387,7 @@ pub fn hash41uu64(a: u64, b: u64, c: u64, d: u64) -> u64
 
 **Common patterns:**
 
-```
+```rust
 // Per-pixel randomness (position + tick)
 let h = hash21uu64(pos.x as u64, pos.y as u64);
 let direction = h % 2;  // left or right
@@ -167,46 +397,49 @@ let h = hash41uu64(pos.x as u64, pos.y as u64, tick, 0);
 let chance = (h % 100) < 30;  // 30% probability
 ```
 
-**Use cases:**
+### `disperse(dispersion, tick, pos) -> (i64, i64)`
 
-- Random movement direction selection
-- Probabilistic behavior (chance to ignite, decay)
-- Visual noise generation
+Parametric dispersion offset for gases and liquids.
 
-### `try_fall_and_slide(pos, canvas, materials) -> Option<WorldPos>`
+| Parameter | Effect |
+|-----------|--------|
+| `dispersion: 0` | No horizontal spread |
+| `dispersion: 1-3` | Slow spread (honey, mud) |
+| `dispersion: 4-7` | Medium spread (water) |
+| `dispersion: 8+` | Fast spread (gas, air) |
 
-Shared powder/liquid falling logic.
+Uses deterministic hashing for consistent random direction selection.
 
-```mermaid
-flowchart TD
-    Start[Pixel at pos] --> CheckBelow{Below empty<br/>or displaceable?}
-    CheckBelow -->|Yes| ReturnBelow[Return below]
-    CheckBelow -->|No| CheckSlide{Can slide<br/>diagonally?}
-    CheckSlide -->|Yes| PickSide[Pick left/right<br/>via hash21uu64]
-    PickSide --> ReturnDiag[Return diagonal]
-    CheckSlide -->|No| ReturnNone[Return None]
-```
-
-| Parameter | Purpose |
-|-----------|---------|
-| `pos` | Current position |
-| `canvas` | Read surrounding pixels |
-| `materials` | Density comparison |
-
-**Returns:** Position to fall/slide to, or `None` if blocked.
-
-### `can_swap_into(src, dst, materials) -> bool`
+### `can_displace(src, dst, materials) -> bool`
 
 Density-based displacement check.
 
 | Comparison | Result |
 |------------|--------|
-| src denser than dst | Can swap (heavier sinks) |
-| src lighter than dst | Cannot swap |
-| src is void | Cannot swap |
-| dst is void | Can swap |
+| src denser than dst | Can displace (heavier sinks) |
+| src lighter than dst | Cannot displace |
+| src is void | Cannot displace |
+| dst is void | Can displace |
 
-### `raycast(origin, direction, canvas, max_dist) -> RaycastHit`
+### `neighbors_matching(pos, get_pixel) -> u8`
+
+Count neighbors matching a condition.
+
+```rust
+// Count adjacent water pixels
+let water_count = neighbors_matching(pos, |p| {
+    pixels.get(p).map(|px| px.material == WATER)
+});
+
+// Count burning neighbors
+let fire_count = neighbors_matching(pos, |p| {
+    pixels.get(p).map(|px| px.flags.contains(PixelFlags::BURNING))
+});
+```
+
+Returns count 0-8 for the Moore neighborhood.
+
+### `raycast(origin, direction, get_pixel, max_dist) -> RaycastHit`
 
 Pixel-level raycasting.
 
@@ -222,76 +455,106 @@ Pixel-level raycasting.
 - Projectile collision
 - Light propagation
 
-### `disperse(pos, dispersion, canvas, ctx) -> Option<WorldPos>`
+## Demo Simulation Pattern
 
-Parametric dispersion for gases and liquids.
+A complete demo simulation showing how to compose library functions:
 
-| Parameter | Effect |
-|-----------|--------|
-| `dispersion: 0` | No horizontal spread |
-| `dispersion: 1-3` | Slow spread (honey, mud) |
-| `dispersion: 4-7` | Medium spread (water) |
-| `dispersion: 8+` | Fast spread (gas, air) |
+```rust
+// Demo game's physics system (users copy and customize)
+fn falling_sand_sim(
+    iter: PhasedIter<PixelLayer>,
+    mut pixels: ResMut<PixelLayer>,
+    materials: Res<MaterialRegistry>,
+    ctx: Res<SimContext>,  // separate resource: tick, seed, jitter
+) {
+    iter.for_each(|frag| {
+        let pos = frag.pos();
+        let pixel = pixels.get(pos);
+        if pixel.is_void() { return; }
 
-Uses `hash21uu64` for consistent random direction selection.
+        let material = materials.get(pixel.material);
 
-### `neighbors_matching(pos, canvas, predicate) -> u8`
-
-Count neighbors matching a condition.
-
-```
-// Count adjacent water pixels
-let water_count = neighbors_matching(pos, canvas, |p| p.material == WATER);
-
-// Count burning neighbors
-let fire_count = neighbors_matching(pos, canvas, |p| p.flags.burning);
-```
-
-Returns count 0-8 for the Moore neighborhood.
-
-## Composition Patterns
-
-### Layering Custom Rules
-
-Custom rules can delegate to library functions:
-
-```
-impl SimulationRule for MyRules {
-    fn compute_swap(&self, pos, canvas, materials, ctx) -> Option<WorldPos> {
-        let pixel = canvas.get(pos);
-
-        // Custom behavior: magnetic pixels attracted to iron
-        if pixel.material == MAGNETIC {
-            if let Some(iron_pos) = find_nearby_iron(pos, canvas) {
-                return move_toward(pos, iron_pos, canvas);
+        // Demo-specific physics logic
+        let target = match material.state {
+            PhysicsState::Solid => None,
+            PhysicsState::Powder => {
+                // Try falling with drift
+                let (dx, dy) = disperse(material.dispersion, ctx.tick, pos);
+                let below = WorldPos::new(pos.x + dx, pos.y - 1);
+                if can_displace(&pixel, &pixels.get(below)?, &materials) {
+                    Some(below)
+                } else {
+                    // Try diagonal...
+                    None
+                }
             }
-        }
+            PhysicsState::Liquid => { /* similar */ None }
+            PhysicsState::Gas => None,
+        };
 
-        // Fall back to standard physics
-        try_fall_and_slide(pos, canvas, materials)
-    }
+        if let Some(target) = target {
+            pixels.swap(pos, target);
+            // ColorLayer, DamageLayer swap automatically (swap-follow)
+        }
+    });
 }
 ```
 
-### Extension Layer Integration
+## Composition Patterns
 
-Custom rules can read/write extension layers:
+### Layering Custom Behavior
 
+Delegate to library functions for common physics:
+
+```rust
+fn magnetic_sim(
+    iter: PhasedIter<PixelLayer>,
+    mut pixels: ResMut<PixelLayer>,
+    materials: Res<MaterialRegistry>,
+) {
+    iter.for_each(|frag| {
+        let pos = frag.pos();
+        let pixel = pixels.get(pos);
+
+        // Custom behavior: magnetic pixels attracted to iron
+        if pixel.material == MAGNETIC {
+            if let Some(iron_pos) = find_nearby_iron(pos, &pixels) {
+                move_toward(pos, iron_pos, &mut pixels);
+                return;
+            }
+        }
+
+        // Fall back to standard physics (demo's try_fall_and_slide)
+        if let Some(target) = try_fall_and_slide(pos, &pixels, &materials) {
+            pixels.swap(pos, target);
+        }
+    });
+}
 ```
-fn compute_swap(&self, pos, canvas, materials, ctx) -> Option<WorldPos> {
-    let temp = self.temperature_layer.get(pos);
 
-    // Hot pixels rise faster
-    if temp > 200 && pixel.material == STEAM {
-        return try_rise_fast(pos, canvas);
-    }
+### Multi-Layer Access
 
-    // Cold pixels sink
-    if temp < 50 && pixel.material == COLD_AIR {
-        return try_fall_and_slide(pos, canvas, materials);
-    }
+Read/write multiple layers in one system:
 
-    default_gas_behavior(pos, canvas, materials, ctx)
+```rust
+fn thermal_rising_sim(
+    iter: PhasedIter<PixelLayer>,
+    mut pixels: ResMut<PixelLayer>,
+    temperature: Res<TemperatureLayer>,  // read-only, swap-follow layer
+) {
+    iter.for_each(|frag| {
+        let pos = frag.pos();
+        let temp = temperature.get(pos);
+        let pixel = pixels.get(pos);
+
+        // Hot pixels rise faster
+        if temp > 200 && pixel.material == STEAM {
+            if let Some(target) = try_rise_fast(pos, &pixels) {
+                pixels.swap(pos, target);
+                // TemperatureLayer swaps automatically (swap-follow)
+            }
+        }
+    });
 }
 ```
 
@@ -299,29 +562,54 @@ fn compute_swap(&self, pos, canvas, materials, ctx) -> Option<WorldPos> {
 
 Override behavior for specific materials:
 
-```
-fn compute_swap(&self, pos, canvas, materials, ctx) -> Option<WorldPos> {
-    match canvas.get(pos).material {
-        CUSTOM_SLIME => slime_behavior(pos, canvas, ctx),
-        CUSTOM_METAL => metal_behavior(pos, canvas, ctx),
-        _ => try_fall_and_slide(pos, canvas, materials),
-    }
+```rust
+fn custom_materials_sim(
+    iter: PhasedIter<PixelLayer>,
+    mut pixels: ResMut<PixelLayer>,
+    materials: Res<MaterialRegistry>,
+) {
+    iter.for_each(|frag| {
+        let pos = frag.pos();
+        match pixels.get(pos).material {
+            CUSTOM_SLIME => slime_behavior(pos, &mut pixels),
+            CUSTOM_METAL => metal_behavior(pos, &mut pixels),
+            _ => {
+                if let Some(target) = try_fall_and_slide(pos, &pixels, &materials) {
+                    pixels.swap(pos, target);
+                }
+            }
+        }
+    });
 }
 ```
 
 ## Performance Notes
 
+### Dirty Rect Tracking
+
+The biggest win: dirty rect tracking skips ~90% of tiles under typical workloads. Only actively changing regions are simulated.
+
+### General
+
 | Aspect | Consideration |
 |--------|---------------|
 | Inlining | Library functions are `#[inline]` for zero-cost abstraction |
 | Branching | Match on material ID is fast (single u8 comparison) |
-| Lookups | `canvas.get()` is bounds-checked; use `get_unchecked` in hot paths |
+| Swap-follow | 2-3 layers typical; loop overhead minimal |
 | RNG | `hash21uu64` is faster than thread-local RNG for spatial randomness |
+
+### Cache Locality
+
+Each tile (32×32 = 1024 pixels) fits in L1 cache:
+- PixelLayer: 2 KB
+- ColorLayer: 1 KB
+- DamageLayer: 1 KB
+- **DefaultBundle: ~4 KB** (L1 is typically 32-64 KB)
 
 ## Related Documentation
 
 - [Simulation](../simulation/simulation.md) - Core simulation passes and scheduling
-- [Scheduling](../simulation/scheduling.md) - Parallel execution infrastructure
+- [Scheduling](../simulation/scheduling.md) - Parallel execution infrastructure and schedule modes
 - [Materials](../simulation/materials.md) - Material properties used by library functions
 - [Pixel Layers](pixel-layers.md) - Extension layers for custom state
 - [Pixel Format](../foundational/pixel-format.md) - Base pixel data accessed by rules

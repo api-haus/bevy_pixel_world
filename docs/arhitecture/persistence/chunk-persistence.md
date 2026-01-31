@@ -203,7 +203,7 @@ flowchart LR
 └────────────────┴─────────────────────────────────────────────┘
 
 Position: Linear index into chunk buffer (24 bits supports 512×512 = 262K pixels)
-New Pixel: Full 4-byte pixel value
+New Pixel: Full pixel value (size varies by bundle; 4 bytes for DefaultBundle)
 ```
 
 **Special markers:**

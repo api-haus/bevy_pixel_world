@@ -4,213 +4,235 @@ Modular layer system where every piece of per-pixel data is an opt-in layer.
 
 ## Core Concept
 
-The only mandatory data per pixel is the **Material ID** (1 byte). Everything else—color, damage, flags, temperature—is an optional layer that simulations opt into.
+The **PixelLayer** (2 bytes) is the innate base layer—always present, packing material ID and flags together. Everything else—color, damage, temperature—is an optional layer that simulations opt into.
 
 ```
-Base Layer (always present):
-  Material: u8  // 1 byte, indexes material registry
+PixelLayer (innate, always present):
+  material: MaterialId  // u8, indexes material registry
+  flags: PixelFlags     // u8, collision/simulation state
 
 Default Bundle Layers (opt-in, included in preset):
   Color: u8     // palette index
   Damage: u8    // accumulated damage
-  Flags: u8     // dirty, solid, falling, burning, wet, pixel_body
 
 Additional Layers (opt-in):
-  Temperature, Velocity, Heat, Pressure, etc.
+  Temperature, Velocity, Heat, Pressure, Grouping, etc.
 ```
+
+**Why pack flags with material?**
+
+- Flags are needed for collision detection (SOLID bit) and simulation (DIRTY, FALLING)
+- Packing avoids requiring two layers for basic operations
+- Collision plugin only needs PixelLayer, not a separate FlagsLayer
 
 ## Layer Bundles
 
 Bundles are presets that register common layer combinations:
 
-| Bundle | Layers | Use Case |
-|--------|--------|----------|
-| **Minimal** | Material only | Maximum performance, custom simulation |
-| **Default** | Material + Color + Damage + Flags | Standard falling sand (backward compatible) |
-| **Custom** | Builder API | Game-specific combinations |
+| Bundle | Layers | Memory/pixel | Use Case |
+|--------|--------|--------------|----------|
+| **Minimal** | PixelLayer only | 2 bytes | Maximum performance, custom simulation |
+| **Default** | PixelLayer + Color + Damage | 4 bytes | Standard falling sand |
+| **Builder** | Default + Grouping | 6 bytes | Building/destruction games |
+| **Custom** | Builder API | Varies | Game-specific combinations |
 
 ### Builder API
 
-```
+```rust
 PixelWorldPlugin::builder()
-    .with_bundle(DefaultBundle)  // or MinimalBundle
-    .with_layer::<HeatLayer>()
-    .with_layer::<TemperatureLayer>()
-    .with_simulation::<FallingSandSim>()
-    .with_simulation::<HeatDiffusionSim>()
+    .with_layer::<ColorLayer>().swap_follow()   // swaps with PixelLayer
+    .with_layer::<DamageLayer>().swap_follow()  // swaps with PixelLayer
+    .with_layer::<HeatLayer>()                  // NOT swap-follow (spatial field)
+    .with_simulation(falling_sand_sim)
+    .with_simulation(heat_diffusion_sim)
     .build()
 ```
 
 ### Default Bundle
 
-The Default Bundle provides backward-compatible behavior matching the current "4-byte pixel" model:
+The Default Bundle provides the standard falling sand experience:
 
 | Layer | Purpose | Required By |
 |-------|---------|-------------|
-| Material | Type ID, always present | All simulations |
+| PixelLayer | Material + Flags (2 bytes) | All simulations, collision |
 | Color | Palette index for rendering | Rendering systems |
 | Damage | Accumulated damage | Destruction, decay |
-| Flags | Simulation state bits | CA physics, collision |
 
-## Base Layer (Innate)
+## PixelLayer (Innate)
 
-Every chunk has a hardcoded base layer containing material IDs. This is not opt-in - it's fundamental to the simulation.
+Every chunk has a hardcoded PixelLayer containing material + flags. This is not opt-in—it's fundamental to the simulation.
 
-```
-base: [MaterialId; CHUNK_SIZE²]  // u8, always present
+```rust
+struct PixelLayer;
+impl Layer for PixelLayer {
+    type Element = Pixel;  // { material: MaterialId, flags: PixelFlags }
+    const SAMPLE_RATE: u32 = 1;
+    const NAME: &'static str = "pixel";
+}
+
+#[repr(C)]
+struct Pixel {
+    material: MaterialId,  // u8
+    flags: PixelFlags,     // u8
+}
 ```
 
 The layer system described below is for *additional* data on top of this base.
 
 ## Optional Layers
 
-| Layer | Type | Sample Rate | Purpose |
-|-------|------|-------------|---------|
-| Color | u8 | 1 | Palette index |
-| Damage | u8 | 1 | Accumulated damage |
-| Flags | u8 | 1 | Simulation state bits |
-| Temperature | u8 | 1 | Per-pixel temperature |
-| Velocity | (i8, i8) | 1 | Pixel momentum |
-| Heat | u8 | 4 | Thermal diffusion (downsampled) |
-| Pressure | u16 | 8 | Fluid/gas pressure (downsampled) |
+| Layer | Type | Sample Rate | Category | Purpose |
+|-------|------|-------------|----------|---------|
+| Color | u8 | 1 | Swap-follow | Palette index |
+| Damage | u8 | 1 | Swap-follow | Accumulated damage |
+| Grouping | u16 | 1 | Swap-follow | Pixel body membership |
+| Temperature | u8 | 1 | Swap-follow | Per-pixel temperature |
+| Velocity | (i8, i8) | 1 | Swap-follow | Pixel momentum |
+| Heat | u8 | 4 | Positional | Thermal diffusion (downsampled) |
+| Pressure | u16 | 8 | Positional | Fluid/gas pressure (downsampled) |
 
-## Brick Layer (Demo)
+## Layer Categories
 
-A reference implementation for block-based destruction gameplay, included in the demo game. Copy it into your game and adapt as needed.
+Layers fall into two categories based on whether their data belongs to the **pixel** or the **location**:
 
-### Concept
+### Swap-Follow Layers
 
-Bricks subdivide chunks into destructible blocks. Players hit pixels, damage accumulates per-brick, and when threshold is exceeded, all pixels in that brick are destroyed.
+Data belongs to the pixel. When PixelLayer swaps, registered swap-follow layers swap automatically:
+
+```rust
+PixelWorldPlugin::builder()
+    .with_layer::<ColorLayer>().swap_follow()   // swaps with PixelLayer
+    .with_layer::<DamageLayer>().swap_follow()  // swaps with PixelLayer
+```
+
+Simulations should produce swaps on PixelLayer, and associated layers follow automatically. Swap-follow layers *can* be swapped directly if needed, but use at your own risk—you're responsible for maintaining consistency.
+
+**Examples:**
+- ColorLayer: pixel's palette index moves with it
+- DamageLayer: accumulated damage stays with the pixel
+- GroupingLayer: pixel's group membership moves with it
+- Temperature: hot lava stays hot when falling
+- Velocity: pixel carries its momentum
+
+### Positional/Spatial Layers
+
+Data belongs to the location, not the pixel. Pixels move through spatial fields without affecting them:
+
+```rust
+PixelWorldPlugin::builder()
+    .with_layer::<HeatLayer>()     // NOT swap-follow (spatial field)
+    .with_layer::<PressureLayer>() // NOT swap-follow
+```
+
+**Examples:**
+- HeatLayer: ambient heat at a location (pixel falls through hot zone)
+- PressureLayer: fluid pressure gradient
+- WindLayer: environmental wind at a location
+- RadiationLayer: radiation level at position
+
+### Category Decision Tree
 
 ```
-BrickLayer<const GRID: usize = 16> {
-    // Full resolution - which brick each pixel belongs to
-    id: [BrickId; CHUNK_SIZE²],
+Does the data belong to the pixel or the location?
+├── Pixel (moves with pixel) → Swap-follow
+│   "The pixel IS hot" → Temperature (swap-follow)
+│   "The pixel HAS damage" → Damage (swap-follow)
+│
+└── Location (pixel passes through) → Positional
+    "The location IS hot" → Heat (positional)
+    "The location HAS pressure" → Pressure (positional)
+```
 
-    // Downsampled - one damage value per brick
-    damage: [u8; GRID²],
+## GroupingLayer
+
+The GroupingLayer enables pixel body mechanics—groups of pixels that move and interact as units.
+
+```rust
+struct GroupingLayer;
+impl Layer for GroupingLayer {
+    type Element = GroupingId;  // u16: 0 = none, 1+ = group ID
+    const SAMPLE_RATE: u32 = 1;
+    const NAME: &'static str = "grouping";
 }
 ```
 
-The const generic `GRID` controls everything:
+**Why swap-follow?** When pixels move (gravity, fluid flow), their group membership moves with them. A brick pixel that falls is still part of its brick.
 
-| GRID | Bricks | Brick Pixels | Id Type | Damage Cells |
-|------|--------|--------------|---------|--------------|
-| 16 | 256 | CHUNK_SIZE/16 | u8 | 256 |
-| 32 | 1024 | CHUNK_SIZE/32 | u16 | 1024 |
-| 64 | 4096 | CHUNK_SIZE/64 | u16 | 4096 |
-
-**BrickId type derivation:**
-- `GRID² ≤ 256` → `u8`
-- `GRID² > 256` → `u16`
-
-### Sample Rates
-
-| Sub-layer | Sample Rate | Formula |
-|-----------|-------------|---------|
-| `id` | 1 | Full resolution (pixel → brick mapping) |
-| `damage` | CHUNK_SIZE / GRID | One cell per brick |
-
-For a 512×512 chunk with `GRID = 16`:
-- Brick pixel size: 512 / 16 = 32×32 pixels per brick
-- Damage sample rate: 32 (matches brick size)
-- 256 bricks, 256 damage cells
-
-### Usage
-
-Since both CHUNK_SIZE and GRID are compile-time constants, a macro generates the layer types:
-
-```
-define_brick_layer!(GameBrickLayer, chunk_size: 512, grid: 16);
-// Generates BrickIdLayer + BrickDamageLayer with correct types and sizes
-
-// During plugin init:
-let brick_handles = GameBrickLayer::register(&mut layer_registry);
-commands.insert_resource(brick_handles);
-
-// In systems:
-fn brick_damage_system(
-    mut chunks: Query<&mut Chunk>,
-    brick: Res<BrickLayerHandles>,
-) {
-    for mut chunk in &mut chunks {
-        let ids = chunk.get(brick.id);
-        let damage = chunk.get_mut(brick.damage);
-        // accumulate damage per brick...
-    }
-}
-```
-
-### Gameplay Flow
-
-```mermaid
-sequenceDiagram
-    participant Player
-    participant Pixel as Pixel Layer
-    participant Brick as BrickLayer
-
-    Player->>Pixel: Hit pixel at (x, y)
-    Pixel->>Brick: Lookup brick_id[x, y]
-    Brick-->>Brick: damage[brick_id] += hit_damage
-    alt damage >= threshold
-        Brick->>Pixel: Destroy all pixels where brick_id == damaged_brick
-    end
-```
-
-### GPU Upload
-
-Both sub-layers are uploaded for shader-based damage visualization:
-
-| Sub-layer | Schedule | Shader Use |
-|-----------|----------|------------|
-| `id` | `OnChange` | Map pixel to brick for effect lookup |
-| `damage` | `Periodic(4)` | Damage overlay (cracks, glow) on whole brick |
-
-The shader combines both: sample `id` to find which brick, sample `damage` to determine visual intensity. Entire brick regions show damage effects uniformly.
-
-### Customization
-
-`BrickLayer` is a reference implementation. For different needs:
-
-- **Different damage type**: Use macro with custom damage type for more granularity
-- **Multiple damage types**: Add `fire_damage`, `physical_damage` sub-layers
-- **Non-uniform bricks**: Replace uniform grid with runtime-defined brick shapes (loses const-generic benefits)
+See [Grouping](grouping.md) for the unified grouping model where bricks and pixel bodies are the same concept.
 
 ## Simulation Systems
 
-Each simulation declares which layers it requires and writes:
+Simulations are Bevy systems. The **iterator type** determines the schedule mode, and **layers** provide global pixel addressing.
 
-```
-trait SimulationRule {
-    /// Layers this simulation reads
-    fn required_layers() -> &'static [LayerId];
+**Critical constraint:** Simulations must produce swaps on PixelLayer. Swap-follow layers (ColorLayer, DamageLayer, etc.) are updated automatically.
 
-    /// Layers this simulation writes
-    fn writes_layers() -> &'static [LayerId];
+```rust
+fn falling_sand_sim(
+    iter: PhasedIter<PixelLayer>,        // schedule mode = phased parallel
+    mut pixels: ResMut<PixelLayer>,      // layer has swap, get, set
+    materials: Res<MaterialRegistry>,
+) {
+    iter.for_each(|frag: WorldFragment| {
+        if let Some(target) = try_fall_and_slide(frag.pos(), &pixels, &materials) {
+            pixels.swap(frag.pos(), target);
+            // ColorLayer, DamageLayer swap automatically (swap-follow)
+        }
+    });
+}
 
-    /// Compute movement for a single pixel
-    fn compute_swap(...) -> Option<WorldPos>;
+fn heat_diffusion_sim(
+    iter: PhasedIter<HeatLayer>,       // schedule mode = phased parallel
+    pixels: Res<PixelLayer>,           // read-only access
+    mut heat: ResMut<HeatLayer>,       // layer has get, set (not swap)
+) {
+    iter.for_each(|frag| {
+        heat.diffuse(frag.pos(), &pixels);
+    });
 }
 ```
+
+`PhasedIter<L>::for_each()` internally:
+1. Iterates phase A tiles via `rayon::par_iter()`
+2. Barrier
+3. Iterates phase B tiles
+4. Barrier
+5. ... (4 phases total)
+
+### Two Levels of Parallelism
+
+| Level | Mechanism | Safety |
+|-------|-----------|--------|
+| Between systems | Bevy scheduler (disjoint `ResMut` → parallel) | Automatic |
+| Within system | Iterator type (how pixels iterated) | Mode-dependent |
+
+### Schedule Modes (Iterator Types)
+
+| Iterator | Behavior | Use Case |
+|----------|----------|----------|
+| `PhasedIter<L>` | Checkerboard 4-phase | Standard CA physics |
+| `ParallelIter<L>` | All pixels at once (unsafe) | Intentionally racy effects |
+| (regular loop) | Sequential iteration | Complex interactions |
 
 ### Scheduling
 
 - **Missing layer = system skipped** (configurable: skip silently or panic)
-- **Disjoint write sets = parallel execution** (Bevy scheduler handles this)
-- **Shared write sets = sequential execution** (ordered by registration)
+- **Disjoint write sets = parallel execution** (Bevy infers from `ResMut` params)
+- **Shared write sets = sequential execution** (Bevy orders them)
 
 ```mermaid
 flowchart LR
-    subgraph Parallel["Parallel (disjoint writes)"]
-        A["Falling Sand<br/>writes: Flags"]
-        B["Heat Diffusion<br/>writes: Heat"]
+    subgraph Parallel["Parallel (disjoint layer writes)"]
+        A["falling_sand_sim<br/>PhasedIter&lt;PixelLayer&gt;"]
+        B["heat_diffusion_sim<br/>PhasedIter&lt;HeatLayer&gt;"]
     end
-    subgraph Sequential["Sequential (shared writes)"]
-        C["Material Interactions<br/>writes: Material, Damage"]
-        D["Decay Pass<br/>writes: Material, Damage"]
+    subgraph Sequential["Sequential (same layer)"]
+        C["decay_sim<br/>writes PixelLayer"]
+        D["interaction_sim<br/>writes PixelLayer"]
     end
     Parallel --> Sequential
 ```
+
+See [Simulation Extensibility](simulation-extensibility.md) for the full API.
 
 ## Overview
 
@@ -218,7 +240,7 @@ All auxiliary data uses the same layer abstraction. The **sample rate** paramete
 
 | Sample Rate | Resolution | Cells per Chunk (512×512) | Swap-Follow | Use Case |
 |-------------|------------|---------------------------|-------------|----------|
-| 1 | 1:1 with pixels | 262,144 | Available | Temperature, velocity, age |
+| 1 | 1:1 with pixels | 262,144 | Available | Color, damage, grouping |
 | 4 | 4×4 pixels per cell | 16,384 | N/A | Heat map, moisture zones |
 | 8 | 8×8 pixels per cell | 4,096 | N/A | Pressure regions, light |
 
@@ -228,12 +250,12 @@ All auxiliary data uses the same layer abstraction. The **sample rate** paramete
 flowchart TB
     subgraph Chunk["Chunk Buffer"]
         direction TB
-        Base["Base Layer<br/>Material (u8)<br/>always present"]
-        L0["Layer: Color<br/>sample_rate: 1<br/>(opt-in, Default Bundle)"]
-        L1["Layer: Damage<br/>sample_rate: 1<br/>(opt-in, Default Bundle)"]
-        L2["Layer: Flags<br/>sample_rate: 1<br/>(opt-in, Default Bundle)"]
-        L3["Layer: Heat<br/>sample_rate: 4<br/>(opt-in)"]
-        L4["Layer: Pressure<br/>sample_rate: 8<br/>(opt-in)"]
+        Base["PixelLayer<br/>Material + Flags (2 bytes)<br/>always present"]
+        L0["Layer: Color<br/>sample_rate: 1, swap-follow<br/>(opt-in, Default Bundle)"]
+        L1["Layer: Damage<br/>sample_rate: 1, swap-follow<br/>(opt-in, Default Bundle)"]
+        L2["Layer: Grouping<br/>sample_rate: 1, swap-follow<br/>(opt-in, Builder Bundle)"]
+        L3["Layer: Heat<br/>sample_rate: 4, positional<br/>(opt-in)"]
+        L4["Layer: Pressure<br/>sample_rate: 8, positional<br/>(opt-in)"]
     end
 
     subgraph Render["Render Pipeline"]
@@ -252,7 +274,7 @@ flowchart TB
 
 Each layer declares its properties at registration:
 
-```
+```rust
 trait Layer {
     /// Element type stored in this layer
     type Element: Copy + Default;
@@ -279,77 +301,92 @@ Determines the resolution ratio between pixels and layer cells:
 **Coordinate mapping:**
 
 ```
-layer_x = pixel_x / sample_rate
-layer_y = pixel_y / sample_rate
+layer_pos.xy = pixel_pos.xy / sample_rate
 ```
 
 ## Base Layer
 
-The base layer contains only the Material ID with `sample_rate: 1`:
+The PixelLayer contains Material + Flags with `sample_rate: 1`:
 
 | Field | Type | Purpose |
 |-------|------|---------|
 | Material | u8 | Type identifier, indexes into material registry |
+| Flags | u8 | SOLID, DIRTY, FALLING, etc. |
 
-**Total: 1 byte per pixel (minimum)**
+**Total: 2 bytes per pixel (minimum)**
 
-Additional fields (Color, Damage, Flags) are opt-in layers included in the Default Bundle.
+Additional fields (Color, Damage) are opt-in layers included in the Default Bundle.
 
 See [Pixel Format](../foundational/pixel-format.md) for the base layer specification and flag bitmask reference.
 
 ### Stability Guarantee
 
-The base layer (Material only) will not change within a major version. The Default Bundle layers (Color, Damage, Flags) are stable for backward compatibility.
+The PixelLayer (Material + Flags) will not change within a major version. The Default Bundle layers (Color, Damage) are stable for backward compatibility.
 
-## Swap-Follow
+## Swap-Follow Mechanics
 
-Layers with `sample_rate: 1` can opt into synchronized swapping with the base layer.
+Layers with `sample_rate: 1` can opt into synchronized swapping with PixelLayer.
 
 ### Behavior
 
-When enabled (default for `sample_rate: 1`):
+When PixelLayer swaps, registered swap-follow layers swap automatically:
 
 ```mermaid
 sequenceDiagram
     participant Sim as Simulation
-    participant Base as Base Layer
-    participant Temp as Temperature (swap_follow: true)
-    participant Vel as Velocity (swap_follow: true)
+    participant Pixel as PixelLayer
+    participant Color as ColorLayer (swap-follow)
+    participant Damage as DamageLayer (swap-follow)
 
-    Sim->>Base: swap(pos_a, pos_b)
-    Base-->>Sim: pixels swapped
-    Sim->>Temp: swap(pos_a, pos_b)
-    Sim->>Vel: swap(pos_a, pos_b)
+    Sim->>Pixel: swap(pos_a, pos_b)
+    Pixel-->>Color: swap(pos_a, pos_b)
+    Pixel-->>Damage: swap(pos_a, pos_b)
+    Pixel-->>Sim: done
 ```
 
-### Configuration
+### Registration
 
+```rust
+PixelWorldPlugin::builder()
+    .with_layer::<ColorLayer>().swap_follow()   // explicit opt-in
+    .with_layer::<DamageLayer>().swap_follow()
+    .with_layer::<HeatLayer>()                  // NOT swap-follow
 ```
-struct LayerConfig {
-    /// Follow base layer swaps (only valid when sample_rate = 1)
-    swap_follow: bool,  // default: true
 
-    /// Save to disk or resimulate on load
-    persistent: bool,   // default: false
+### Typical Usage
+
+```rust
+// ✓ Recommended: swap on PixelLayer, others follow
+pixels.swap(a, b);  // ColorLayer, DamageLayer swap automatically
+
+// ⚠ Allowed but risky: direct swap on swap-follow layer
+color.swap(a, b);   // works, but you're responsible for consistency
+```
+
+### Implementation
+
+PixelLayer swap atomically swaps all swap-follow layers inline—no callbacks, no backtracking:
+
+```rust
+impl PixelAccess for LayerResource<PixelLayer> {
+    fn swap(&mut self, a: WorldPos, b: WorldPos) {
+        self.canvas.swap_layer(0, a, b);  // PixelLayer
+        for &layer_idx in &self.swap_follow_layer_indices {
+            self.canvas.swap_layer(layer_idx, a, b);
+        }
+    }
 }
 ```
 
-| Sample Rate | swap_follow | Behavior |
-|-------------|-------------|----------|
-| 1 | true (default) | Layer data moves with pixels |
-| 1 | false | Layer data stays at position (spatial field) |
-| > 1 | N/A | Coarse resolution, no pixel correspondence |
+See [Layer Storage](../../implementation/layer-storage.md) for full implementation details.
 
-### Use Cases
+### Configuration Summary
 
-**swap_follow: true** (default)
-- Temperature that belongs to the pixel (hot lava stays hot when falling)
-- Velocity/momentum (pixel carries its motion)
-- Age (pixel's lifetime counter)
-
-**swap_follow: false**
-- Spatial fields (wind direction at a location)
-- Environmental zones (radiation level at position)
+| Sample Rate | Category | Swap Behavior |
+|-------------|----------|---------------|
+| 1 | Swap-follow | Swaps with PixelLayer; direct swap allowed (at your own risk) |
+| 1 | Positional | Stays at location, can get/set/swap freely |
+| > 1 | (always positional) | Coarse resolution, no pixel correspondence |
 
 ## Downsampled Layers
 
@@ -560,10 +597,10 @@ See [Chunk Persistence](../persistence/chunk-persistence.md) for save format det
 All layers use SoA (Structure of Arrays) for cache efficiency:
 
 ```
-Material:     [M0, M1, M2, M3, M4, ...]     // 1 byte each,  262k cells (always)
+PixelLayer:   [P0, P1, P2, P3, P4, ...]     // 2 bytes each, 262k cells (always)
 Color:        [C0, C1, C2, C3, C4, ...]     // 1 byte each,  262k cells (Default Bundle)
 Damage:       [D0, D1, D2, D3, D4, ...]     // 1 byte each,  262k cells (Default Bundle)
-Flags:        [F0, F1, F2, F3, F4, ...]     // 1 byte each,  262k cells (Default Bundle)
+Grouping:     [G0, G1, G2, G3, G4, ...]     // 2 bytes each, 262k cells (Builder Bundle)
 Heat:         [H0, H1, H2, H3, ...]         // 1 byte each,  16k cells  (opt-in)
 Pressure:     [R0, R1, R2, ...]             // 2 bytes each, 4k cells   (opt-in)
 ```
@@ -572,46 +609,63 @@ Pressure:     [R0, R1, R2, ...]             // 2 bytes each, 4k cells   (opt-in)
 
 For a 512×512 chunk with different configurations:
 
-**Minimal Bundle (Material only):**
+**Minimal Bundle (PixelLayer only):**
 
 | Layer | Sample Rate | Cells | Per-Cell | Total |
 |-------|-------------|-------|----------|-------|
-| Material | 1 | 262,144 | 1 byte | 256 KB |
-| **Total** | | | | **256 KB** |
+| PixelLayer | 1 | 262,144 | 2 bytes | 512 KB |
+| **Total** | | | | **512 KB** |
 
-**Default Bundle (backward compatible):**
+**Default Bundle:**
 
 | Layer | Sample Rate | Cells | Per-Cell | Total |
 |-------|-------------|-------|----------|-------|
-| Material | 1 | 262,144 | 1 byte | 256 KB |
+| PixelLayer | 1 | 262,144 | 2 bytes | 512 KB |
 | Color | 1 | 262,144 | 1 byte | 256 KB |
 | Damage | 1 | 262,144 | 1 byte | 256 KB |
-| Flags | 1 | 262,144 | 1 byte | 256 KB |
 | **Total** | | | | **1 MB** |
 
-**Default Bundle + Heat + Pressure:**
+**Builder Bundle (with Grouping):**
 
 | Layer | Sample Rate | Cells | Per-Cell | Total |
 |-------|-------------|-------|----------|-------|
-| Material | 1 | 262,144 | 1 byte | 256 KB |
+| PixelLayer | 1 | 262,144 | 2 bytes | 512 KB |
 | Color | 1 | 262,144 | 1 byte | 256 KB |
 | Damage | 1 | 262,144 | 1 byte | 256 KB |
-| Flags | 1 | 262,144 | 1 byte | 256 KB |
+| Grouping | 1 | 262,144 | 2 bytes | 512 KB |
+| **Total** | | | | **1.5 MB** |
+
+**Builder Bundle + Heat + Pressure:**
+
+| Layer | Sample Rate | Cells | Per-Cell | Total |
+|-------|-------------|-------|----------|-------|
+| PixelLayer | 1 | 262,144 | 2 bytes | 512 KB |
+| Color | 1 | 262,144 | 1 byte | 256 KB |
+| Damage | 1 | 262,144 | 1 byte | 256 KB |
+| Grouping | 1 | 262,144 | 2 bytes | 512 KB |
 | Heat | 4 | 16,384 | 1 byte | 16 KB |
 | Pressure | 8 | 4,096 | 2 bytes | 8 KB |
-| **Total** | | | | **~1 MB** |
+| **Total** | | | | **~1.5 MB** |
 
 ## Registration
 
-Layers are registered at startup:
+Layers are registered at plugin build time:
 
-```
-world.register_layer::<TemperatureLayer>(LayerConfig {
-    swap_follow: true,
-    persistent: true,  // save pixel temperatures
-});
+```rust
+PixelWorldPlugin::builder()
+    // Swap-follow layers (move with pixels)
+    .with_layer::<ColorLayer>().swap_follow()
+    .with_layer::<DamageLayer>().swap_follow()
+    .with_layer::<GroupingLayer>().swap_follow()
 
-world.register_layer::<HeatLayer>(LayerConfig::default());  // transient, resimulates
+    // Positional layers (stay at location)
+    .with_layer::<HeatLayer>()
+    .with_layer::<PressureLayer>()
+
+    // Persistent layers (saved to disk)
+    .with_layer::<OwnershipLayer>().persistent()
+
+    .build()
 ```
 
 ### Requirements
@@ -622,8 +676,37 @@ world.register_layer::<HeatLayer>(LayerConfig::default());  // transient, resimu
 | Fixed set per session | Dynamic registration would complicate sync |
 | Declare sample rate at compile time | Enables static allocation sizing |
 
+## Performance Considerations
+
+### Dirty Rect Tracking
+
+The biggest optimization is already built-in: dirty rect tracking skips ~90% of tiles under typical workloads. Only actively changing regions are simulated.
+
+### Swap-Follow Cost
+
+Each swap-follow layer adds one array swap per pixel swap. With DefaultBundle (Color + Damage):
+- 3 swaps total: Pixel + Color + Damage
+
+### Layer Count Guidance
+
+| Swap-Follow Layers | Recommendation |
+|--------------------|----------------|
+| 0-2 | DefaultBundle sweet spot |
+| 3-4 | BuilderBundle, acceptable |
+| 5+ | Profile if concerned |
+
+Positional layers (Heat, Pressure) have no swap overhead—they don't participate in swap-follow.
+
+### Memory Layout
+
+Layers use SoA. Tile data fits comfortably in L1 cache:
+- 32×32 tile = 1024 pixels
+- PixelLayer: 2 KB, ColorLayer: 1 KB, etc.
+- DefaultBundle total: ~4 KB per tile
+
 ## Related Documentation
 
+- [Grouping](grouping.md) - Unified grouping model (bricks = sleeping pixel bodies)
 - [Pixel Format](../foundational/pixel-format.md) - Base layer specification
 - [Simulation](../simulation/simulation.md) - Heat layer propagation, swap mechanics
 - [Simulation Extensibility](simulation-extensibility.md) - Custom rules using layer data

@@ -8,7 +8,7 @@ The pixel sandbox is designed as an extensible library, not a closed application
 
 - Swap rendering backends (GPU, terminal, headless)
 - Add custom layers at any resolution (per-pixel or downsampled)
-- Implement custom simulation rules using provided building blocks
+- Implement custom simulations as Bevy systems with configurable schedule modes
 
 ## Documentation
 
@@ -17,6 +17,7 @@ The pixel sandbox is designed as an extensible library, not a closed application
 | [Rendering Backends](rendering-backends.md) | Abstract render targets for different output modes |
 | [Pixel Layers](pixel-layers.md) | Unified layer system with sample rate, swap-follow, render modularity |
 | [Simulation Extensibility](simulation-extensibility.md) | Pluggable simulation rules and reusable library functions |
+| [Grouping](grouping.md) | Unified grouping model (bricks = sleeping pixel bodies) |
 
 ## Design Principles
 

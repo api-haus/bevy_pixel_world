@@ -22,7 +22,7 @@ Terms describing the four-level spatial organization.
 | **World** | Infinite 2D coordinate space providing global addressing. Has no direct memory representation. | [spatial-hierarchy.md](foundational/spatial-hierarchy.md) |
 | **Chunk** | Fixed-size rectangular pixel buffer. Unit of pooling, streaming, persistence, and rendering.   | [spatial-hierarchy.md](foundational/spatial-hierarchy.md) |
 | **Tile**  | Subdivision of a chunk used for checkerboard scheduling and dirty rect tracking.               | [spatial-hierarchy.md](foundational/spatial-hierarchy.md) |
-| **Pixel** | Fundamental 4-byte simulation unit containing material, color, damage, and flags.              | [pixel-format.md](foundational/pixel-format.md)           |
+| **Pixel** | Fundamental simulation unit. PixelLayer (2 bytes: material + flags) is always present; additional layers (color, damage) are opt-in. | [pixel-format.md](foundational/pixel-format.md) |
 
 ### Coordinate Systems
 
@@ -67,14 +67,15 @@ themselves. See [materials.md](simulation/materials.md) for the full convention.
 
 ## Pixel Data
 
-Fields comprising the 4-byte pixel structure.
+Per-pixel data organized into layers. PixelLayer (material + flags) is always present; other layers are opt-in.
 
 | Term               | Type | Definition                                                            | Documentation                      |
 |--------------------|------|-----------------------------------------------------------------------|------------------------------------|
+| **PixelLayer**     | 2 bytes | Innate base layer containing material ID (u8) + flags (u8). Always present. | [pixel-layers.md](modularity/pixel-layers.md) |
 | **Material field** | u8   | Type identifier indexing into material registry.                      | [pixel-format.md](foundational/pixel-format.md) |
-| **Color field**    | u8   | Palette index for rendering; allows per-pixel visual variation.       | [pixel-format.md](foundational/pixel-format.md) |
-| **Damage field**   | u8   | Accumulated damage; triggers destruction/transformation at threshold. | [pixel-format.md](foundational/pixel-format.md) |
-| **Flags field**    | u8   | Packed boolean states for simulation and rendering.                   | [pixel-format.md](foundational/pixel-format.md) |
+| **Flags field**    | u8   | Packed boolean states for simulation and rendering. Part of PixelLayer. | [pixel-format.md](foundational/pixel-format.md) |
+| **Color field**    | u8   | Palette index for rendering; allows per-pixel visual variation. Opt-in layer. | [pixel-format.md](foundational/pixel-format.md) |
+| **Damage field**   | u8   | Accumulated damage; triggers destruction/transformation at threshold. Opt-in layer. | [pixel-format.md](foundational/pixel-format.md) |
 
 ### Pixel Flags
 
@@ -86,6 +87,25 @@ Fields comprising the 4-byte pixel structure.
 | **burning**    | 3   | Pixel is on fire. Propagates to flammable neighbors; increments damage.                                |
 | **wet**        | 4   | Pixel is saturated with liquid. Prevents ignition; modifies behavior.                                  |
 | **pixel_body** | 5   | Pixel belongs to a pixel body. Set during blit, cleared after CA. Excluded from terrain collision.    |
+
+### Layer System
+
+| Term              | Definition                                                                                                 | Documentation                          |
+|-------------------|------------------------------------------------------------------------------------------------------------|----------------------------------------|
+| **Layer**         | Trait defining per-pixel or downsampled data. Declares element type, sample rate, and name.                | [pixel-layers.md](modularity/pixel-layers.md) |
+| **Swap-follow**   | Layer category where data belongs to the pixel and moves with it when PixelLayer swaps. Examples: Color, Damage. | [pixel-layers.md](modularity/pixel-layers.md) |
+| **Positional**    | Layer category where data belongs to the location, not the pixel. Pixels pass through. Examples: Heat, Pressure. | [pixel-layers.md](modularity/pixel-layers.md) |
+| **DefaultBundle** | Preset registering PixelLayer + Color + Damage (4 bytes/pixel). Standard falling sand configuration.      | [pixel-layers.md](modularity/pixel-layers.md) |
+| **MinimalBundle** | Preset registering PixelLayer only (2 bytes/pixel). Maximum performance, custom simulation.                | [pixel-layers.md](modularity/pixel-layers.md) |
+
+### Simulation Types
+
+| Term              | Definition                                                                                                 | Documentation                          |
+|-------------------|------------------------------------------------------------------------------------------------------------|----------------------------------------|
+| **WorldPos**      | Global pixel coordinate in world space. Used by simulations for pixel addressing across chunks.            | [simulation-extensibility.md](modularity/simulation-extensibility.md) |
+| **WorldFragment** | Context passed to simulation closures. Contains position and normalized coordinates.                       | [simulation-extensibility.md](modularity/simulation-extensibility.md) |
+| **SimContext**    | Resource containing simulation tick, seed, and jitter for deterministic randomness.                        | [simulation-extensibility.md](modularity/simulation-extensibility.md) |
+| **PixelAccess**   | Trait providing get/set/swap operations on layers via WorldPos. Framework implements for all layers.       | [layer-storage.md](../implementation/layer-storage.md) |
 
 ---
 
