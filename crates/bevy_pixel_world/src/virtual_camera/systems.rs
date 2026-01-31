@@ -18,32 +18,16 @@ pub fn select_active_virtual_camera(
   mut active: ResMut<ActiveVirtualCamera>,
   cameras: Query<(Entity, &VirtualCamera)>,
 ) {
-  let mut best: Option<(Entity, i32)> = None;
+  let current_active = active.entity;
 
-  for (entity, vc) in cameras.iter() {
-    let dominated = best.is_some_and(|(_, best_priority)| vc.priority < best_priority);
-    if dominated {
-      continue;
-    }
-
-    let dominated_tie = best.is_some_and(|(_, best_priority)| {
-      vc.priority == best_priority && active.entity != Some(entity)
-    });
-    if dominated_tie {
-      // Prefer current active on tie, or keep existing best
-      if active.entity == best.map(|(e, _)| e) {
-        continue;
-      }
-      // Neither is currently active; prefer lower Entity for determinism
-      if let Some((best_entity, _)) = best {
-        if entity > best_entity {
-          continue;
-        }
-      }
-    }
-
-    best = Some((entity, vc.priority));
-  }
+  // Comparison key: (priority, is_active, inverse_entity)
+  // Higher priority wins; on tie, active camera wins; on tie, lower Entity wins
+  let best = cameras.iter().max_by_key(|(entity, vc)| {
+    let is_active = current_active == Some(*entity);
+    // Invert entity bits so lower Entity compares higher
+    let inverse_entity = !entity.to_bits();
+    (vc.priority, is_active, inverse_entity)
+  });
 
   active.entity = best.map(|(e, _)| e);
 }
