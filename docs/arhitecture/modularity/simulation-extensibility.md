@@ -34,6 +34,16 @@ Custom simulations implement the `SimulationRule` trait:
 
 ```
 trait SimulationRule {
+    /// Layers this simulation reads (must be registered)
+    fn required_layers() -> &'static [LayerId] {
+        &[]  // Default: no layer dependencies
+    }
+
+    /// Layers this simulation writes (used for parallelization)
+    fn writes_layers() -> &'static [LayerId] {
+        &[]  // Default: read-only simulation
+    }
+
     /// Compute movement for a single pixel
     fn compute_swap(
         &self,
@@ -55,6 +65,52 @@ trait SimulationRule {
         None  // Default: use material registry interactions
     }
 }
+```
+
+### Layer Dependencies
+
+Simulations declare their layer requirements:
+
+| Method | Purpose |
+|--------|---------|
+| `required_layers()` | Layers that must be registered for this simulation to run |
+| `writes_layers()` | Layers this simulation modifies (for parallel scheduling) |
+
+**Scheduling behavior:**
+
+- Simulations with **disjoint write sets** can run in parallel
+- Simulations with **overlapping write sets** run sequentially
+- Missing required layers: configurable (skip silently or panic)
+
+```
+// Example: FallingSand requires Flags, writes Flags
+impl SimulationRule for FallingSandSim {
+    fn required_layers() -> &'static [LayerId] {
+        &[LayerId::Flags]
+    }
+
+    fn writes_layers() -> &'static [LayerId] {
+        &[LayerId::Flags]
+    }
+
+    fn compute_swap(...) -> Option<WorldPos> { ... }
+}
+
+// Example: HeatDiffusion requires Heat, writes Heat (can parallelize with above)
+impl SimulationRule for HeatDiffusionSim {
+    fn required_layers() -> &'static [LayerId] {
+        &[LayerId::Heat]
+    }
+
+    fn writes_layers() -> &'static [LayerId] {
+        &[LayerId::Heat]
+    }
+
+    fn compute_swap(...) -> Option<WorldPos> { ... }
+}
+```
+
+See [Pixel Layers](pixel-layers.md) for layer registration and bundle configuration.
 ```
 
 ### Registration
@@ -81,15 +137,35 @@ Custom rules execute within the same parallel scheduling infrastructure:
 
 Reusable building blocks for implementing custom rules:
 
-### `pixel_hash(pos, seed) -> u32`
+### Hash Functions
 
-Deterministic per-pixel randomness.
+Deterministic hashing for simulation randomness (`simulation/hash.rs`):
+
+```
+/// 2 inputs → 1 output
+pub fn hash21uu64(a: u64, b: u64) -> u64
+
+/// 4 inputs → 1 output
+pub fn hash41uu64(a: u64, b: u64, c: u64, d: u64) -> u64
+```
 
 | Property | Guarantee |
 |----------|-----------|
-| Deterministic | Same pos + seed always produces same value |
-| Spatially varied | Adjacent pixels produce different values |
-| Temporally stable | Same pixel returns same value across ticks (unless seed changes) |
+| Deterministic | Same inputs always produce same output |
+| Well-distributed | Adjacent values produce uncorrelated outputs |
+| Fast | FNV-1a style mixing, no heap allocation |
+
+**Common patterns:**
+
+```
+// Per-pixel randomness (position + tick)
+let h = hash21uu64(pos.x as u64, pos.y as u64);
+let direction = h % 2;  // left or right
+
+// Per-pixel + per-tick randomness
+let h = hash41uu64(pos.x as u64, pos.y as u64, tick, 0);
+let chance = (h % 100) < 30;  // 30% probability
+```
 
 **Use cases:**
 
@@ -106,7 +182,7 @@ flowchart TD
     Start[Pixel at pos] --> CheckBelow{Below empty<br/>or displaceable?}
     CheckBelow -->|Yes| ReturnBelow[Return below]
     CheckBelow -->|No| CheckSlide{Can slide<br/>diagonally?}
-    CheckSlide -->|Yes| PickSide[Pick left/right<br/>via pixel_hash]
+    CheckSlide -->|Yes| PickSide[Pick left/right<br/>via hash21uu64]
     PickSide --> ReturnDiag[Return diagonal]
     CheckSlide -->|No| ReturnNone[Return None]
 ```
@@ -157,7 +233,7 @@ Parametric dispersion for gases and liquids.
 | `dispersion: 4-7` | Medium spread (water) |
 | `dispersion: 8+` | Fast spread (gas, air) |
 
-Uses `pixel_hash` for consistent random direction selection.
+Uses `hash21uu64` for consistent random direction selection.
 
 ### `neighbors_matching(pos, canvas, predicate) -> u8`
 
@@ -240,7 +316,7 @@ fn compute_swap(&self, pos, canvas, materials, ctx) -> Option<WorldPos> {
 | Inlining | Library functions are `#[inline]` for zero-cost abstraction |
 | Branching | Match on material ID is fast (single u8 comparison) |
 | Lookups | `canvas.get()` is bounds-checked; use `get_unchecked` in hot paths |
-| RNG | `pixel_hash` is faster than thread-local RNG for spatial randomness |
+| RNG | `hash21uu64` is faster than thread-local RNG for spatial randomness |
 
 ## Related Documentation
 

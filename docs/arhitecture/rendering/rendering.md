@@ -22,6 +22,38 @@ The shader reads pixel data from the chunk texture and applies visual effects ba
 
 Chunks are uploaded to GPU textures when their content changes.
 
+### Layer Upload
+
+Each layer can be uploaded independently based on its schedule:
+
+| Layer | Default Schedule | Behavior |
+|-------|------------------|----------|
+| Color | `OnChange` | Upload when color data changes |
+| Heat | `Periodic(4)` | Upload every 4th tick for glow effects |
+| Material | — | Not uploaded directly (used for color lookup) |
+| BrickLayer.id | `OnChange` | Upload when brick assignments change |
+| BrickLayer.damage | `Periodic(4)` | Upload for damage visualization |
+
+**Note:** The Color layer is optional. Without it, rendering derives color directly from material definitions in the material registry. See [Pixel Layers](../modularity/pixel-layers.md) for upload schedules.
+
+### Brick Layer Rendering
+
+When `BrickLayer` is registered, the shader combines both sub-layers for block-based damage visualization:
+
+1. **Brick identification**: Sample `brick_id` at pixel position → get brick index (0-255 for GRID=16)
+2. **Damage lookup**: Sample `damage` texture at brick index → get damage value (0-255)
+3. **Visual effect**: Apply damage overlay (cracks, glow, desaturation) to entire brick region
+
+```
+// Shader pseudocode
+brick_id = brick_id_texture[pixel_uv];
+damage = damage_texture[brick_id];
+crack_intensity = damage / 255.0;
+final_color = mix(base_color, crack_color, crack_intensity);
+```
+
+The damage texture is a 1D lookup (GRID² entries), not a 2D spatial texture. This ensures all pixels in a brick show identical damage effects regardless of hit location.
+
 ### Whole-Chunk Upload Strategy
 
 The current approach uploads entire chunk textures when any pixel within the chunk changes:
@@ -29,7 +61,7 @@ The current approach uploads entire chunk textures when any pixel within the chu
 | Aspect         | Description                             |
 |----------------|-----------------------------------------|
 | **Trigger**    | Any pixel modification within the chunk |
-| **Scope**      | Entire chunk buffer uploaded            |
+| **Scope**      | Entire layer buffer uploaded            |
 | **Simplicity** | No partial update tracking needed       |
 
 **Rationale:**

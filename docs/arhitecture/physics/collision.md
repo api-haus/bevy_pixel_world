@@ -9,7 +9,7 @@ simulated terrain.
 
 ## Collision Pixel Selection
 
-For collision mesh generation, pixels must meet **both** criteria:
+For collision mesh generation, pixels must meet **both** criteria (requires Flags layer):
 
 | Flag      | Required Value | Meaning                                                     |
 |-----------|----------------|-------------------------------------------------------------|
@@ -17,6 +17,8 @@ For collision mesh generation, pixels must meet **both** criteria:
 | `falling` | 0              | Pixel is stable (at rest, not currently moving)             |
 
 **Selection logic:** `solid=1 AND falling=0`
+
+**Note:** The collision system requires the Flags layer (included in Default Bundle). Without the Flags layer, collision must be derived directly from material state, which is less efficient. See [Pixel Layers](../modularity/pixel-layers.md).
 
 | Pixel State    | `solid` | `falling` | In Collision Mesh? |
 |----------------|---------|-----------|--------------------|

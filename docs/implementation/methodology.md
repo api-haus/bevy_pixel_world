@@ -337,6 +337,126 @@ of text. Use:
 - `flowchart` for data/control flow
 - `block-beta` for spatial layouts
 
+### Rust Pseudocode
+
+Use Rust syntax for pseudocode in documentation. Syntax highlighting still works even when the code isn't valid Rust.
+This communicates intent through familiar idioms without implementation noise.
+
+**Why Rust pseudocode:**
+
+- Readers already know Rust syntax
+- Highlighting works in editors and rendered markdown
+- Generics, traits, and types express constraints naturally
+- Looks like real code, reads like specification
+
+**Techniques:**
+
+**1. Elide implementations with `...`**
+
+```rust
+trait Layer {
+    type Element: Copy + Default;
+    const SAMPLE_RATE: u32;
+    fn upload(&self, gpu: &mut GpuContext) { ... }
+}
+```
+
+The `{ ... }` says "there's an implementation, it's not the point." Valid Rust would require a body or `;`.
+
+**2. Use array syntax for conceptual storage**
+
+```rust
+BrickLayer<const GRID: usize = 16> {
+    id: [BrickId; CHUNK_SIZE²],      // ² isn't valid, but intent is clear
+    damage: [u8; GRID²],
+}
+```
+
+Superscript `²` isn't Rust, but readers understand "squared" faster than `CHUNK_SIZE * CHUNK_SIZE`.
+
+**3. Inline comments as specification**
+
+```rust
+struct Chunk {
+    material: [u8; N],     // always present
+    color: [u8; N],        // opt-in, Default Bundle
+    flags: [u8; N],        // opt-in, Default Bundle
+}
+```
+
+Comments describe invariants, not implementation details.
+
+**4. Show data flow with assignment chains**
+
+```rust
+// Hit detection flow
+brick_id = brick_id_layer[pixel_pos];
+damage = damage_layer[brick_id];
+damage += hit_strength;
+if damage >= threshold { destroy_brick(brick_id); }
+```
+
+Not valid Rust (no types, no bounds checking), but the algorithm is immediately clear.
+
+**5. Trait bounds as contracts**
+
+```rust
+fn register_layer<L: Layer + Send + Sync + 'static>(config: LayerConfig) { ... }
+```
+
+The bounds communicate requirements without showing implementation.
+
+**6. Const generics for configuration**
+
+```rust
+BrickLayer<const GRID: usize = 16>    // default value shown
+HeatLayer<const SAMPLE_RATE: u32 = 4>
+```
+
+Default values in const generics show recommended usage.
+
+**7. Type derivation as prose**
+
+```rust
+// BrickId type derived from GRID:
+// GRID² ≤ 256 → u8
+// GRID² > 256 → u16
+type BrickId = /* derived */;
+```
+
+When exact typing is complex, describe the rule instead of faking it.
+
+**8. Enum variants for state machines**
+
+```rust
+enum ChunkState {
+    Unloaded,
+    Loading { progress: f32 },
+    Ready { data: ChunkData },
+    Dirty { since: Tick },
+}
+```
+
+Enum syntax naturally expresses states and their associated data.
+
+**When to break which rules:**
+
+| Technique | Rule Broken | Effect |
+|-----------|-------------|--------|
+| `{ ... }` | Missing function body | "Implementation exists, not shown" |
+| `²` | Invalid identifier | Mathematical clarity |
+| No types | Missing type annotations | Focus on algorithm |
+| `/* derived */` | Incomplete type | "Type exists, rule determines it" |
+| Inline comments | Style convention | Specification alongside structure |
+
+**Don't break:**
+
+- Syntax that won't highlight (mismatched braces, invalid keywords)
+- Structure that obscures intent (clever tricks over clarity)
+- Type relationships that matter for understanding
+
+The goal: a reader familiar with Rust should understand the design without wondering "wait, is this valid?"
+
 ---
 
 ## Summary
@@ -349,3 +469,4 @@ of text. Use:
 6. Plans describe what, not how
 7. Apply `#[cfg]` at the exact point of divergence
 8. Cross-platform: uniform structs, `#[cfg]` only in trait impls
+9. Rust pseudocode: break rules strategically for clarity

@@ -83,31 +83,41 @@ Particles become pixels when they settle or collide with the grid.
 ```
 fn try_deposit(particle: &Particle) -> bool:
     grid_pos = (particle.position.x as i32, particle.position.y as i32)
-    target = world.get_pixel(grid_pos)
+    target = world.get_material(grid_pos)
 
-    if target.material == VOID:
+    if target == VOID:
         # Direct deposition into void
-        world.set_pixel(grid_pos, Pixel {
-            material: particle.material,
-            color: particle.color,
-            flags: DIRTY,
-            damage: 0,
-        })
+        # Writes Material layer (always)
+        world.set_material(grid_pos, particle.material)
+
+        # Writes Color layer (if registered)
+        if color_layer.is_registered():
+            world.set_color(grid_pos, particle.color)
+
+        # Writes Flags layer (if registered)
+        if flags_layer.is_registered():
+            world.set_flags(grid_pos, DIRTY)
+
         return true
 
     # Collision with solid - find adjacent void
     for neighbor in adjacent_cells(grid_pos):
-        if world.get_pixel(neighbor).material == VOID:
-            world.set_pixel(neighbor, Pixel {
-                material: particle.material,
-                color: particle.color,
-                flags: DIRTY,
-                damage: 0,
-            })
+        if world.get_material(neighbor) == VOID:
+            world.set_material(neighbor, particle.material)
+            # ... write other layers as above
             return true
 
     return false  # no valid deposition site
 ```
+
+**Layer writes during deposition:**
+
+| Layer | Source | Behavior |
+|-------|--------|----------|
+| Material | `particle.material` | Always written |
+| Color | `particle.color` | Written if Color layer registered |
+| Damage | `0` | Written if Damage layer registered |
+| Flags | `DIRTY` | Written if Flags layer registered |
 
 ## Physics Simulation
 

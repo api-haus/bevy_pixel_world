@@ -139,11 +139,13 @@ Each tick, active pixels (dirty flag set) check neighbors and potentially swap p
 
 ### Dirty Flag Optimization
 
-Only pixels with `dirty=1` are processed:
+Only pixels with `dirty=1` are processed (requires Flags layer):
 
 - Stable pixels (at rest, no active neighbors) have `dirty=0`
 - When a pixel moves, it sets `dirty=1` on itself and affected neighbors
 - Drastically reduces work - most pixels are stable at any time
+
+**Note:** The dirty flag is part of the Flags layer (included in Default Bundle). Simulations without the Flags layer process all pixels each tick.
 
 ### Parallel Scheduling
 
@@ -293,15 +295,17 @@ See [Spatial Hierarchy](../foundational/spatial-hierarchy.md) for tile system de
 | Scaling            | Linear scaling with CPU cores                |
 | Memory access      | Each thread works on isolated memory regions |
 | Synchronization    | Only 4 barrier points per automata tick      |
-| Dirty optimization | Skip stable pixels entirely                  |
+| Dirty optimization | Skip stable pixels entirely (Flags layer)    |
 | Downsampled layers | Heat/moisture at 1/16 resolution             |
+| Layer parallelism  | Simulations with disjoint writes run parallel |
 
 ## Related Documentation
 
+- [Pixel Layers](../modularity/pixel-layers.md) - Layer system, bundles, and simulation dependencies
 - [Materials](materials.md) - Material properties, tags, and interaction definitions
 - [Particles](particles.md) - Free-form particle system for dynamic effects
 - [Pixel Bodies](../physics/pixel-bodies.md) - Dynamic physics objects with pixel content
-- [Pixel Format](../foundational/pixel-format.md) - Data structure processed by simulation
+- [Pixel Format](../foundational/pixel-format.md) - Base layer and common layers
 - [Spatial Hierarchy](../foundational/spatial-hierarchy.md) - World, chunk, tile, pixel organization
 - [Scheduling](scheduling.md) - Checkerboard tile phasing for parallel simulation
 - [Chunk Pooling](../chunk-management/chunk-pooling.md) - Memory management for chunk buffers

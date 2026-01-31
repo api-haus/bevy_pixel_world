@@ -1,6 +1,216 @@
 # Pixel Layers
 
-Unified layer system for per-pixel and downsampled metadata.
+Modular layer system where every piece of per-pixel data is an opt-in layer.
+
+## Core Concept
+
+The only mandatory data per pixel is the **Material ID** (1 byte). Everything else—color, damage, flags, temperature—is an optional layer that simulations opt into.
+
+```
+Base Layer (always present):
+  Material: u8  // 1 byte, indexes material registry
+
+Default Bundle Layers (opt-in, included in preset):
+  Color: u8     // palette index
+  Damage: u8    // accumulated damage
+  Flags: u8     // dirty, solid, falling, burning, wet, pixel_body
+
+Additional Layers (opt-in):
+  Temperature, Velocity, Heat, Pressure, etc.
+```
+
+## Layer Bundles
+
+Bundles are presets that register common layer combinations:
+
+| Bundle | Layers | Use Case |
+|--------|--------|----------|
+| **Minimal** | Material only | Maximum performance, custom simulation |
+| **Default** | Material + Color + Damage + Flags | Standard falling sand (backward compatible) |
+| **Custom** | Builder API | Game-specific combinations |
+
+### Builder API
+
+```
+PixelWorldPlugin::builder()
+    .with_bundle(DefaultBundle)  // or MinimalBundle
+    .with_layer::<HeatLayer>()
+    .with_layer::<TemperatureLayer>()
+    .with_simulation::<FallingSandSim>()
+    .with_simulation::<HeatDiffusionSim>()
+    .build()
+```
+
+### Default Bundle
+
+The Default Bundle provides backward-compatible behavior matching the current "4-byte pixel" model:
+
+| Layer | Purpose | Required By |
+|-------|---------|-------------|
+| Material | Type ID, always present | All simulations |
+| Color | Palette index for rendering | Rendering systems |
+| Damage | Accumulated damage | Destruction, decay |
+| Flags | Simulation state bits | CA physics, collision |
+
+## Base Layer (Innate)
+
+Every chunk has a hardcoded base layer containing material IDs. This is not opt-in - it's fundamental to the simulation.
+
+```
+base: [MaterialId; CHUNK_SIZE²]  // u8, always present
+```
+
+The layer system described below is for *additional* data on top of this base.
+
+## Optional Layers
+
+| Layer | Type | Sample Rate | Purpose |
+|-------|------|-------------|---------|
+| Color | u8 | 1 | Palette index |
+| Damage | u8 | 1 | Accumulated damage |
+| Flags | u8 | 1 | Simulation state bits |
+| Temperature | u8 | 1 | Per-pixel temperature |
+| Velocity | (i8, i8) | 1 | Pixel momentum |
+| Heat | u8 | 4 | Thermal diffusion (downsampled) |
+| Pressure | u16 | 8 | Fluid/gas pressure (downsampled) |
+
+## Brick Layer (Demo)
+
+A reference implementation for block-based destruction gameplay, included in the demo game. Copy it into your game and adapt as needed.
+
+### Concept
+
+Bricks subdivide chunks into destructible blocks. Players hit pixels, damage accumulates per-brick, and when threshold is exceeded, all pixels in that brick are destroyed.
+
+```
+BrickLayer<const GRID: usize = 16> {
+    // Full resolution - which brick each pixel belongs to
+    id: [BrickId; CHUNK_SIZE²],
+
+    // Downsampled - one damage value per brick
+    damage: [u8; GRID²],
+}
+```
+
+The const generic `GRID` controls everything:
+
+| GRID | Bricks | Brick Pixels | Id Type | Damage Cells |
+|------|--------|--------------|---------|--------------|
+| 16 | 256 | CHUNK_SIZE/16 | u8 | 256 |
+| 32 | 1024 | CHUNK_SIZE/32 | u16 | 1024 |
+| 64 | 4096 | CHUNK_SIZE/64 | u16 | 4096 |
+
+**BrickId type derivation:**
+- `GRID² ≤ 256` → `u8`
+- `GRID² > 256` → `u16`
+
+### Sample Rates
+
+| Sub-layer | Sample Rate | Formula |
+|-----------|-------------|---------|
+| `id` | 1 | Full resolution (pixel → brick mapping) |
+| `damage` | CHUNK_SIZE / GRID | One cell per brick |
+
+For a 512×512 chunk with `GRID = 16`:
+- Brick pixel size: 512 / 16 = 32×32 pixels per brick
+- Damage sample rate: 32 (matches brick size)
+- 256 bricks, 256 damage cells
+
+### Usage
+
+Since both CHUNK_SIZE and GRID are compile-time constants, a macro generates the layer types:
+
+```
+define_brick_layer!(GameBrickLayer, chunk_size: 512, grid: 16);
+// Generates BrickIdLayer + BrickDamageLayer with correct types and sizes
+
+// During plugin init:
+let brick_handles = GameBrickLayer::register(&mut layer_registry);
+commands.insert_resource(brick_handles);
+
+// In systems:
+fn brick_damage_system(
+    mut chunks: Query<&mut Chunk>,
+    brick: Res<BrickLayerHandles>,
+) {
+    for mut chunk in &mut chunks {
+        let ids = chunk.get(brick.id);
+        let damage = chunk.get_mut(brick.damage);
+        // accumulate damage per brick...
+    }
+}
+```
+
+### Gameplay Flow
+
+```mermaid
+sequenceDiagram
+    participant Player
+    participant Pixel as Pixel Layer
+    participant Brick as BrickLayer
+
+    Player->>Pixel: Hit pixel at (x, y)
+    Pixel->>Brick: Lookup brick_id[x, y]
+    Brick-->>Brick: damage[brick_id] += hit_damage
+    alt damage >= threshold
+        Brick->>Pixel: Destroy all pixels where brick_id == damaged_brick
+    end
+```
+
+### GPU Upload
+
+Both sub-layers are uploaded for shader-based damage visualization:
+
+| Sub-layer | Schedule | Shader Use |
+|-----------|----------|------------|
+| `id` | `OnChange` | Map pixel to brick for effect lookup |
+| `damage` | `Periodic(4)` | Damage overlay (cracks, glow) on whole brick |
+
+The shader combines both: sample `id` to find which brick, sample `damage` to determine visual intensity. Entire brick regions show damage effects uniformly.
+
+### Customization
+
+`BrickLayer` is a reference implementation. For different needs:
+
+- **Different damage type**: Use macro with custom damage type for more granularity
+- **Multiple damage types**: Add `fire_damage`, `physical_damage` sub-layers
+- **Non-uniform bricks**: Replace uniform grid with runtime-defined brick shapes (loses const-generic benefits)
+
+## Simulation Systems
+
+Each simulation declares which layers it requires and writes:
+
+```
+trait SimulationRule {
+    /// Layers this simulation reads
+    fn required_layers() -> &'static [LayerId];
+
+    /// Layers this simulation writes
+    fn writes_layers() -> &'static [LayerId];
+
+    /// Compute movement for a single pixel
+    fn compute_swap(...) -> Option<WorldPos>;
+}
+```
+
+### Scheduling
+
+- **Missing layer = system skipped** (configurable: skip silently or panic)
+- **Disjoint write sets = parallel execution** (Bevy scheduler handles this)
+- **Shared write sets = sequential execution** (ordered by registration)
+
+```mermaid
+flowchart LR
+    subgraph Parallel["Parallel (disjoint writes)"]
+        A["Falling Sand<br/>writes: Flags"]
+        B["Heat Diffusion<br/>writes: Heat"]
+    end
+    subgraph Sequential["Sequential (shared writes)"]
+        C["Material Interactions<br/>writes: Material, Damage"]
+        D["Decay Pass<br/>writes: Material, Damage"]
+    end
+    Parallel --> Sequential
+```
 
 ## Overview
 
@@ -18,11 +228,12 @@ All auxiliary data uses the same layer abstraction. The **sample rate** paramete
 flowchart TB
     subgraph Chunk["Chunk Buffer"]
         direction TB
-        Base["Base Layer<br/>sample_rate: 1<br/>(material, color, damage, flags)"]
-        L1["Layer: Temperature<br/>sample_rate: 1<br/>swap_follow: true"]
-        L2["Layer: Velocity<br/>sample_rate: 1<br/>swap_follow: true"]
-        L3["Layer: Heat<br/>sample_rate: 4<br/>swap_follow: N/A"]
-        L4["Layer: Pressure<br/>sample_rate: 8<br/>swap_follow: N/A"]
+        Base["Base Layer<br/>Material (u8)<br/>always present"]
+        L0["Layer: Color<br/>sample_rate: 1<br/>(opt-in, Default Bundle)"]
+        L1["Layer: Damage<br/>sample_rate: 1<br/>(opt-in, Default Bundle)"]
+        L2["Layer: Flags<br/>sample_rate: 1<br/>(opt-in, Default Bundle)"]
+        L3["Layer: Heat<br/>sample_rate: 4<br/>(opt-in)"]
+        L4["Layer: Pressure<br/>sample_rate: 8<br/>(opt-in)"]
     end
 
     subgraph Render["Render Pipeline"]
@@ -31,8 +242,7 @@ flowchart TB
         R2["Backend<br/>(per-layer)"]
     end
 
-    L1 --> R1
-    L2 --> R1
+    L0 --> R1
     L3 --> R1
     L4 --> R1
     R1 --> R2
@@ -75,22 +285,21 @@ layer_y = pixel_y / sample_rate
 
 ## Base Layer
 
-The core pixel format is the implicit base layer with `sample_rate: 1`:
+The base layer contains only the Material ID with `sample_rate: 1`:
 
 | Field | Type | Purpose |
 |-------|------|---------|
-| Material | u8 | Type identifier |
-| Color | u8 | Palette index |
-| Damage | u8 | Accumulated damage |
-| Flags | u8 | Simulation state bits |
+| Material | u8 | Type identifier, indexes into material registry |
 
-**Total: 4 bytes per pixel**
+**Total: 1 byte per pixel (minimum)**
 
-See [Pixel Format](../foundational/pixel-format.md) for full specification.
+Additional fields (Color, Damage, Flags) are opt-in layers included in the Default Bundle.
+
+See [Pixel Format](../foundational/pixel-format.md) for the base layer specification and flag bitmask reference.
 
 ### Stability Guarantee
 
-The base layer format will not change within a major version. Extension layers exist specifically to avoid breaking this contract.
+The base layer (Material only) will not change within a major version. The Default Bundle layers (Color, Damage, Flags) are stable for backward compatibility.
 
 ## Swap-Follow
 
@@ -351,24 +560,46 @@ See [Chunk Persistence](../persistence/chunk-persistence.md) for save format det
 All layers use SoA (Structure of Arrays) for cache efficiency:
 
 ```
-Base pixels:  [P0, P1, P2, P3, P4, ...]     // 4 bytes each, 262k cells
-Temperature:  [T0, T1, T2, T3, T4, ...]     // 1 byte each,  262k cells
-Heat:         [H0, H1, H2, H3, ...]         // 1 byte each,  16k cells
-Pressure:     [R0, R1, R2, ...]             // 2 bytes each, 4k cells
+Material:     [M0, M1, M2, M3, M4, ...]     // 1 byte each,  262k cells (always)
+Color:        [C0, C1, C2, C3, C4, ...]     // 1 byte each,  262k cells (Default Bundle)
+Damage:       [D0, D1, D2, D3, D4, ...]     // 1 byte each,  262k cells (Default Bundle)
+Flags:        [F0, F1, F2, F3, F4, ...]     // 1 byte each,  262k cells (Default Bundle)
+Heat:         [H0, H1, H2, H3, ...]         // 1 byte each,  16k cells  (opt-in)
+Pressure:     [R0, R1, R2, ...]             // 2 bytes each, 4k cells   (opt-in)
 ```
 
-### Memory Example
+### Memory Examples
 
-For a 512×512 chunk:
+For a 512×512 chunk with different configurations:
+
+**Minimal Bundle (Material only):**
 
 | Layer | Sample Rate | Cells | Per-Cell | Total |
 |-------|-------------|-------|----------|-------|
-| Base | 1 | 262,144 | 4 bytes | 1 MB |
-| Temperature | 1 | 262,144 | 1 byte | 256 KB |
-| Velocity | 1 | 262,144 | 2 bytes | 512 KB |
+| Material | 1 | 262,144 | 1 byte | 256 KB |
+| **Total** | | | | **256 KB** |
+
+**Default Bundle (backward compatible):**
+
+| Layer | Sample Rate | Cells | Per-Cell | Total |
+|-------|-------------|-------|----------|-------|
+| Material | 1 | 262,144 | 1 byte | 256 KB |
+| Color | 1 | 262,144 | 1 byte | 256 KB |
+| Damage | 1 | 262,144 | 1 byte | 256 KB |
+| Flags | 1 | 262,144 | 1 byte | 256 KB |
+| **Total** | | | | **1 MB** |
+
+**Default Bundle + Heat + Pressure:**
+
+| Layer | Sample Rate | Cells | Per-Cell | Total |
+|-------|-------------|-------|----------|-------|
+| Material | 1 | 262,144 | 1 byte | 256 KB |
+| Color | 1 | 262,144 | 1 byte | 256 KB |
+| Damage | 1 | 262,144 | 1 byte | 256 KB |
+| Flags | 1 | 262,144 | 1 byte | 256 KB |
 | Heat | 4 | 16,384 | 1 byte | 16 KB |
 | Pressure | 8 | 4,096 | 2 bytes | 8 KB |
-| **Total** | | | | ~1.8 MB |
+| **Total** | | | | **~1 MB** |
 
 ## Registration
 
