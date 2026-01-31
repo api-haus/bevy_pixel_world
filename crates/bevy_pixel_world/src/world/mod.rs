@@ -287,6 +287,14 @@ impl PixelWorld {
     &self.seeder
   }
 
+  /// Replaces the seeder used for chunk generation.
+  ///
+  /// Call this when the noise profile changes. Follow with [`ReseedAllChunks`]
+  /// to regenerate existing chunks with the new seeder.
+  pub fn set_seeder(&mut self, seeder: Arc<dyn ChunkSeeder + Send + Sync>) {
+    self.seeder = seeder;
+  }
+
   /// Returns iterator over visible chunk positions for the current center.
   pub fn visible_positions(&self) -> impl Iterator<Item = ChunkPos> {
     visible_positions(self.center)

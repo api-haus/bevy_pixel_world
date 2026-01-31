@@ -20,7 +20,8 @@ pub(crate) use culling::update_entity_culling;
 pub use culling::{CullingConfig, StreamCulled};
 pub(crate) use frame_reset::clear_chunk_tracking;
 pub(crate) use seeding::{
-  SeedingTasks, dispatch_seeding, handle_reload_request, handle_reseed_request, poll_seeding_tasks,
+  SeedingTasks, dispatch_seeding, handle_reload_request, handle_reseed_request,
+  handle_update_seeder, poll_seeding_tasks,
 };
 pub use window::StreamingCamera;
 pub(crate) use window::{

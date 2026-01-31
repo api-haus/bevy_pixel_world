@@ -1,25 +1,48 @@
-//! Noise profile editor panel with NoiseTool IPC integration.
+//! Noise profile synchronization and NoiseTool IPC integration.
+//!
+//! This module handles:
+//! - Syncing NoiseProfile resource from WorldConfigData yoleck entity
+//! - Polling IPC for updates from external NoiseTool editor
+//! - Triggering seeder updates when noise configuration changes
+//!
+//! The actual UI for editing noise settings is in the WorldConfig yoleck
+//! entity panel (see `entities/world_config.rs`).
+
+use std::sync::Arc;
 
 use bevy::prelude::*;
-use bevy_egui::{EguiPrimaryContextPass, egui};
-use bevy_pixel_world::ReseedAllChunks;
+use bevy_pixel_world::{MaterialSeeder, UpdateSeeder};
 use noise_ipc::NoiseIpc;
 
+use super::entities::WorldConfigData;
+
 /// Current noise profile being edited.
+///
+/// This resource mirrors the WorldConfigData values for the current level,
+/// providing a working copy that syncs with yoleck.
 #[derive(Resource)]
 pub struct NoiseProfile {
   /// Encoded node tree (ENT) string.
   pub ent: String,
-  /// Whether the ENT has been modified since last save.
+  /// World seed for procedural generation.
+  pub world_seed: i32,
+  /// Noise threshold for solid/void boundary.
+  pub threshold: f32,
+  /// Whether the profile has been modified and needs to update the seeder.
   pub dirty: bool,
+  /// Entity ID of the WorldConfigData we synced from (for detecting level
+  /// changes).
+  synced_from: Option<Entity>,
 }
 
 impl Default for NoiseProfile {
   fn default() -> Self {
-    // Default to simplex noise preset
     Self {
       ent: bevy_pixel_world::noise_presets::SIMPLEX.to_string(),
+      world_seed: 42,
+      threshold: 0.0,
       dirty: false,
+      synced_from: None,
     }
   }
 }
@@ -33,14 +56,61 @@ pub struct NoiseIpcConnection {
 pub fn setup(app: &mut App) {
   app.init_resource::<NoiseProfile>();
   app.init_resource::<NoiseIpcConnection>();
-  app.add_systems(EguiPrimaryContextPass, noise_panel_system);
+  app.add_systems(
+    Update,
+    (sync_profile_from_world_config, poll_ipc_and_apply_changes).chain(),
+  );
 }
 
-fn noise_panel_system(
-  mut egui_ctx: bevy_egui::EguiContexts,
+/// Syncs NoiseProfile from WorldConfigData on level load.
+///
+/// Handles:
+/// - Initial sync when WorldConfigData first appears
+/// - Re-sync when level changes (different entity)
+/// - Reset when level is unloaded (entity gone)
+fn sync_profile_from_world_config(
+  mut profile: ResMut<NoiseProfile>,
+  world_config: Query<(Entity, &WorldConfigData)>,
+) {
+  match world_config.single() {
+    Ok((entity, config)) => {
+      // Check if we need to sync (new entity or first time)
+      let needs_sync = match profile.synced_from {
+        Some(prev_entity) => prev_entity != entity,
+        None => true,
+      };
+
+      if needs_sync {
+        profile.ent = config.noise_ent.clone();
+        profile.world_seed = config.world_seed;
+        profile.threshold = config.threshold;
+        profile.synced_from = Some(entity);
+        profile.dirty = true; // Trigger seeder update
+        info!(
+          "Synced noise profile from level: seed={}, threshold={}, ent={}",
+          config.world_seed,
+          config.threshold,
+          &config.noise_ent[..config.noise_ent.len().min(20)]
+        );
+      }
+    }
+    Err(_) => {
+      // No WorldConfigData - either no level loaded or level lacks WorldConfig
+      // Reset sync state so we re-sync when a new level loads
+      if profile.synced_from.is_some() {
+        profile.synced_from = None;
+        debug!("WorldConfigData gone - will re-sync when new level loads");
+      }
+    }
+  }
+}
+
+/// Polls IPC for NoiseTool updates and applies changes to the seeder.
+fn poll_ipc_and_apply_changes(
   mut profile: ResMut<NoiseProfile>,
   mut ipc: ResMut<NoiseIpcConnection>,
-  mut reseed_events: bevy::ecs::message::MessageWriter<ReseedAllChunks>,
+  mut update_seeder: bevy::ecs::message::MessageWriter<UpdateSeeder>,
+  mut world_config: Query<&mut WorldConfigData>,
 ) {
   // Poll IPC for updates from NoiseTool
   if let Some(client) = &mut ipc.client {
@@ -53,77 +123,24 @@ fn noise_panel_system(
     }
   }
 
-  // Trigger re-seed when profile changes
+  // Apply changes when profile is dirty
   if profile.dirty {
-    reseed_events.write(ReseedAllChunks);
-    profile.dirty = false;
-  }
-
-  let Ok(ctx) = egui_ctx.ctx_mut() else {
-    return;
-  };
-
-  egui::Window::new("Noise Profile")
-    .default_open(false)
-    .show(ctx, |ui| {
-      ui.horizontal(|ui| {
-        ui.label("ENT:");
-        let response = ui.text_edit_singleline(&mut profile.ent);
-        if response.changed() {
-          profile.dirty = true;
-        }
+    // Create and send new seeder
+    if let Some(seeder) = MaterialSeeder::from_encoded(&profile.ent, profile.world_seed) {
+      let seeder = seeder.threshold(profile.threshold);
+      update_seeder.write(UpdateSeeder {
+        seeder: Arc::new(seeder),
       });
 
-      if ui.button("Edit in NoiseTool").clicked() {
-        open_in_noise_tool(&mut ipc.client, &profile.ent);
+      // Update WorldConfigData to trigger yoleck dirty flag
+      if let Ok(mut config) = world_config.single_mut() {
+        config.noise_ent = profile.ent.clone();
+        config.world_seed = profile.world_seed;
+        config.threshold = profile.threshold;
       }
-    });
-}
-
-fn open_in_noise_tool(ipc: &mut Option<NoiseIpc>, ent: &str) {
-  // Check if NoiseTool is already running
-  let already_running = std::process::Command::new("pgrep")
-    .arg("-x")
-    .arg("NodeEditor")
-    .stdout(std::process::Stdio::null())
-    .stderr(std::process::Stdio::null())
-    .status()
-    .map(|s| s.success())
-    .unwrap_or(false);
-
-  // Launch NoiseTool if not already running
-  if !already_running {
-    let noise_tool_path = "./vendor/FastNoise2/build/Release/bin/NodeEditor";
-    match std::process::Command::new(noise_tool_path).spawn() {
-      Ok(_) => info!("Launched NoiseTool"),
-      Err(e) => {
-        error!("Failed to launch NoiseTool: {}", e);
-        return;
-      }
+    } else {
+      warn!("Failed to create seeder from ENT: {}", profile.ent);
     }
-    // Give NoiseTool time to start and create shared memory
-    std::thread::sleep(std::time::Duration::from_millis(500));
-    // Reset IPC connection since we just launched NoiseTool
-    *ipc = None;
-  }
-
-  // Connect to IPC (after NoiseTool is running)
-  if ipc.is_none() {
-    match NoiseIpc::new() {
-      Ok(client) => {
-        *ipc = Some(client);
-        info!("Connected to NoiseTool IPC");
-      }
-      Err(e) => {
-        error!("Failed to connect to NoiseTool IPC: {}", e);
-        return;
-      }
-    }
-  }
-
-  // Send import command
-  if let Some(client) = ipc {
-    client.send_import(ent);
-    info!("Sent ENT to NoiseTool for editing");
+    profile.dirty = false;
   }
 }

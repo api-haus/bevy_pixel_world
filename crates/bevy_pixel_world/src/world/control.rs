@@ -10,6 +10,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use bevy::prelude::*;
 
+use crate::seeding::ChunkSeeder;
+
 /// Controls whether world simulation is running or paused.
 ///
 /// When paused:
@@ -317,6 +319,18 @@ pub struct PendingPersistenceInit {
 /// Use this for level editor mode when the noise profile changes.
 #[derive(bevy::prelude::Message)]
 pub struct ReseedAllChunks;
+
+/// Message to update the world seeder and regenerate all chunks.
+///
+/// When sent, the seeder is replaced on all `PixelWorld` instances,
+/// then `ReseedAllChunks` is triggered to regenerate with the new seeder.
+///
+/// Use this when the noise profile changes in the editor.
+#[derive(bevy::prelude::Message)]
+pub struct UpdateSeeder {
+  /// The new seeder to use for chunk generation.
+  pub seeder: Arc<dyn ChunkSeeder + Send + Sync>,
+}
 
 /// Message to reload all chunks from disk.
 ///

@@ -28,6 +28,7 @@ tracing-tracy = { version = "0.11", optional = true, default-features = false, f
 tracing-subscriber = { version = "0.3", optional = true, default-features = false, features = ["registry"] }
 avian2d = { version = "0.4", optional = true }
 bevy_rapier2d = { version = "0.32", optional = true }
+log = { version = "*", features = ["max_level_debug", "release_max_level_warn"] }
 
 # Native-only: fastnoise2 (uses C++ library) and async-channel for I/O worker
 [target.'cfg(not(target_family = "wasm"))'.dependencies]

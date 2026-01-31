@@ -15,7 +15,7 @@ use crate::persistence::tasks::LoadingChunks;
 use crate::primitives::Chunk;
 use crate::world::PixelWorld;
 use crate::world::SlotIndex;
-use crate::world::control::{ReloadAllChunks, ReseedAllChunks};
+use crate::world::control::{ReloadAllChunks, ReseedAllChunks, UpdateSeeder};
 use crate::world::persistence_systems::LoadedChunkDataStore;
 use crate::world::slot::ChunkLifecycle;
 
@@ -263,6 +263,25 @@ pub(crate) fn poll_seeding_tasks(
 
     false // remove completed task
   });
+}
+
+/// System: Handles seeder update requests.
+///
+/// When `UpdateSeeder` is sent, the seeder is replaced on all `PixelWorld`
+/// instances, then `ReseedAllChunks` is triggered to regenerate chunks.
+#[cfg_attr(feature = "tracy", tracing::instrument(skip_all))]
+pub(crate) fn handle_update_seeder(
+  mut events: bevy::ecs::message::MessageReader<UpdateSeeder>,
+  mut worlds: Query<&mut PixelWorld>,
+  mut reseed_events: bevy::ecs::message::MessageWriter<ReseedAllChunks>,
+) {
+  for event in events.read() {
+    for mut world in &mut worlds {
+      world.set_seeder(event.seeder.clone());
+    }
+    reseed_events.write(ReseedAllChunks);
+    info!("Seeder updated, triggering reseed");
+  }
 }
 
 /// System: Handles reseed requests by transitioning Active chunks to Seeding.

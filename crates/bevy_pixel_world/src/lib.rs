@@ -86,7 +86,7 @@ pub use tracy_init::init_tracy;
 pub use virtual_camera::{ActiveVirtualCamera, VirtualCamera, VirtualCameraPlugin};
 pub use world::control::{
   ClearPersistence, PersistenceComplete, PersistenceControl, PersistenceFuture, PersistenceHandle,
-  ReloadAllChunks, RequestPersistence, ReseedAllChunks, SimulationState,
+  ReloadAllChunks, RequestPersistence, ReseedAllChunks, SimulationState, UpdateSeeder,
 };
 pub use world::plugin::{AsyncTaskBehavior, SeededChunks, StreamingCamera, UnloadingChunks};
 // Re-export culling types from streaming module for backward compatibility

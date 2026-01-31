@@ -41,6 +41,8 @@ pub struct BrushState {
   pub heat_painting: bool,
   /// Heat value to paint (0-255).
   pub heat_value: u8,
+  /// When false, brush painting is disabled (e.g., in level editor mode).
+  pub enabled: bool,
 }
 
 impl Default for BrushState {
@@ -54,6 +56,7 @@ impl Default for BrushState {
       material: material_ids::SAND,
       heat_painting: false,
       heat_value: 100,
+      enabled: true,
     }
   }
 }
@@ -150,6 +153,9 @@ fn paint_system(
   mut worlds: Query<&mut crate::PixelWorld>,
   gizmos: crate::debug_shim::GizmosParam,
 ) {
+  if !brush.enabled {
+    return;
+  }
   if ui_over.is_some_and(|s| s.pointer_over_ui) {
     return;
   }
@@ -207,6 +213,9 @@ fn heat_paint_system(
   ui_over: Option<Res<UiPointerState>>,
   mut worlds: Query<&mut crate::PixelWorld>,
 ) {
+  if !brush.enabled {
+    return;
+  }
   if !brush.heat_painting || !brush.painting {
     return;
   }

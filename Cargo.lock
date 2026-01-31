@@ -1353,6 +1353,7 @@ dependencies = [
  "dirs 5.0.1",
  "fastnoise2",
  "js-sys",
+ "log",
  "lz4_flex",
  "palette",
  "paste",

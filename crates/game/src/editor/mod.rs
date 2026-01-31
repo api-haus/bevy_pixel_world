@@ -11,14 +11,14 @@ mod ui;
 
 use bevy::prelude::*;
 #[cfg(feature = "editor")]
-use bevy_pixel_world::{PersistenceControl, ReseedAllChunks, SimulationState};
+use bevy_pixel_world::{PersistenceControl, ReloadAllChunks, ReseedAllChunks, SimulationState};
 #[cfg(feature = "editor")]
 use bevy_yoleck::YoleckEditorLevelsDirectoryPath;
 #[cfg(feature = "editor")]
 use bevy_yoleck::prelude::YoleckSyncWithEditorState;
 use bevy_yoleck::prelude::*;
 use bevy_yoleck::vpeol::prelude::*;
-pub use entities::PlayerSpawnPoint;
+pub use entities::{PlayerSpawnPoint, WorldConfigData};
 
 /// Game mode state controlling editor vs play mode.
 #[derive(States, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -103,6 +103,7 @@ fn load_default_level(mut commands: Commands, asset_server: Res<AssetServer>) {
 fn on_enter_editing(
   simulation: Option<ResMut<SimulationState>>,
   persistence: Option<ResMut<PersistenceControl>>,
+  brush: Option<ResMut<bevy_pixel_world::BrushState>>,
   mut reseed: bevy::ecs::message::MessageWriter<ReseedAllChunks>,
 ) {
   if let Some(mut sim) = simulation {
@@ -111,14 +112,19 @@ fn on_enter_editing(
   if let Some(mut pers) = persistence {
     pers.disable();
   }
+  if let Some(mut brush) = brush {
+    brush.enabled = false;
+  }
   reseed.write(ReseedAllChunks); // Discard any playtest modifications
-  info!("Edit mode: simulation paused, persistence disabled");
+  info!("Edit mode: simulation paused, persistence disabled, brush disabled");
 }
 
 #[cfg(feature = "editor")]
 fn on_enter_playing(
   simulation: Option<ResMut<SimulationState>>,
   persistence: Option<ResMut<PersistenceControl>>,
+  brush: Option<ResMut<bevy_pixel_world::BrushState>>,
+  mut reload: bevy::ecs::message::MessageWriter<ReloadAllChunks>,
 ) {
   if let Some(mut pers) = persistence {
     pers.enable();
@@ -126,5 +132,10 @@ fn on_enter_playing(
   if let Some(mut sim) = simulation {
     sim.resume();
   }
-  info!("Play mode: simulation resumed, persistence enabled");
+  if let Some(mut brush) = brush {
+    brush.enabled = true;
+  }
+  // Reload chunks from disk to restore persisted state
+  reload.write(ReloadAllChunks);
+  info!("Play mode: simulation resumed, persistence enabled, brush enabled, reloading from disk");
 }
