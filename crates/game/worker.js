@@ -15,6 +15,7 @@ const HEADER_SIZE = 64;
 const PAGE_TABLE_ENTRY_SIZE = 24;
 const BODY_INDEX_ENTRY_SIZE = 28;
 const ENTITY_HEADER_SIZE = 8;
+const MAX_CHUNK_SIZE = 100_000_000; // 100MB sanity limit for corrupt entry detection
 
 // Message handler
 self.onmessage = async (event) => {
@@ -48,6 +49,9 @@ self.onmessage = async (event) => {
 					syncHandle = null;
 				}
 				result = { type: 'FlushComplete' };
+				break;
+			case 'DeleteSave':
+				result = await handleDeleteSave();
 				break;
 			default:
 				result = { type: 'Error', message: `Unknown command: ${type}` };
@@ -187,6 +191,12 @@ async function readExistingFile() {
 			const size = entryView.getUint32(16, true);
 			const storageType = entryView.getUint8(20);
 
+			// Skip corrupt entries
+			if (size === 0 || size > MAX_CHUNK_SIZE) {
+				console.warn(`[Worker] Skipping corrupt page table entry at ${chunkX},${chunkY}: size=${size}`);
+				continue;
+			}
+
 			const key = `${chunkX},${chunkY}`;
 			chunkIndex.set(key, { offset, size, storageType });
 		}
@@ -238,6 +248,13 @@ function handleLoadChunk(chunkX, chunkY) {
 			chunkY,
 			data: null
 		};
+	}
+
+	// Validate size to prevent corrupt entries from crashing
+	if (entry.size === 0 || entry.size > MAX_CHUNK_SIZE) {
+		console.warn(`[Worker] Corrupt chunk entry ${key}: size=${entry.size}, treating as missing`);
+		chunkIndex.delete(key);
+		return { type: 'ChunkLoaded', chunkX, chunkY, data: null };
 	}
 
 	// Read chunk data
@@ -316,6 +333,34 @@ function handleRemoveBody(stableId) {
 		type: 'BodyRemoveComplete',
 		stableId
 	};
+}
+
+async function handleDeleteSave() {
+	// Close current handle
+	if (syncHandle) {
+		syncHandle.close();
+		syncHandle = null;
+	}
+
+	// Delete the save file
+	if (saveFile && rootDir) {
+		const fileName = saveFile.name;
+		await rootDir.removeEntry(fileName);
+		console.log(`[Worker] Deleted save file: ${fileName}`);
+	}
+
+	// Clear in-memory state
+	chunkIndex.clear();
+	bodyIndex.clear();
+	dataWritePos = HEADER_SIZE;
+	worldSeed = 0;
+
+	// Reinitialize with a fresh empty file
+	saveFile = await rootDir.getFileHandle('world.save', { create: true });
+	syncHandle = await saveFile.createSyncAccessHandle();
+	await createNewFile(Date.now()); // Use timestamp as new seed
+
+	return { type: 'DeleteComplete' };
 }
 
 async function handleFlush() {
