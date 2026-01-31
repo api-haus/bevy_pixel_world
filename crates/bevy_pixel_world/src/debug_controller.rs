@@ -37,7 +37,6 @@ pub struct BrushState {
   pub world_pos: Option<(i64, i64)>,
   pub world_pos_f32: Option<Vec2>,
   pub material: MaterialId,
-  pub spawn_requested: bool,
   /// When true, LMB paints heat values instead of materials.
   pub heat_painting: bool,
   /// Heat value to paint (0-255).
@@ -53,7 +52,6 @@ impl Default for BrushState {
       world_pos: None,
       world_pos_f32: None,
       material: material_ids::SAND,
-      spawn_requested: false,
       heat_painting: false,
       heat_value: 100,
     }
@@ -67,7 +65,6 @@ fn spawn_collision_query_point(mut commands: Commands) {
 fn input_system(
   mut brush: ResMut<BrushState>,
   mouse_buttons: Res<ButtonInput<MouseButton>>,
-  keys: Res<ButtonInput<KeyCode>>,
   mut scroll_events: MessageReader<MouseWheel>,
   window_query: Query<&Window, With<PrimaryWindow>>,
   camera_query: Query<
@@ -82,7 +79,6 @@ fn input_system(
 ) {
   brush.painting = mouse_buttons.pressed(MouseButton::Left);
   brush.erasing = mouse_buttons.pressed(MouseButton::Right);
-  brush.spawn_requested = keys.just_pressed(KeyCode::Space);
 
   for event in scroll_events.read() {
     let delta = match event.unit {

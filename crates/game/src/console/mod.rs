@@ -24,16 +24,6 @@ pub enum GameMode {
 #[derive(Resource, Default)]
 pub struct CreativeModePosition(pub Vec2);
 
-/// Run condition that returns true when in survival mode.
-pub fn in_survival_mode(mode: Res<GameMode>) -> bool {
-  *mode == GameMode::Survival
-}
-
-/// Run condition that returns true when in creative mode.
-pub fn in_creative_mode(mode: Res<GameMode>) -> bool {
-  *mode == GameMode::Creative
-}
-
 pub struct ConsolePlugins;
 
 impl Plugin for ConsolePlugins {

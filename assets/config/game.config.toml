@@ -4,7 +4,6 @@ height = 1080
 title = "Sim2D"
 
 [camera]
-clear_color = [0.0, 0.0, 0.0]
 viewport_width = 640.0
 viewport_height = 480.0
 
@@ -12,16 +11,10 @@ viewport_height = 480.0
 gravity = 980.0
 
 [player]
-color = [0.8, 0.2, 0.2]
-width = 30.0
-height = 50.0
 spawn_x = 0.0
 spawn_y = 100.0
 collider_radius = 13.0
 collider_length = 14.0
-sensor_width = 28.0
-sensor_height = 0.1
-float_height = 30.0
 walk_speed = 100.0
 acceleration = 30.0
 air_acceleration = 15.0
@@ -33,24 +26,6 @@ autostep_width = 4.0
 sprite = "sprites/cc0/char.png"
 sprite_scale = 2.0
 sprite_pivot = [0.5, 0.6]  # relative units: (0.5, 0.5) = centered
-
-[ground]
-color = [0.3, 0.5, 0.3]
-width = 800.0
-height = 40.0
-y_position = -300.0
-
-[platforms]
-seed = 21
-count = 10
-width_min = 100.0
-width_max = 200.0
-height = 20.0
-x_min = -350.0
-x_max = 350.0
-y_min = -200.0
-y_max = 250.0
-color = [0.4, 0.4, 0.6]
 
 [day_cycle]
 seconds_per_hour = 1.0  # 24h cycle = 2 real minutes
