@@ -136,8 +136,8 @@ impl Default for GlobalPalette {
   fn default() -> Self {
     // Default to a simple grayscale ramp
     let mut colors = [Rgba::new(0, 0, 0, 255); 256];
-    for i in 0..256 {
-      colors[i] = Rgba::new(i as u8, i as u8, i as u8, 255);
+    for (i, color) in colors.iter_mut().enumerate() {
+      *color = Rgba::new(i as u8, i as u8, i as u8, 255);
     }
     // Start with no LUT - call start_lut_build() to begin async computation
     Self {
@@ -646,17 +646,17 @@ pub fn colors_from_image(image: &Image) -> [Rgba; 256] {
   let pixel_count = (image.width() * image.height()) as usize;
   let bytes_per_pixel = data.len() / pixel_count.max(1);
 
-  for i in 0..256.min(pixel_count) {
+  for (i, color) in colors.iter_mut().enumerate().take(pixel_count.min(256)) {
     let offset = i * bytes_per_pixel;
     if offset + 4 <= data.len() {
-      colors[i] = Rgba::new(
+      *color = Rgba::new(
         data[offset],
         data[offset + 1],
         data[offset + 2],
         data[offset + 3],
       );
     } else if offset + 3 <= data.len() {
-      colors[i] = Rgba::new(data[offset], data[offset + 1], data[offset + 2], 255);
+      *color = Rgba::new(data[offset], data[offset + 1], data[offset + 2], 255);
     }
   }
 
