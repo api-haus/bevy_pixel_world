@@ -126,7 +126,13 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let coffset = 0.5;
     let ps = source_size.zw;
     let ogl2_pos = pos.y * source_size.y - coffset;
-    let f = fract(ogl2_pos);
+    let f_raw = fract(ogl2_pos);
+
+    // Anti-alias the fractional position using screen-space derivatives
+    let dpy = fwidth(ogl2_pos);
+    let aa_blend = clamp(dpy, 0.0, 1.0);
+    // When dpy is high (non-integer scaling), blend towards 0.5 to reduce aliasing
+    let f = mix(f_raw, 0.5, aa_blend * 0.5);
 
     let dy = vec2<f32>(0.0, ps.y);
 
