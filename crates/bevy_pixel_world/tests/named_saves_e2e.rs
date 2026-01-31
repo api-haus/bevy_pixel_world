@@ -45,6 +45,12 @@ impl PersistenceHarness {
       task_pool_options: TaskPoolOptions::with_num_threads(4),
     }));
 
+    app.add_plugins(bevy::transform::TransformPlugin);
+    app.add_plugins(bevy::asset::AssetPlugin::default());
+    app.add_plugins(bevy::image::ImagePlugin::default());
+    app.add_plugins(bevy::scene::ScenePlugin);
+    app.add_plugins(bevy::gizmos::GizmoPlugin);
+
     // Configure persistence with absolute path
     let config = PersistenceConfig::at(&save_path);
 

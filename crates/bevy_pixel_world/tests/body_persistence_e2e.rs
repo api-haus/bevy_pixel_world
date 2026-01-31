@@ -222,8 +222,21 @@ fn pixel_bodies_survive_chunk_reload() {
     .map(|&pos| harness.spawn_pixel_body(pos, body_size, material_ids::STONE))
     .collect();
 
-  // Let bodies blit and settle
-  harness.run(30);
+  // Let bodies blit and settle - wait until all bodies have written_positions
+  let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+  loop {
+    harness.run(1);
+    let all_blitted = bodies
+      .iter()
+      .all(|&e| harness.body_written_positions_count(e) > 0);
+    if all_blitted {
+      break;
+    }
+    if std::time::Instant::now() > deadline {
+      panic!("Bodies did not blit within 5 seconds");
+    }
+    std::thread::yield_now();
+  }
 
   // Record pre-scroll state
   let pre_scroll: Vec<(u64, usize, Vec2)> = bodies

@@ -65,6 +65,13 @@ impl EditorModeTestHarness {
     app.add_plugins(MinimalPlugins.set(TaskPoolPlugin {
       task_pool_options: TaskPoolOptions::with_num_threads(4),
     }));
+
+    app.add_plugins(bevy::transform::TransformPlugin);
+    app.add_plugins(bevy::asset::AssetPlugin::default());
+    app.add_plugins(bevy::image::ImagePlugin::default());
+    app.add_plugins(bevy::scene::ScenePlugin);
+    app.add_plugins(bevy::gizmos::GizmoPlugin);
+
     app.add_plugins(PixelWorldPlugin::new(PersistenceConfig::at(save_path)));
     app.insert_resource(AsyncTaskBehavior::Poll);
 
