@@ -126,6 +126,21 @@ Variable-length compressed chunk data, referenced by page table offsets.
 The entry size is redundant with the page table's `Data Size` field but allows forward iteration through the data region
 for recovery/validation.
 
+### Layer Data
+
+Each persistent layer is saved alongside the base Material layer. Layer persistence is configured at registration:
+
+| Layer | Persistent | Rationale |
+|-------|------------|-----------|
+| Material | Always | Type identity must persist |
+| Color | Yes (Default Bundle) | Player-placed colors |
+| Damage | Yes (Default Bundle) | Accumulated state |
+| Flags | Partial | Only `pixel_body` persists; simulation flags regenerate |
+| Heat | No | Resimulates from burning pixels |
+| Temperature | Optional | Game-specific |
+
+See [Pixel Layers](../modularity/pixel-layers.md) for layer persistence configuration.
+
 ## Compression
 
 ### LZ4

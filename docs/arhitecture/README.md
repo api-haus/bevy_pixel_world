@@ -142,6 +142,17 @@ Level editing and runtime control.
 |----------|---------|
 | [Level Editor Mode](editor/level-editor-mode.md) | Simulation and persistence control for level editing |
 
+### Modularity
+
+Extensibility architecture for crate consumers.
+
+| Document | Purpose |
+|----------|---------|
+| [Modularity Overview](modularity/README.md) | Extension points and design principles |
+| [Rendering Backends](modularity/rendering-backends.md) | Abstract render targets (GPU, terminal, headless) |
+| [Pixel Layers](modularity/pixel-layers.md) | Unified layer system (sample rate, swap-follow, render) |
+| [Simulation Extensibility](modularity/simulation-extensibility.md) | Pluggable rules and library functions |
+
 ## Data Flow
 
 ```mermaid

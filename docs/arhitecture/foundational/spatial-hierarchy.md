@@ -41,7 +41,7 @@ A chunk is a fixed-size rectangular buffer of pixels.
 block-beta
     columns 1
     A["Chunk at world position (cx, cy)"]:1
-    B["Pixel buffer: width x height x 4 bytes"]:1
+    B["Layer buffers: width × height × layer_count"]:1
     C["Subdivided into tiles for simulation"]:1
 ```
 
@@ -111,9 +111,11 @@ needs evaluation. Tile dirty rects define the spatial bounds for simulation sche
 
 The fundamental unit of the cellular automata simulation.
 
-- 4 bytes: material, color, damage, flags
+- **Base layer (always):** Material (1 byte)
+- **Default Bundle:** Material + Color + Damage + Flags (4 bytes total)
 - Stores state needed for simulation and rendering
-- See [Pixel Format](pixel-format.md) for complete documentation
+- See [Pixel Format](pixel-format.md) for layer specifications
+- See [Pixel Layers](../modularity/pixel-layers.md) for bundle configurations
 
 ## Coordinate Systems
 
@@ -168,8 +170,8 @@ flowchart TB
                     TA["A"] --- TB["B"]
                     TC["C"] --- TD["D"]
                 end
-                subgraph Pixels["Pixel Buffer"]
-                    P["4 bytes per pixel"]
+                subgraph Pixels["Layer Buffers"]
+                    P["SoA: Material, Color, ..."]
                 end
             end
 

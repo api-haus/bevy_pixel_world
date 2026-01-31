@@ -6,6 +6,27 @@ configuration.**
 > **Note:** The specific values in this document are illustrative examples. Actual compile-time values are defined in
 > `crates/pixel_world/src/coords.rs` and may differ. Consult the source code for authoritative values.
 
+## Builder Parameters
+
+These values are set at plugin construction time:
+
+| Parameter | Default | Options | Description |
+|-----------|---------|---------|-------------|
+| `chunk_size` | 512 | 256, 512, 1024 | Pixels per chunk edge |
+
+```
+PixelWorldPlugin::builder()
+    .with_chunk_size(512)
+    .with_bundle(DefaultBundle)
+    .with_layer::<BrickLayer<16>>()
+    .build()
+```
+
+**Chunk size affects derived values:**
+- Memory per chunk scales quadratically
+- Brick pixel size = `chunk_size / GRID` (see [Pixel Layers](../modularity/pixel-layers.md#brick-layer))
+- Tile count per chunk = `chunk_size / TILE_SIZE`
+
 ## Compile-Time Constants
 
 These values are hardcoded and never passed through function arguments.
@@ -14,7 +35,6 @@ These values are hardcoded and never passed through function arguments.
 
 | Constant        | Value | Description                                |
 |-----------------|-------|--------------------------------------------|
-| `CHUNK_SIZE`    | 512   | Pixels per chunk edge (square chunks)      |
 | `TILE_SIZE`     | 16    | Pixels per tile edge in checkerboard       |
 | `WINDOW_WIDTH`  | 6     | Chunks loaded horizontally                 |
 | `WINDOW_HEIGHT` | 4     | Chunks loaded vertically                   |
@@ -28,13 +48,17 @@ preserving internal positional consistency.
 
 Derived values are expressed as formulas, not magic numbers:
 
-| Constant          | Formula                         | Value     |
-|-------------------|---------------------------------|-----------|
-| `POOL_SIZE`       | `WINDOW_WIDTH * WINDOW_HEIGHT`  | 24 chunks |
-| `TILES_PER_CHUNK` | `CHUNK_SIZE / TILE_SIZE`        | 32 tiles  |
-| `CHUNK_MEMORY`    | `CHUNK_SIZE * CHUNK_SIZE * 4`   | 1 MB      |
+| Constant          | Formula                                      | Value (chunk_size=512, Default Bundle) |
+|-------------------|----------------------------------------------|----------------------------------------|
+| `POOL_SIZE`       | `WINDOW_WIDTH * WINDOW_HEIGHT`               | 24 chunks              |
+| `TILES_PER_CHUNK` | `chunk_size / TILE_SIZE`                     | 32 tiles               |
+| `CHUNK_MEMORY`    | `chunk_size² * bytes_per_pixel`              | 1 MB                   |
+| `BRICKS_PER_CHUNK`| `GRID²` (always)                             | 256 (GRID=16)          |
+| `BRICK_PIXELS`    | `chunk_size / GRID`                          | 32×32 pixels           |
 
-**Constraint:** `CHUNK_SIZE` must be evenly divisible by `TILE_SIZE`. This ensures the checkerboard pattern aligns
+**Note:** `bytes_per_pixel` depends on registered layers. Minimal Bundle = 1 byte, Default Bundle = 4 bytes. See [Pixel Layers](../modularity/pixel-layers.md) for layer configurations.
+
+**Constraint:** `chunk_size` must be evenly divisible by `TILE_SIZE`. This ensures the checkerboard pattern aligns
 across chunk boundaries. See [Simulation](../simulation/simulation.md) for details.
 
 ## Runtime Parameters
@@ -109,11 +133,18 @@ details.
 
 ## Memory Budget
 
-With the default constants:
+Memory depends on registered layers. With Default Bundle (4 bytes per pixel):
 
 - Chunk memory: 512 × 512 × 4 = 1 MB per chunk
 - Total pool: 24 × 1 MB = 24 MB
 - World coverage: (6 × 512) × (4 × 512) = 3072 × 2048 pixels
+
+With Minimal Bundle (1 byte per pixel):
+
+- Chunk memory: 512 × 512 × 1 = 256 KB per chunk
+- Total pool: 24 × 256 KB = 6 MB
+
+See [Pixel Layers](../modularity/pixel-layers.md) for detailed memory calculations per configuration.
 
 ## Related Documentation
 
