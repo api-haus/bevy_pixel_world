@@ -83,7 +83,7 @@ pub use world::control::{
   PersistenceComplete, PersistenceControl, PersistenceFuture, PersistenceHandle,
   RequestPersistence, SimulationState,
 };
-pub use world::plugin::{SeededChunks, StreamingCamera, UnloadingChunks};
+pub use world::plugin::{AsyncTaskBehavior, SeededChunks, StreamingCamera, UnloadingChunks};
 // Re-export culling types from streaming module for backward compatibility
 pub use world::streaming::{CullingConfig, StreamCulled};
 pub use world::{

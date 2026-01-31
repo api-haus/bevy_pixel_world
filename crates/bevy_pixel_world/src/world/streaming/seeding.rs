@@ -160,12 +160,14 @@ pub(crate) fn dispatch_seeding(
   mut worlds: Query<(Entity, &mut PixelWorld)>,
   mut loaded_data: ResMut<LoadedChunkDataStore>,
   rendering: Option<Res<crate::world::plugin::RenderingEnabled>>,
+  async_behavior: Option<Res<crate::world::plugin::AsyncTaskBehavior>>,
 ) {
   let task_pool = AsyncComputeTaskPool::get();
-  let max_tasks = if rendering.is_some() {
-    MAX_SEEDING_TASKS
-  } else {
+  let block_all = crate::world::plugin::should_block_tasks(rendering, async_behavior);
+  let max_tasks = if block_all {
     usize::MAX
+  } else {
+    MAX_SEEDING_TASKS
   };
 
   for (world_entity, world) in worlds.iter_mut() {
@@ -220,9 +222,10 @@ pub(crate) fn poll_seeding_tasks(
   mut seeded_chunks: ResMut<SeededChunks>,
   gizmos: debug_shim::GizmosParam,
   rendering: Option<Res<crate::world::plugin::RenderingEnabled>>,
+  async_behavior: Option<Res<crate::world::plugin::AsyncTaskBehavior>>,
 ) {
   let debug_gizmos = gizmos.get();
-  let block_all = rendering.is_none();
+  let block_all = crate::world::plugin::should_block_tasks(rendering, async_behavior);
 
   seeding_tasks.tasks.retain_mut(|task| {
     if !block_all && !task.task.is_finished() {

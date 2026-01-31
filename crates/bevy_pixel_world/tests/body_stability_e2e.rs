@@ -7,14 +7,15 @@
 //! Run: cargo test -p bevy_pixel_world body_stability
 
 use std::path::Path;
+use std::time::{Duration, Instant};
 
 use bevy::app::{TaskPoolOptions, TaskPoolPlugin};
 use bevy::ecs::world::Mut;
 use bevy::prelude::*;
 use bevy_pixel_world::{
-  ColorIndex, DisplacementState, LastBlitTransform, MaterialSeeder, Persistable, PersistenceConfig,
-  Pixel, PixelBodiesPlugin, PixelBody, PixelBodyIdGenerator, PixelWorld, PixelWorldPlugin,
-  SpawnPixelWorld, StreamingCamera, WorldPos, WorldRect, material_ids,
+  AsyncTaskBehavior, ColorIndex, DisplacementState, LastBlitTransform, MaterialSeeder, Persistable,
+  PersistenceConfig, Pixel, PixelBodiesPlugin, PixelBody, PixelBodyIdGenerator, PixelWorld,
+  PixelWorldPlugin, SpawnPixelWorld, StreamingCamera, WorldPos, WorldRect, material_ids,
 };
 use tempfile::TempDir;
 
@@ -39,6 +40,7 @@ impl TestHarness {
 
     app.add_plugins(PixelWorldPlugin::new(PersistenceConfig::at(save_path)));
     app.add_plugins(PixelBodiesPlugin);
+    app.insert_resource(AsyncTaskBehavior::Poll);
 
     let camera = app
       .world_mut()
@@ -60,16 +62,31 @@ impl TestHarness {
   }
 
   fn run_until_seeded(&mut self) {
-    for i in 0..100 {
+    self.run_until(WorldPos::new(0, 0), Duration::from_secs(5));
+  }
+
+  /// Runs updates until a pixel appears at the given position, or timeout.
+  fn run_until(&mut self, pos: WorldPos, timeout: Duration) {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
       self.app.update();
-      if i % 20 == 19 {
-        let mut q = self.app.world_mut().query::<&PixelWorld>();
-        if let Ok(world) = q.single(self.app.world()) {
-          if world.get_pixel(WorldPos::new(0, 0)).is_some() {
-            return;
-          }
+      std::thread::yield_now();
+      let mut q = self.app.world_mut().query::<&PixelWorld>();
+      if let Ok(world) = q.single(self.app.world()) {
+        if world.get_pixel(pos).is_some() {
+          return;
         }
       }
+    }
+    panic!("Pixel at {:?} not found within {:?}", pos, timeout);
+  }
+
+  /// Runs updates for the specified duration.
+  fn run_for(&mut self, duration: Duration) {
+    let deadline = Instant::now() + duration;
+    while Instant::now() < deadline {
+      self.app.update();
+      std::thread::yield_now();
     }
   }
 
@@ -276,7 +293,7 @@ fn erased_bodies_fully_removed() {
   }
 
   // Let bodies blit to world
-  harness.run(20);
+  harness.run_for(Duration::from_secs(1));
 
   assert_eq!(
     harness.count_pixel_bodies(),
@@ -290,8 +307,8 @@ fn erased_bodies_fully_removed() {
     harness.erase_circle(center, 20);
   }
 
-  // Run many frames to let the split system detect and despawn empty bodies
-  harness.run(50);
+  // Run to let the split system detect and despawn empty bodies
+  harness.run_for(Duration::from_secs(2));
 
   // All bodies should be despawned
   let remaining = harness.count_pixel_bodies();

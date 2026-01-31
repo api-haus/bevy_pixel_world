@@ -10,8 +10,9 @@ use bevy::app::{TaskPoolOptions, TaskPoolPlugin};
 use bevy::ecs::world::Mut;
 use bevy::prelude::*;
 use bevy_pixel_world::{
-  CHUNK_SIZE, ColorIndex, MaterialSeeder, PersistenceConfig, Pixel, PixelWorld, PixelWorldPlugin,
-  SpawnPixelWorld, StreamingCamera, WorldPos, debug_shim::DebugGizmos, material_ids,
+  AsyncTaskBehavior, CHUNK_SIZE, ColorIndex, MaterialSeeder, PersistenceConfig, Pixel, PixelWorld,
+  PixelWorldPlugin, SpawnPixelWorld, StreamingCamera, WorldPos, debug_shim::DebugGizmos,
+  material_ids,
 };
 
 /// Camera speed in pixels per simulated second (matches painting demo)
@@ -19,6 +20,7 @@ const CAMERA_SPEED: f32 = 500.0;
 /// Simulated frame delta (60 FPS)
 const DELTA_TIME: f32 = 1.0 / 60.0;
 use std::path::Path;
+use std::time::{Duration, Instant};
 
 use tempfile::TempDir;
 
@@ -34,6 +36,7 @@ impl TestHarness {
       task_pool_options: TaskPoolOptions::with_num_threads(4),
     }));
     app.add_plugins(PixelWorldPlugin::new(PersistenceConfig::at(save_path)));
+    app.insert_resource(AsyncTaskBehavior::Poll);
 
     let camera = app
       .world_mut()
@@ -55,16 +58,31 @@ impl TestHarness {
   }
 
   fn run_until_seeded(&mut self) {
-    for i in 0..100 {
+    self.run_until(WorldPos::new(0, 0), Duration::from_secs(5));
+  }
+
+  /// Runs updates until a pixel appears at the given position, or timeout.
+  fn run_until(&mut self, pos: WorldPos, timeout: Duration) {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
       self.app.update();
-      if i % 20 == 19 {
-        let mut q = self.app.world_mut().query::<&PixelWorld>();
-        if let Ok(world) = q.single(self.app.world()) {
-          if world.get_pixel(WorldPos::new(0, 0)).is_some() {
-            return;
-          }
+      std::thread::yield_now();
+      let mut q = self.app.world_mut().query::<&PixelWorld>();
+      if let Ok(world) = q.single(self.app.world()) {
+        if world.get_pixel(pos).is_some() {
+          return;
         }
       }
+    }
+    panic!("Pixel at {:?} not found within {:?}", pos, timeout);
+  }
+
+  /// Runs updates for the specified duration.
+  fn run_for(&mut self, duration: Duration) {
+    let deadline = Instant::now() + duration;
+    while Instant::now() < deadline {
+      self.app.update();
+      std::thread::yield_now();
     }
   }
 
@@ -142,7 +160,6 @@ fn painted_chunks_persist_across_scroll() {
   let save_path = temp_dir.path().join("test.save");
 
   let mut harness = TestHarness::new(&save_path);
-  harness.run_until_seeded();
 
   // Paint markers in 3 different chunks using STONE (solid, doesn't move during
   // sim) Distinguish chunks by ColorIndex.
@@ -157,6 +174,13 @@ fn painted_chunks_persist_across_scroll() {
     (WorldPos::new(-512 + 64, 64), ColorIndex(200)), // Chunk (-1, 0)
   ];
 
+  // Wait for all chunks containing markers to be seeded
+  // This is required in async mode where seeding is not blocking
+  for (pos, _) in &markers {
+    harness.run_until(*pos, Duration::from_secs(5));
+  }
+
+  // Paint markers
   {
     let mut world = harness.world_mut();
     for (pos, color) in &markers {
@@ -181,16 +205,14 @@ fn painted_chunks_persist_across_scroll() {
     assert_eq!(pixel.color, *color);
   }
 
-  harness.run(10);
-
   // Scroll right naturally (simulates holding D key)
   // Window is 4x3 chunks, so we need to move ~5 chunk widths to ensure all 3
   // chunks unload
   let far_right = Vec3::new(5.0 * CHUNK_SIZE as f32, 0.0, 0.0);
   harness.scroll_to(far_right);
 
-  // Extra updates to ensure persistence flush completes
-  harness.run(30);
+  // Extra time to ensure persistence flush completes
+  harness.run_for(Duration::from_secs(1));
 
   // Verify all markers are now unloaded
   for (pos, _) in &markers {
@@ -201,8 +223,8 @@ fn painted_chunks_persist_across_scroll() {
   // Scroll back naturally (simulates holding A key)
   harness.scroll_to(Vec3::ZERO);
 
-  // Extra updates to ensure loading completes
-  harness.run(30);
+  // Wait for chunks to reload
+  harness.run_until(markers[0].0, Duration::from_secs(5));
 
   // Verify all markers restored with correct color
   for (pos, color) in &markers {

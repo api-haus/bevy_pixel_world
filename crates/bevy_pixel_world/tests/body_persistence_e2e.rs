@@ -10,9 +10,10 @@ use std::path::Path;
 use bevy::app::{TaskPoolOptions, TaskPoolPlugin};
 use bevy::prelude::*;
 use bevy_pixel_world::{
-  CHUNK_SIZE, ColorIndex, DisplacementState, LastBlitTransform, MaterialSeeder, Persistable,
-  PersistenceConfig, Pixel, PixelBodiesPlugin, PixelBody, PixelBodyId, PixelBodyIdGenerator,
-  PixelWorld, PixelWorldPlugin, SpawnPixelWorld, StreamingCamera, WorldPos, material_ids,
+  AsyncTaskBehavior, CHUNK_SIZE, ColorIndex, DisplacementState, LastBlitTransform, MaterialSeeder,
+  Persistable, PersistenceConfig, Pixel, PixelBodiesPlugin, PixelBody, PixelBodyId,
+  PixelBodyIdGenerator, PixelWorld, PixelWorldPlugin, SpawnPixelWorld, StreamingCamera, WorldPos,
+  material_ids,
 };
 use tempfile::TempDir;
 
@@ -39,6 +40,7 @@ impl TestHarness {
 
     app.add_plugins(PixelWorldPlugin::new(PersistenceConfig::at(save_path)));
     app.add_plugins(PixelBodiesPlugin);
+    app.insert_resource(AsyncTaskBehavior::Poll);
 
     let camera = app
       .world_mut()
