@@ -367,4 +367,19 @@ docs/
 
 ## License
 
-MIT
+This repository contains code under multiple licenses:
+
+| Path | License |
+|------|---------|
+| `crates/bevy_pixel_world/` | MIT |
+| `crates/game/` | MIT |
+| `crates/noise_ipc/` | MIT |
+| `crates/sim2d_noise/` | MIT |
+| `assets/` | MIT |
+| `assets/sprites/cc0/` | CC0 ([OpenGameArt](https://opengameart.org)) |
+| `docs/` | MIT |
+| `scripts/` | MIT |
+| `workers/` | MIT |
+| `vendor/bevy_crt/` | GPL-3.0-or-later |
+
+The CRT shader code in `vendor/bevy_crt/` is derived from guest.r's [crt-guest-advanced-hd](https://github.com/libretro/slang-shaders) shaders (GPL-3.0-or-later). This component is isolated in `vendor/` and does not affect the licensing of the rest of the codebase.

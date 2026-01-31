@@ -762,6 +762,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "bevy_crt"
+version = "0.2.0"
+dependencies = [
+ "bevy",
+ "bevy_egui",
+ "bevy_pixel_world",
+]
+
+[[package]]
 name = "bevy_derive"
 version = "0.17.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3006,6 +3015,7 @@ dependencies = [
  "bevy-yoleck",
  "bevy_common_assets",
  "bevy_console",
+ "bevy_crt",
  "bevy_egui",
  "bevy_enhanced_input",
  "bevy_pixel_world",
