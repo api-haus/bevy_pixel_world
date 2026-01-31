@@ -9,9 +9,9 @@ use std::time::{Duration, Instant};
 use bevy::app::{TaskPoolOptions, TaskPoolPlugin};
 use bevy::prelude::*;
 use bevy_pixel_world::{
-  ColorIndex, DisplacementState, LastBlitTransform, MaterialSeeder, Persistable, PersistenceConfig,
-  Pixel, PixelBodiesPlugin, PixelBody, PixelBodyIdGenerator, PixelWorld, PixelWorldPlugin,
-  SpawnPixelWorld, StreamingCamera, WorldPos, WorldRect, material_ids,
+  AsyncTaskBehavior, ColorIndex, DisplacementState, LastBlitTransform, MaterialSeeder, Persistable,
+  PersistenceConfig, Pixel, PixelBodiesPlugin, PixelBody, PixelBodyIdGenerator, PixelWorld,
+  PixelWorldPlugin, SpawnPixelWorld, StreamingCamera, WorldPos, WorldRect, material_ids,
 };
 use rand::prelude::*;
 use tempfile::TempDir;
@@ -36,6 +36,7 @@ impl TestHarness {
 
     app.add_plugins(PixelWorldPlugin::new(PersistenceConfig::at(save_path)));
     app.add_plugins(PixelBodiesPlugin);
+    app.insert_resource(AsyncTaskBehavior::Poll);
 
     let camera = app
       .world_mut()

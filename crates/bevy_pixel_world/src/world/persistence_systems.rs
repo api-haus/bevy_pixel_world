@@ -484,6 +484,9 @@ pub(crate) fn poll_save_task(
   #[cfg(not(target_family = "wasm"))] rendering: Option<
     Res<crate::world::plugin::RenderingEnabled>,
   >,
+  #[cfg(not(target_family = "wasm"))] async_behavior: Option<
+    Res<crate::world::plugin::AsyncTaskBehavior>,
+  >,
 ) {
   #[cfg(not(target_family = "wasm"))]
   {
@@ -492,7 +495,7 @@ pub(crate) fn poll_save_task(
       return;
     };
 
-    let block_all = rendering.is_none();
+    let block_all = crate::world::plugin::should_block_tasks(rendering, async_behavior);
 
     // Check if task is complete (or block if in test mode)
     if !block_all && !task.is_finished() {
@@ -581,6 +584,9 @@ pub(crate) fn poll_chunk_loads(
   #[cfg(not(target_family = "wasm"))] rendering: Option<
     Res<crate::world::plugin::RenderingEnabled>,
   >,
+  #[cfg(not(target_family = "wasm"))] async_behavior: Option<
+    Res<crate::world::plugin::AsyncTaskBehavior>,
+  >,
 ) {
   // Legacy native task polling (for tasks still using AsyncComputeTaskPool).
   // Most chunk loading now goes through IoDispatcher and poll_io_results.
@@ -591,7 +597,7 @@ pub(crate) fn poll_chunk_loads(
       return;
     }
 
-    let block_all = rendering.is_none();
+    let block_all = crate::world::plugin::should_block_tasks(rendering, async_behavior);
 
     // Collect positions that finished loading
     let mut completed_positions = Vec::new();

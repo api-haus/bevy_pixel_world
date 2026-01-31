@@ -6,14 +6,15 @@
 //! - Save/load cycle verification
 
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use bevy::app::{TaskPoolOptions, TaskPoolPlugin};
 use bevy::ecs::world::Mut;
 use bevy::prelude::*;
 use bevy_pixel_world::{
-  CHUNK_SIZE, ColorIndex, MaterialSeeder, PersistenceConfig, PersistenceControl, PersistenceHandle,
-  Pixel, PixelWorld, PixelWorldPlugin, SpawnPixelWorld, StreamingCamera, WorldPos,
-  debug_shim::DebugGizmos, material_ids,
+  AsyncTaskBehavior, CHUNK_SIZE, ColorIndex, MaterialSeeder, PersistenceConfig, PersistenceControl,
+  PersistenceHandle, Pixel, PixelWorld, PixelWorldPlugin, SpawnPixelWorld, StreamingCamera,
+  WorldPos, debug_shim::DebugGizmos, material_ids,
 };
 use tempfile::TempDir;
 
@@ -48,6 +49,7 @@ impl PersistenceHarness {
     let config = PersistenceConfig::at(&save_path);
 
     app.add_plugins(PixelWorldPlugin::new(config));
+    app.insert_resource(AsyncTaskBehavior::Poll);
 
     let camera = app
       .world_mut()
@@ -74,16 +76,31 @@ impl PersistenceHarness {
   }
 
   fn run_until_seeded(&mut self) {
-    for i in 0..100 {
+    self.run_until(WorldPos::new(0, 0), Duration::from_secs(5));
+  }
+
+  /// Runs updates until a pixel appears at the given position, or timeout.
+  fn run_until(&mut self, pos: WorldPos, timeout: Duration) {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
       self.app.update();
-      if i % 20 == 19 {
-        let mut q = self.app.world_mut().query::<&PixelWorld>();
-        if let Ok(world) = q.single(self.app.world()) {
-          if world.get_pixel(WorldPos::new(0, 0)).is_some() {
-            return;
-          }
+      std::thread::yield_now();
+      let mut q = self.app.world_mut().query::<&PixelWorld>();
+      if let Ok(world) = q.single(self.app.world()) {
+        if world.get_pixel(pos).is_some() {
+          return;
         }
       }
+    }
+    panic!("Pixel at {:?} not found within {:?}", pos, timeout);
+  }
+
+  /// Runs updates for the specified duration.
+  fn run_for(&mut self, duration: Duration) {
+    let deadline = Instant::now() + duration;
+    while Instant::now() < deadline {
+      self.app.update();
+      std::thread::yield_now();
     }
   }
 
@@ -249,16 +266,16 @@ fn save_persists_chunks() {
   // Scroll away to unload chunks
   let far_right = Vec3::new(5.0 * CHUNK_SIZE as f32, 0.0, 0.0);
   harness.scroll_to(far_right);
-  harness.run(30);
+  harness.run_for(Duration::from_secs(1));
 
   // Verify markers unloaded
   for (pos, _) in &markers {
     assert!(harness.world().get_pixel(*pos).is_none());
   }
 
-  // Scroll back
+  // Scroll back and wait for reload
   harness.scroll_to(Vec3::ZERO);
-  harness.run(30);
+  harness.run_until(markers[0].0, Duration::from_secs(5));
 
   // Verify markers restored
   for (pos, color) in &markers {

@@ -40,6 +40,33 @@ use crate::simulation::HeatConfig;
 #[derive(Resource)]
 pub(crate) struct RenderingEnabled;
 
+/// Controls how async tasks are polled.
+///
+/// - `Block`: Block until tasks complete (synchronous)
+/// - `Poll`: Check completion without blocking (async)
+///
+/// Default when absent:
+/// - With `RenderingEnabled`: Poll (async)
+/// - Without `RenderingEnabled`: Block (backwards compatibility)
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum AsyncTaskBehavior {
+  #[default]
+  Block,
+  Poll,
+}
+
+/// Returns true if async tasks should block until complete.
+pub(crate) fn should_block_tasks(
+  rendering: Option<Res<RenderingEnabled>>,
+  async_behavior: Option<Res<AsyncTaskBehavior>>,
+) -> bool {
+  match async_behavior.map(|r| *r) {
+    Some(AsyncTaskBehavior::Block) => true,
+    Some(AsyncTaskBehavior::Poll) => false,
+    None => rendering.is_none(), // backwards compat
+  }
+}
+
 /// Internal plugin for PixelWorld streaming systems.
 ///
 /// This is automatically added by the main `PixelWorldPlugin`.

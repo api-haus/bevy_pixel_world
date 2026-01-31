@@ -7,13 +7,14 @@
 //! Run: cargo test -p bevy_pixel_world body_reload_stress
 
 use std::path::Path;
+use std::time::{Duration, Instant};
 
 use bevy::app::{TaskPoolOptions, TaskPoolPlugin};
 use bevy::ecs::world::Mut;
 use bevy::prelude::*;
 use bevy_pixel_world::{
-  CHUNK_SIZE, ColorIndex, MaterialSeeder, PersistenceConfig, Pixel, PixelWorld, PixelWorldPlugin,
-  SpawnPixelWorld, StreamingCamera, WorldPos, material_ids,
+  AsyncTaskBehavior, CHUNK_SIZE, ColorIndex, MaterialSeeder, PersistenceConfig, Pixel, PixelWorld,
+  PixelWorldPlugin, SpawnPixelWorld, StreamingCamera, WorldPos, material_ids,
 };
 use tempfile::TempDir;
 
@@ -34,6 +35,7 @@ impl TestHarness {
       task_pool_options: TaskPoolOptions::with_num_threads(4),
     }));
     app.add_plugins(PixelWorldPlugin::new(PersistenceConfig::at(save_path)));
+    app.insert_resource(AsyncTaskBehavior::Poll);
 
     let camera = app
       .world_mut()
@@ -55,17 +57,23 @@ impl TestHarness {
   }
 
   fn run_until_seeded(&mut self) {
-    for i in 0..100 {
+    self.run_until(WorldPos::new(0, 0), Duration::from_secs(5));
+  }
+
+  /// Runs updates until a pixel appears at the given position, or timeout.
+  fn run_until(&mut self, pos: WorldPos, timeout: Duration) {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
       self.app.update();
-      if i % 20 == 19 {
-        let mut q = self.app.world_mut().query::<&PixelWorld>();
-        if let Ok(world) = q.single(self.app.world()) {
-          if world.get_pixel(WorldPos::new(0, 0)).is_some() {
-            return;
-          }
+      std::thread::yield_now();
+      let mut q = self.app.world_mut().query::<&PixelWorld>();
+      if let Ok(world) = q.single(self.app.world()) {
+        if world.get_pixel(pos).is_some() {
+          return;
         }
       }
     }
+    panic!("Pixel at {:?} not found within {:?}", pos, timeout);
   }
 
   fn run(&mut self, updates: usize) {
@@ -163,7 +171,7 @@ fn bodies_reload_without_ghosts() {
     }
   }
 
-  harness.run(10);
+  harness.run(30);
 
   // Verify marker painted
   let pixel = harness.world().get_pixel(marker_pos);
@@ -180,11 +188,10 @@ fn bodies_reload_without_ghosts() {
 
   // Scroll back to trigger reload
   harness.scroll_to(Vec3::ZERO);
-  harness.run(30);
+  harness.run_until(marker_pos, Duration::from_secs(5));
 
   // Verify marker is restored with correct color (persistence works)
   let pixel = harness.world().get_pixel(marker_pos);
-  assert!(pixel.is_some(), "Marker should be restored after reload");
   assert_eq!(
     pixel.unwrap().color,
     marker_color,
@@ -236,6 +243,9 @@ fn rapid_reload_no_ghosts() {
     harness.scroll_to(near);
     harness.run(10);
   }
+
+  // Wait for chunk to be fully loaded before erasing
+  harness.run_until(marker_pos, Duration::from_secs(5));
 
   // Erase the marker
   {
