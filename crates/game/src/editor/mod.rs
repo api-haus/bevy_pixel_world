@@ -12,7 +12,8 @@ mod ui;
 use bevy::prelude::*;
 #[cfg(feature = "editor")]
 use bevy_pixel_world::{
-  FreshReseedAllChunks, PersistenceControl, PersistenceHandle, ReloadAllChunks, SimulationState,
+  FreshReseedAllChunks, MaterialSeeder, PersistenceControl, PersistenceHandle, ReloadAllChunks,
+  SimulationState, UpdateSeeder,
 };
 #[cfg(feature = "editor")]
 use bevy_yoleck::YoleckEditorLevelsDirectoryPath;
@@ -144,16 +145,34 @@ fn on_enter_editing(
   info!("Edit mode: simulation paused, persistence disabled, brush disabled");
 }
 
-/// System: Polls for pending save completion, then reseeds.
+/// System: Polls for pending save completion, then reseeds with correct noise profile.
 #[cfg(feature = "editor")]
 fn poll_pending_reseed(
   mut commands: Commands,
   pending: Option<Res<PendingReseedAfterSave>>,
+  profile: Res<noise::NoiseProfile>,
+  mut update_seeder: bevy::ecs::message::MessageWriter<UpdateSeeder>,
   mut fresh_reseed: bevy::ecs::message::MessageWriter<FreshReseedAllChunks>,
 ) {
   let Some(pending) = pending else { return };
 
   if pending.0.is_complete() {
+    // Update seeder from the current noise profile BEFORE reseeding.
+    // This ensures chunks are seeded with the yoleck-saved noise config,
+    // not the default MaterialSeeder::new(42) from world spawn.
+    if let Some(seeder) = MaterialSeeder::from_encoded(&profile.ent, profile.world_seed) {
+      let seeder = seeder.threshold(profile.threshold);
+      update_seeder.write(UpdateSeeder {
+        seeder: std::sync::Arc::new(seeder),
+      });
+      info!(
+        "Updated seeder from noise profile: seed={}, threshold={}",
+        profile.world_seed, profile.threshold
+      );
+    } else {
+      warn!("Failed to create seeder from noise profile ENT");
+    }
+
     fresh_reseed.write(FreshReseedAllChunks);
     commands.remove_resource::<PendingReseedAfterSave>();
     info!("Save complete, reseeding chunks with fresh procedural data");
