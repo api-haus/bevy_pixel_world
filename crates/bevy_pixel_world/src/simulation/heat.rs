@@ -171,6 +171,36 @@ pub fn propagate_heat(
   }
 }
 
+/// Ignites flammable pixels within a single heat cell that exceed their
+/// threshold.
+fn ignite_cell_pixels(chunk: &mut Chunk, hx: u32, hy: u32, heat: u8, materials: &Materials) {
+  let px_base_x = hx * HEAT_CELL_SIZE;
+  let px_base_y = hy * HEAT_CELL_SIZE;
+
+  for dy in 0..HEAT_CELL_SIZE {
+    for dx in 0..HEAT_CELL_SIZE {
+      let px = px_base_x + dx;
+      let py = px_base_y + dy;
+      let pixel = chunk.pixels[(px, py)];
+
+      if pixel.is_void() {
+        continue;
+      }
+
+      let mat = materials.get(pixel.material);
+      let should_ignite = mat.ignition_threshold > 0
+        && heat >= mat.ignition_threshold
+        && !pixel.flags.contains(PixelFlags::BURNING);
+
+      if should_ignite {
+        let p = &mut chunk.pixels[(px, py)];
+        p.flags.insert(PixelFlags::BURNING | PixelFlags::DIRTY);
+        chunk.mark_pixel_dirty(px, py);
+      }
+    }
+  }
+}
+
 /// Checks heat cells and ignites flammable pixels that exceed their threshold.
 pub fn ignite_from_heat(canvas: &Canvas<'_>, chunk_positions: &[ChunkPos], materials: &Materials) {
   for &chunk_pos in chunk_positions {
@@ -181,31 +211,8 @@ pub fn ignite_from_heat(canvas: &Canvas<'_>, chunk_positions: &[ChunkPos], mater
     for hy in 0..HEAT_GRID_SIZE {
       for hx in 0..HEAT_GRID_SIZE {
         let heat = chunk.heat_cell(hx, hy);
-        if heat == 0 {
-          continue;
-        }
-
-        let px_base_x = hx * HEAT_CELL_SIZE;
-        let px_base_y = hy * HEAT_CELL_SIZE;
-
-        for dy in 0..HEAT_CELL_SIZE {
-          for dx in 0..HEAT_CELL_SIZE {
-            let px = px_base_x + dx;
-            let py = px_base_y + dy;
-            let pixel = chunk.pixels[(px, py)];
-            if pixel.is_void() {
-              continue;
-            }
-            let mat = materials.get(pixel.material);
-            if mat.ignition_threshold > 0
-              && heat >= mat.ignition_threshold
-              && !pixel.flags.contains(PixelFlags::BURNING)
-            {
-              let p = &mut chunk.pixels[(px, py)];
-              p.flags.insert(PixelFlags::BURNING | PixelFlags::DIRTY);
-              chunk.mark_pixel_dirty(px, py);
-            }
-          }
+        if heat > 0 {
+          ignite_cell_pixels(chunk, hx, hy, heat, materials);
         }
       }
     }
