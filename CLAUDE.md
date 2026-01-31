@@ -45,25 +45,9 @@ Minimal public exposure. Only what callers actually need.
 
 **Never push.** User pushes after review.
 
-### Worktrees (Opt-in Only)
+### Worktrees
 
-Only create when explicitly requested. If requested:
-
-```bash
-git worktree add ../sim2d-<name> -b <type>/<description>
-cd ../sim2d-<name>
-# All work happens here, not main repo
-```
-
-| Task type | Branch prefix |
-|-----------|---------------|
-| Features  | `feat/`       |
-| Fixes     | `fix/`        |
-| Refactors | `refactor/`   |
-| Docs      | `docs/`       |
-
-Location: sibling dirs (`../sim2d-<descriptive-suffix>`).
-Shared target dir via `~/.cargo/config.toml` — no cache copying needed.
+When working in a worktree, include its path in plan mode headers.
 
 ---
 
