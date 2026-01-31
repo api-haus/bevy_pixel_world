@@ -1,14 +1,16 @@
 [package]
 name = "game"
-version.workspace = true
-edition.workspace = true
+version = "0.1.0"
+edition = "2024"
+
+[workspace]
 
 [[bin]]
 name = "sim2d"
 path = "src/main.rs"
 
 [dependencies]
-bevy = { workspace = true }
+bevy = "0.17"
 bevy_rapier2d = "0.32"
 bevy_enhanced_input = "0.19"
 rand = "0.9"
@@ -34,3 +36,27 @@ console_error_panic_hook = "0.1"
 default = []
 dev = ["bevy/dynamic_linking", "bevy/file_watcher", "editor"]
 editor = ["dep:bevy-yoleck"]
+
+# Enable a small amount of optimization in the dev profile.
+[profile.dev]
+opt-level = 1
+incremental = true
+lto = "off"
+
+# Enable a large amount of optimization in the dev profile for dependencies.
+[profile.dev.package."*"]
+opt-level = 3
+
+# Optimize bevy_pixel_world
+[profile.dev.package.bevy_pixel_world]
+opt-level = 3
+
+# Enable more optimization in the release profile at the cost of compile time.
+[profile.release]
+codegen-units = 1
+lto = "thin"
+
+# Profiling profile for cargo-samply (optimized with debug symbols)
+[profile.samply]
+inherits = "release"
+debug = true

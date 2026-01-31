@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/game", "crates/bevy_pixel_world", "crates/noise_ipc"]
+members = ["crates/bevy_pixel_world", "crates/noise_ipc"]
 # sim2d_noise is excluded: builds to wasm32-unknown-emscripten via Makefile
 exclude = ["crates/sim2d_noise"]
 

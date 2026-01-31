@@ -4,10 +4,10 @@ test:
     cargo test -p bevy_pixel_world
 
 dev:
-    cargo run -p game --features dev
+    cd crates/game && cargo run --features dev
 
 game:
-    cargo run -p game --release
+    cd crates/game && cargo run --release
 
 # Serve game with trunk (WASM dev server)
 serve:
