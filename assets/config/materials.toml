@@ -29,6 +29,9 @@ density = 150
 air_resistance = 12
 air_drift = 6
 
+[materials.effects]
+blast_resistance = 0.5
+
 [[materials]]
 name = "Stone"
 palette = [
@@ -43,6 +46,9 @@ palette = [
 ]
 state = "solid"
 density = 200
+
+[materials.effects]
+blast_resistance = 5.0
 
 [[materials]]
 name = "Sand"
@@ -60,6 +66,9 @@ state = "powder"
 density = 160
 air_resistance = 8
 air_drift = 4
+
+[materials.effects]
+blast_resistance = 0.3
 
 [[materials]]
 name = "Water"
@@ -79,6 +88,9 @@ dispersion = 5
 air_resistance = 16
 air_drift = 12
 
+[materials.effects]
+blast_resistance = 0.1
+
 [[materials]]
 name = "Wood"
 palette = [
@@ -94,6 +106,9 @@ palette = [
 state = "solid"
 density = 80
 ignition_threshold = 40
+
+[materials.effects]
+blast_resistance = 1.0
 
 [materials.effects.on_burn]
 chance = 0.005
@@ -117,3 +132,6 @@ state = "powder"
 density = 60
 air_resistance = 4
 air_drift = 3
+
+[materials.effects]
+blast_resistance = 0.1

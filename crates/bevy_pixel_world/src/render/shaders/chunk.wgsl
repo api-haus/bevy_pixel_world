@@ -18,11 +18,10 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     let coord = vec2<i32>(clamped_uv * vec2<f32>(dims));
     let pixel = textureLoad(pixel_texture, coord, 0);
 
+    // Palette layout: material_id * 8 + (color_index * 7 / 255)
+    // Maps color_index 0-255 to palette entry 0-7 within the material's color range
     let material_id = pixel.r;
     let color_index = pixel.g;
-
-    // Palette layout: material_id * 8 + (color_index * 7 / 255)
-    // Maps color_index 0-255 to palette entry 0-7 within the material
     let palette_idx = material_id * 8u + (color_index * 7u / 255u);
     let palette_uv = vec2<f32>(f32(palette_idx) + 0.5, 0.5) / vec2<f32>(256.0, 1.0);
 

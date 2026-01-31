@@ -12,6 +12,7 @@ use super::{DisplacementState, LastBlitTransform, Persistable, PixelBodyId, Pixe
 #[cfg(physics)]
 use crate::collision::CollisionQueryPoint;
 use crate::coords::MaterialId;
+use crate::palette::GlobalPalette;
 #[cfg(physics)]
 use crate::world::streaming::culling::StreamCulled;
 
@@ -257,17 +258,21 @@ pub fn finalize_pending_pixel_bodies(
   mut commands: Commands,
   pending: Query<(Entity, &PendingPixelBody)>,
   images: Option<Res<Assets<Image>>>,
+  palette: Option<Res<GlobalPalette>>,
   mut id_generator: ResMut<PixelBodyIdGenerator>,
 ) {
   let Some(images) = images else { return };
+  let Some(palette) = palette else { return };
   for (entity, pending_body) in pending.iter() {
     let Some(image) = images.get(&pending_body.image) else {
       // Image not loaded yet, skip
       continue;
     };
 
-    // Create pixel body from image
-    let Some(body) = PixelBodyLoader::from_image_with_material(image, pending_body.material) else {
+    // Create pixel body from image using global palette for color mapping
+    let Some(body) =
+      PixelBodyLoader::from_image_with_material(image, pending_body.material, &palette)
+    else {
       commands.entity(entity).despawn();
       continue;
     };

@@ -27,10 +27,13 @@ use super::{
 use crate::coords::CHUNK_SIZE;
 use crate::debug_shim;
 use crate::material::Materials;
+use crate::palette::{
+  GlobalPalette, PaletteConfig, PaletteSource, colors_from_hex, colors_from_image,
+};
 use crate::persistence::PersistenceTasks;
 use crate::persistence::io_worker::IoDispatcher;
 use crate::persistence::tasks::{LoadingChunks, SavingChunks};
-use crate::render::{create_chunk_quad, create_palette_texture, upload_palette};
+use crate::render::create_chunk_quad;
 use crate::schedule::{PixelWorldSet, SimulationPhase};
 use crate::simulation;
 use crate::simulation::HeatConfig;
@@ -176,12 +179,21 @@ impl Plugin for PixelWorldStreamingPlugin {
         .in_set(PixelWorldSet::PostSimulation),
     );
 
+    // Palette hot-reload system (runs always to handle config changes)
+    app.add_systems(
+      Update,
+      watch_palette_config
+        .after(handle_persistence_messages)
+        .before(update_streaming_windows)
+        .in_set(PixelWorldSet::PreSimulation),
+    );
+
     // Render-only systems
     app.add_systems(
       Update,
       (
-        initialize_palette
-          .after(handle_persistence_messages)
+        upload_palette_if_dirty
+          .after(watch_palette_config)
           .before(update_streaming_windows)
           .in_set(PixelWorldSet::PreSimulation),
         upload_dirty_chunks.in_set(PixelWorldSet::PostSimulation),
@@ -202,34 +214,83 @@ fn setup_shared_resources(world: &mut World) {
   };
   world.insert_resource(SharedChunkMesh(mesh));
 
-  let palette = {
+  let palette_texture = {
     let mut images = world.resource_mut::<Assets<Image>>();
-    create_palette_texture(&mut images)
+    crate::palette::create_palette_texture(&mut images)
   };
   world.insert_resource(SharedPaletteTexture {
-    handle: palette,
+    handle: palette_texture,
     initialized: false,
   });
 }
 
-/// System: Initializes the palette texture when Materials becomes available.
+/// System: Initializes or updates the palette texture when GlobalPalette is
+/// dirty.
 #[cfg_attr(feature = "tracy", tracing::instrument(skip_all))]
-fn initialize_palette(
-  mut palette: ResMut<SharedPaletteTexture>,
+fn upload_palette_if_dirty(
+  mut palette_texture: ResMut<SharedPaletteTexture>,
   mut images: ResMut<Assets<Image>>,
-  mat_registry: Option<Res<Materials>>,
+  mut global_palette: Option<ResMut<GlobalPalette>>,
 ) {
-  if palette.initialized {
-    return;
-  }
-
-  let Some(mat_registry) = mat_registry else {
+  let Some(ref mut global_palette) = global_palette else {
     return;
   };
 
-  if let Some(image) = images.get_mut(&palette.handle) {
-    upload_palette(&mat_registry, image);
-    palette.initialized = true;
+  // Check if palette needs upload (dirty flag or not yet initialized)
+  if !global_palette.dirty && palette_texture.initialized {
+    return;
+  }
+
+  if let Some(image) = images.get_mut(&palette_texture.handle) {
+    crate::palette::upload_palette(global_palette.as_ref(), image);
+    global_palette.dirty = false;
+    palette_texture.initialized = true;
+  }
+}
+
+/// System: Watches for PaletteConfig asset changes and rebuilds the palette.
+#[cfg_attr(feature = "tracy", tracing::instrument(skip_all))]
+fn watch_palette_config(
+  mut global_palette: Option<ResMut<GlobalPalette>>,
+  mut events: bevy::ecs::message::MessageReader<AssetEvent<PaletteConfig>>,
+  palette_configs: Res<Assets<PaletteConfig>>,
+  images: Res<Assets<Image>>,
+  asset_server: Res<AssetServer>,
+) {
+  let Some(ref mut global_palette) = global_palette else {
+    return;
+  };
+
+  for event in events.read() {
+    if let AssetEvent::Modified { id } | AssetEvent::LoadedWithDependencies { id } = event {
+      // Check if this is our config
+      if let Some(ref handle) = global_palette.config_handle {
+        if handle.id() != *id {
+          continue;
+        }
+      }
+
+      // Reload the config
+      if let Some(config) = palette_configs.get(*id) {
+        let colors = match &config.palette {
+          PaletteSource::Colors { colors } => colors_from_hex(colors),
+          PaletteSource::Image { image } => {
+            // Load the palette image
+            let image_handle: Handle<Image> = asset_server.load(image);
+            if let Some(img) = images.get(&image_handle) {
+              colors_from_image(img)
+            } else {
+              // Image not loaded yet, will retry on next event
+              continue;
+            }
+          }
+        };
+
+        global_palette.colors = colors;
+        global_palette.rebuild_lut(config.lut.clone());
+        info!("Palette reloaded from config");
+      }
+    }
   }
 }
 

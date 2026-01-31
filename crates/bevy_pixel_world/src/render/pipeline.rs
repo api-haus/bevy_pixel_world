@@ -11,7 +11,7 @@ use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::sprite_render::MeshMaterial2d;
 
 use super::material::ChunkMaterial;
-use crate::material::Materials;
+use crate::palette::GlobalPalette;
 use crate::pixel::PixelSurface;
 use crate::primitives::RgbaSurface;
 
@@ -51,55 +51,14 @@ pub fn upload_surface(surface: &RgbaSurface, image: &mut Image) {
 
 /// Creates a 256x1 palette texture for GPU-side color lookup.
 ///
-/// Each material occupies 8 consecutive RGBA entries (material 0 uses indices
-/// 0-7, material 1 uses 8-15, etc). Supports up to 32 materials.
+/// Each index (0-255) maps directly to a palette color.
 pub fn create_palette_texture(images: &mut Assets<Image>) -> Handle<Image> {
-  let size = Extent3d {
-    width: 256,
-    height: 1,
-    depth_or_array_layers: 1,
-  };
-
-  let mut image = Image::new_fill(
-    size,
-    TextureDimension::D2,
-    &[0, 0, 0, 255],
-    TextureFormat::Rgba8UnormSrgb,
-    RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
-  );
-
-  // Use nearest-neighbor sampling for exact color lookup
-  image.sampler = ImageSampler::nearest();
-
-  images.add(image)
+  crate::palette::create_palette_texture(images)
 }
 
-/// Uploads palette data from Materials to a palette texture.
-pub fn upload_palette(materials: &Materials, image: &mut Image) {
-  let Some(ref mut data) = image.data else {
-    return;
-  };
-
-  // Clear to black
-  data.fill(0);
-
-  // Populate palette: each material gets 8 consecutive RGBA entries
-  // Supports up to 32 materials (256 / 8 = 32)
-  let count = materials.len().min(32);
-  for material_id in 0..count {
-    let material = materials.get(crate::coords::MaterialId(material_id as u8));
-    let base = material_id * 8 * 4; // 8 colors * 4 bytes per color
-
-    for (color_idx, color) in material.palette.iter().enumerate() {
-      let offset = base + color_idx * 4;
-      if offset + 4 <= data.len() {
-        data[offset] = color.red;
-        data[offset + 1] = color.green;
-        data[offset + 2] = color.blue;
-        data[offset + 3] = color.alpha;
-      }
-    }
-  }
+/// Uploads palette data from GlobalPalette to a palette texture.
+pub fn upload_palette(palette: &GlobalPalette, image: &mut Image) {
+  crate::palette::upload_palette(palette, image);
 }
 
 /// Creates a texture for raw pixel data (Rgba8Uint format).
@@ -211,7 +170,7 @@ pub fn spawn_static_chunk(
   images: &mut Assets<Image>,
   meshes: &mut Assets<Mesh>,
   materials: &mut Assets<ChunkMaterial>,
-  material_registry: &Materials,
+  palette: &GlobalPalette,
   pixels: &PixelSurface,
   display_size: Vec2,
 ) -> Entity {
@@ -224,7 +183,7 @@ pub fn spawn_static_chunk(
   // Create and upload palette texture
   let palette_texture = create_palette_texture(images);
   if let Some(image) = images.get_mut(&palette_texture) {
-    upload_palette(material_registry, image);
+    upload_palette(palette, image);
   }
 
   // Create mesh with Y+ up UVs
@@ -244,12 +203,11 @@ pub fn spawn_static_chunk(
 }
 
 /// Convert simulation pixels to renderable RGBA.
-pub fn materialize(pixels: &PixelSurface, materials: &Materials, output: &mut RgbaSurface) {
+pub fn materialize(pixels: &PixelSurface, palette: &GlobalPalette, output: &mut RgbaSurface) {
   for y in 0..pixels.height() {
     for x in 0..pixels.width() {
       let pixel = pixels[(x, y)];
-      let material = materials.get(pixel.material);
-      let rgba = material.sample(pixel.color);
+      let rgba = palette.color(pixel.color.0);
       output.set(x, y, rgba);
     }
   }

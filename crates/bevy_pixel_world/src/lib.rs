@@ -20,6 +20,7 @@ pub mod debug_controller_ui;
 pub mod debug_shim;
 pub mod diagnostics;
 pub mod material;
+pub mod palette;
 pub mod persistence;
 pub mod pixel;
 pub mod pixel_awareness;
@@ -53,6 +54,10 @@ pub use debug_camera::{CameraZoom, DebugVirtualCamera, PixelDebugControllerCamer
 pub use debug_controller::{BrushState, PixelDebugControllerPlugin, UiPointerState};
 pub use debug_controller_ui::{BrushUiPlugin, BrushUiVisible, brush_controls_ui};
 pub use material::{Material, Materials, MaterialsConfig, PhysicsState, ids as material_ids};
+pub use palette::{
+  DistanceFunction, DitherMode, GlobalPalette, LutConfig, PaletteConfig, PalettePlugin,
+  PaletteSource, PalettizeOnLoad, palettize_image, palettize_image_in_place,
+};
 pub use persistence::{PixelBodyRecord, WorldSave};
 pub use pixel::{Pixel, PixelFlags, PixelSurface};
 pub use pixel_awareness::GridSampleConfig;
@@ -198,6 +203,12 @@ impl Plugin for PixelWorldPlugin {
     // Initialize Materials registry (users can override by inserting before plugin)
     app.init_resource::<Materials>();
 
+    // Initialize palette system - builds GlobalPalette from Materials
+    app.add_plugins(palette::PalettePlugin);
+    // Don't use init_resource (would create grayscale default); instead add startup
+    // system
+    app.add_systems(PreStartup, init_palette_from_materials);
+
     // Store default config as resource for SpawnPixelWorld
     app.insert_resource(DefaultPixelWorldConfig(self.config.clone()));
 
@@ -260,3 +271,9 @@ pub struct DefaultPixelWorldConfig(pub PixelWorldConfig);
 /// Resource holding the default persistence configuration.
 #[derive(Resource)]
 pub struct DefaultPersistenceConfig(pub PersistenceConfig);
+
+/// Startup system: Initializes GlobalPalette from the Materials registry.
+fn init_palette_from_materials(mut commands: Commands, materials: Res<Materials>) {
+  let palette = palette::GlobalPalette::from_materials(&materials, palette::LutConfig::default());
+  commands.insert_resource(palette);
+}

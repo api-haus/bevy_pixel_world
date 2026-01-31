@@ -1,0 +1,624 @@
+//! Global 256-color palette system with hot-reload support.
+//!
+//! Provides a global palette that maps ColorIndex (0-255) directly to colors.
+//! Includes a 16MB LUT for fast RGB→palette index mapping at sprite load time.
+
+use bevy::asset::{Asset, AssetLoader, RenderAssetUsages, io::Reader};
+use bevy::image::ImageSampler;
+use bevy::prelude::*;
+use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+use palette::{IntoColor, Oklab, Srgb};
+use serde::{Deserialize, Serialize};
+
+use crate::material::Materials;
+use crate::render::Rgba;
+
+/// Distance function used for RGB→palette mapping.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DistanceFunction {
+  /// Euclidean distance in RGB space. Fast but perceptually inaccurate.
+  Rgb,
+  /// Distance in HSL space. Better for hue preservation.
+  Hsl,
+  /// Distance in OkLab space. Perceptually uniform, best quality.
+  #[default]
+  Oklab,
+}
+
+/// Dithering mode for RGB→palette mapping.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DitherMode {
+  /// Map each pixel to the single nearest palette color.
+  #[default]
+  Nearest,
+  /// Use 2x2 Bayer dithering to pick from candidates.
+  Dither,
+}
+
+/// Source for palette colors.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum PaletteSource {
+  /// Inline hex color array.
+  Colors { colors: Vec<String> },
+  /// Reference to an image file (reads first 256 pixels row-major).
+  Image { image: String },
+}
+
+/// LUT generation configuration.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct LutConfig {
+  /// Distance function for color matching.
+  #[serde(default)]
+  pub distance: DistanceFunction,
+  /// Dithering mode.
+  #[serde(default)]
+  pub mode: DitherMode,
+}
+
+/// Configuration for the global palette, loaded from TOML.
+#[derive(Asset, TypePath, Clone, Debug, Serialize, Deserialize)]
+pub struct PaletteConfig {
+  /// Palette color source.
+  pub palette: PaletteSource,
+  /// LUT generation options.
+  #[serde(default)]
+  pub lut: LutConfig,
+}
+
+/// Asset loader for PaletteConfig TOML files.
+#[derive(Default)]
+pub struct PaletteConfigLoader;
+
+impl AssetLoader for PaletteConfigLoader {
+  type Asset = PaletteConfig;
+  type Settings = ();
+  type Error = std::io::Error;
+
+  async fn load(
+    &self,
+    reader: &mut dyn Reader,
+    _settings: &Self::Settings,
+    _load_context: &mut bevy::asset::LoadContext<'_>,
+  ) -> Result<Self::Asset, Self::Error> {
+    let mut bytes = Vec::new();
+    reader.read_to_end(&mut bytes).await?;
+    let config: PaletteConfig = toml::from_str(
+      std::str::from_utf8(&bytes)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?,
+    )
+    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    Ok(config)
+  }
+
+  fn extensions(&self) -> &[&str] {
+    &["palette.toml"]
+  }
+}
+
+/// Global 256-color palette resource.
+///
+/// Provides direct color lookup via ColorIndex and fast RGB→palette mapping
+/// through a precomputed 16MB LUT.
+#[derive(Resource)]
+pub struct GlobalPalette {
+  /// 256 RGBA colors indexed by ColorIndex.
+  pub colors: [Rgba; 256],
+  /// 16MB LUT: RGB (24-bit) → palette index (8-bit).
+  /// Index = (r << 16) | (g << 8) | b
+  pub lut: Box<[u8; 16_777_216]>,
+  /// Handle to the config asset for hot-reload.
+  pub config_handle: Option<Handle<PaletteConfig>>,
+  /// Triggers GPU re-upload when true.
+  pub dirty: bool,
+  /// Current LUT configuration (for rebuilding on config change).
+  pub lut_config: LutConfig,
+}
+
+impl Default for GlobalPalette {
+  fn default() -> Self {
+    // Default to a simple grayscale ramp
+    let mut colors = [Rgba::new(0, 0, 0, 255); 256];
+    for i in 0..256 {
+      colors[i] = Rgba::new(i as u8, i as u8, i as u8, 255);
+    }
+    let lut = build_lut(&colors, DistanceFunction::Rgb, DitherMode::Nearest);
+    Self {
+      colors,
+      lut,
+      config_handle: None,
+      dirty: true,
+      lut_config: LutConfig::default(),
+    }
+  }
+}
+
+impl GlobalPalette {
+  /// Creates a palette from a color array.
+  pub fn from_colors(colors: [Rgba; 256], lut_config: LutConfig) -> Self {
+    let lut = build_lut(&colors, lut_config.distance, lut_config.mode);
+    Self {
+      colors,
+      lut,
+      config_handle: None,
+      dirty: true,
+      lut_config,
+    }
+  }
+
+  /// Creates a palette from Materials registry.
+  ///
+  /// Each material's 8 colors are placed at consecutive palette indices:
+  /// material 0 → indices 0-7, material 1 → indices 8-15, etc.
+  /// Supports up to 32 materials (256 / 8 = 32).
+  pub fn from_materials(materials: &Materials, lut_config: LutConfig) -> Self {
+    let mut colors = [Rgba::new(0, 0, 0, 255); 256];
+
+    let count = materials.len().min(32);
+    for material_id in 0..count {
+      let material = materials.get(crate::coords::MaterialId(material_id as u8));
+      let base = material_id * 8;
+
+      for (color_idx, color) in material.palette.iter().enumerate() {
+        let palette_idx = base + color_idx;
+        if palette_idx < 256 {
+          colors[palette_idx] = *color;
+        }
+      }
+    }
+
+    let lut = build_lut(&colors, lut_config.distance, lut_config.mode);
+    Self {
+      colors,
+      lut,
+      config_handle: None,
+      dirty: true,
+      lut_config,
+    }
+  }
+
+  /// Maps an RGB color to the nearest palette index using the LUT.
+  #[inline]
+  pub fn map_rgb(&self, r: u8, g: u8, b: u8) -> u8 {
+    let idx = ((r as usize) << 16) | ((g as usize) << 8) | (b as usize);
+    self.lut[idx]
+  }
+
+  /// Gets the color at a palette index.
+  #[inline]
+  pub fn color(&self, index: u8) -> Rgba {
+    self.colors[index as usize]
+  }
+
+  /// Rebuilds the LUT with new configuration.
+  pub fn rebuild_lut(&mut self, lut_config: LutConfig) {
+    self.lut = build_lut(&self.colors, lut_config.distance, lut_config.mode);
+    self.lut_config = lut_config;
+    self.dirty = true;
+  }
+}
+
+/// Builds the 16MB RGB→palette LUT.
+pub fn build_lut(
+  colors: &[Rgba; 256],
+  distance_fn: DistanceFunction,
+  mode: DitherMode,
+) -> Box<[u8; 16_777_216]> {
+  // Preallocate the 16MB buffer
+  let mut lut = vec![0u8; 16_777_216].into_boxed_slice();
+
+  // Precompute palette colors in the target color space
+  let palette_oklab: Vec<Oklab> = colors
+    .iter()
+    .map(|c| {
+      let srgb = Srgb::new(
+        c.red as f32 / 255.0,
+        c.green as f32 / 255.0,
+        c.blue as f32 / 255.0,
+      );
+      srgb.into_color()
+    })
+    .collect();
+
+  // For dithering, we need the 4 nearest candidates
+  let bayer_2x2 = [[0.0, 0.5], [0.75, 0.25]];
+
+  match mode {
+    DitherMode::Nearest => {
+      for r in 0..=255u8 {
+        for g in 0..=255u8 {
+          for b in 0..=255u8 {
+            let idx = ((r as usize) << 16) | ((g as usize) << 8) | (b as usize);
+            lut[idx] = find_nearest(r, g, b, colors, &palette_oklab, distance_fn);
+          }
+        }
+      }
+    }
+    DitherMode::Dither => {
+      // For dithering, store the threshold-selected candidate
+      // The position (r%2, g%2) determines which Bayer threshold to use
+      for r in 0..=255u8 {
+        for g in 0..=255u8 {
+          for b in 0..=255u8 {
+            let idx = ((r as usize) << 16) | ((g as usize) << 8) | (b as usize);
+
+            // Find 4 nearest candidates and their distances
+            let candidates = find_nearest_candidates(r, g, b, colors, &palette_oklab, distance_fn);
+
+            // Use r%2 and g%2 as Bayer matrix coordinates
+            let threshold = bayer_2x2[(r % 2) as usize][(g % 2) as usize];
+
+            // Interpolate between candidates based on threshold
+            // Pick candidate based on threshold position in distance range
+            let best = if threshold < 0.25 {
+              candidates[0].0
+            } else if threshold < 0.5 {
+              candidates[1].0
+            } else if threshold < 0.75 {
+              candidates[2].0
+            } else {
+              candidates[3].0
+            };
+
+            lut[idx] = best;
+          }
+        }
+      }
+    }
+  }
+
+  // Convert Vec to fixed-size array
+  let ptr = Box::into_raw(lut) as *mut [u8; 16_777_216];
+  unsafe { Box::from_raw(ptr) }
+}
+
+/// Finds the nearest palette index to an RGB color.
+fn find_nearest(
+  r: u8,
+  g: u8,
+  b: u8,
+  colors: &[Rgba; 256],
+  palette_oklab: &[Oklab],
+  distance_fn: DistanceFunction,
+) -> u8 {
+  let mut best_idx = 0u8;
+  let mut best_dist = f32::MAX;
+
+  match distance_fn {
+    DistanceFunction::Rgb => {
+      let rf = r as f32;
+      let gf = g as f32;
+      let bf = b as f32;
+      for (i, c) in colors.iter().enumerate() {
+        let dr = rf - c.red as f32;
+        let dg = gf - c.green as f32;
+        let db = bf - c.blue as f32;
+        let dist = dr * dr + dg * dg + db * db;
+        if dist < best_dist {
+          best_dist = dist;
+          best_idx = i as u8;
+        }
+      }
+    }
+    DistanceFunction::Hsl => {
+      // Convert source to HSL-ish (simplified: use hue angle distance + lightness)
+      let (h, s, l) = rgb_to_hsl(r, g, b);
+      for (i, c) in colors.iter().enumerate() {
+        let (h2, s2, l2) = rgb_to_hsl(c.red, c.green, c.blue);
+        // Hue is circular, compute minimal angular distance
+        let dh = {
+          let diff = (h - h2).abs();
+          if diff > 0.5 { 1.0 - diff } else { diff }
+        };
+        let ds = s - s2;
+        let dl = l - l2;
+        // Weight hue more heavily when saturation is high
+        let hue_weight = (s + s2) / 2.0;
+        let dist = dh * dh * hue_weight * 4.0 + ds * ds + dl * dl * 2.0;
+        if dist < best_dist {
+          best_dist = dist;
+          best_idx = i as u8;
+        }
+      }
+    }
+    DistanceFunction::Oklab => {
+      let srgb = Srgb::new(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0);
+      let oklab: Oklab = srgb.into_color();
+      for (i, p) in palette_oklab.iter().enumerate() {
+        let dl = oklab.l - p.l;
+        let da = oklab.a - p.a;
+        let db = oklab.b - p.b;
+        let dist = dl * dl + da * da + db * db;
+        if dist < best_dist {
+          best_dist = dist;
+          best_idx = i as u8;
+        }
+      }
+    }
+  }
+
+  best_idx
+}
+
+/// Finds the 4 nearest palette indices for dithering.
+fn find_nearest_candidates(
+  r: u8,
+  g: u8,
+  b: u8,
+  colors: &[Rgba; 256],
+  palette_oklab: &[Oklab],
+  distance_fn: DistanceFunction,
+) -> [(u8, f32); 4] {
+  // Track the 4 best candidates
+  let mut candidates: [(u8, f32); 4] = [(0, f32::MAX); 4];
+
+  match distance_fn {
+    DistanceFunction::Rgb => {
+      let rf = r as f32;
+      let gf = g as f32;
+      let bf = b as f32;
+      for (i, c) in colors.iter().enumerate() {
+        let dr = rf - c.red as f32;
+        let dg = gf - c.green as f32;
+        let db = bf - c.blue as f32;
+        let dist = dr * dr + dg * dg + db * db;
+        insert_candidate(&mut candidates, i as u8, dist);
+      }
+    }
+    DistanceFunction::Hsl => {
+      let (h, s, l) = rgb_to_hsl(r, g, b);
+      for (i, c) in colors.iter().enumerate() {
+        let (h2, s2, l2) = rgb_to_hsl(c.red, c.green, c.blue);
+        let dh = {
+          let diff = (h - h2).abs();
+          if diff > 0.5 { 1.0 - diff } else { diff }
+        };
+        let ds = s - s2;
+        let dl = l - l2;
+        let hue_weight = (s + s2) / 2.0;
+        let dist = dh * dh * hue_weight * 4.0 + ds * ds + dl * dl * 2.0;
+        insert_candidate(&mut candidates, i as u8, dist);
+      }
+    }
+    DistanceFunction::Oklab => {
+      let srgb = Srgb::new(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0);
+      let oklab: Oklab = srgb.into_color();
+      for (i, p) in palette_oklab.iter().enumerate() {
+        let dl = oklab.l - p.l;
+        let da = oklab.a - p.a;
+        let db = oklab.b - p.b;
+        let dist = dl * dl + da * da + db * db;
+        insert_candidate(&mut candidates, i as u8, dist);
+      }
+    }
+  }
+
+  candidates
+}
+
+/// Inserts a candidate into the sorted list if it's closer than the worst.
+fn insert_candidate(candidates: &mut [(u8, f32); 4], idx: u8, dist: f32) {
+  if dist >= candidates[3].1 {
+    return;
+  }
+  // Find insertion point
+  let mut pos = 3;
+  while pos > 0 && dist < candidates[pos - 1].1 {
+    candidates[pos] = candidates[pos - 1];
+    pos -= 1;
+  }
+  candidates[pos] = (idx, dist);
+}
+
+/// Converts RGB to HSL (all components in 0.0-1.0 range).
+fn rgb_to_hsl(r: u8, g: u8, b: u8) -> (f32, f32, f32) {
+  let rf = r as f32 / 255.0;
+  let gf = g as f32 / 255.0;
+  let bf = b as f32 / 255.0;
+
+  let max = rf.max(gf).max(bf);
+  let min = rf.min(gf).min(bf);
+  let l = (max + min) / 2.0;
+
+  if (max - min).abs() < f32::EPSILON {
+    return (0.0, 0.0, l);
+  }
+
+  let d = max - min;
+  let s = if l > 0.5 {
+    d / (2.0 - max - min)
+  } else {
+    d / (max + min)
+  };
+
+  let h = if (max - rf).abs() < f32::EPSILON {
+    let mut h = (gf - bf) / d;
+    if gf < bf {
+      h += 6.0;
+    }
+    h / 6.0
+  } else if (max - gf).abs() < f32::EPSILON {
+    ((bf - rf) / d + 2.0) / 6.0
+  } else {
+    ((rf - gf) / d + 4.0) / 6.0
+  };
+
+  (h, s, l)
+}
+
+/// Parses a hex color string to RGBA.
+pub fn parse_hex_color(hex: &str) -> Option<Rgba> {
+  let hex = hex.trim_start_matches('#');
+  if hex.len() != 6 && hex.len() != 8 {
+    return None;
+  }
+  let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+  let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+  let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+  let a = if hex.len() == 8 {
+    u8::from_str_radix(&hex[6..8], 16).ok()?
+  } else {
+    255
+  };
+  Some(Rgba::new(r, g, b, a))
+}
+
+/// Loads palette colors from hex strings.
+pub fn colors_from_hex(hex_colors: &[String]) -> [Rgba; 256] {
+  let mut colors = [Rgba::new(0, 0, 0, 255); 256];
+  for (i, hex) in hex_colors.iter().enumerate().take(256) {
+    if let Some(c) = parse_hex_color(hex) {
+      colors[i] = c;
+    }
+  }
+  colors
+}
+
+/// Loads palette colors from an image (first 256 pixels, row-major).
+pub fn colors_from_image(image: &Image) -> [Rgba; 256] {
+  let mut colors = [Rgba::new(0, 0, 0, 255); 256];
+
+  let Some(ref data) = image.data else {
+    return colors;
+  };
+
+  let pixel_count = (image.width() * image.height()) as usize;
+  let bytes_per_pixel = data.len() / pixel_count.max(1);
+
+  for i in 0..256.min(pixel_count) {
+    let offset = i * bytes_per_pixel;
+    if offset + 4 <= data.len() {
+      colors[i] = Rgba::new(
+        data[offset],
+        data[offset + 1],
+        data[offset + 2],
+        data[offset + 3],
+      );
+    } else if offset + 3 <= data.len() {
+      colors[i] = Rgba::new(data[offset], data[offset + 1], data[offset + 2], 255);
+    }
+  }
+
+  colors
+}
+
+/// Creates a 256x1 palette GPU texture.
+pub fn create_palette_texture(images: &mut Assets<Image>) -> Handle<Image> {
+  let size = Extent3d {
+    width: 256,
+    height: 1,
+    depth_or_array_layers: 1,
+  };
+
+  let mut image = Image::new_fill(
+    size,
+    TextureDimension::D2,
+    &[0, 0, 0, 255],
+    TextureFormat::Rgba8UnormSrgb,
+    RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+  );
+
+  image.sampler = ImageSampler::nearest();
+  images.add(image)
+}
+
+/// Uploads GlobalPalette colors to a GPU texture.
+pub fn upload_palette(palette: &GlobalPalette, image: &mut Image) {
+  let Some(ref mut data) = image.data else {
+    return;
+  };
+
+  // Copy all 256 colors (256 * 4 = 1024 bytes)
+  for (i, color) in palette.colors.iter().enumerate() {
+    let offset = i * 4;
+    if offset + 4 <= data.len() {
+      data[offset] = color.red;
+      data[offset + 1] = color.green;
+      data[offset + 2] = color.blue;
+      data[offset + 3] = color.alpha;
+    }
+  }
+}
+
+/// Converts an image's colors to the nearest palette colors.
+///
+/// Creates a new image with the same dimensions where each pixel's RGB
+/// is remapped to the nearest palette color. Alpha is preserved.
+///
+/// # Example
+/// ```ignore
+/// fn palettize_sprite(
+///     mut images: ResMut<Assets<Image>>,
+///     palette: Res<GlobalPalette>,
+///     sprite_handle: Handle<Image>,
+/// ) {
+///     if let Some(image) = images.get(&sprite_handle) {
+///         let palettized = palettize_image(image, &palette);
+///         // Use the palettized image...
+///     }
+/// }
+/// ```
+pub fn palettize_image(image: &Image, palette: &GlobalPalette) -> Image {
+  let mut result = image.clone();
+  palettize_image_in_place(&mut result, palette);
+  result
+}
+
+/// Converts an image's colors to the nearest palette colors in-place.
+///
+/// Each pixel's RGB is remapped to the nearest palette color. Alpha is
+/// preserved.
+pub fn palettize_image_in_place(image: &mut Image, palette: &GlobalPalette) {
+  let width = image.width() as usize;
+  let height = image.height() as usize;
+  let pixel_count = width * height;
+
+  if pixel_count == 0 {
+    return;
+  }
+
+  let Some(ref mut data) = image.data else {
+    return;
+  };
+
+  let bytes_per_pixel = data.len() / pixel_count;
+  if bytes_per_pixel < 3 {
+    return; // Need at least RGB
+  }
+
+  for i in 0..pixel_count {
+    let offset = i * bytes_per_pixel;
+    let r = data[offset];
+    let g = data[offset + 1];
+    let b = data[offset + 2];
+
+    // Find nearest palette color
+    let palette_idx = palette.map_rgb(r, g, b);
+    let pc = palette.colors[palette_idx as usize];
+
+    // Write palettized color (preserve alpha if present)
+    data[offset] = pc.red;
+    data[offset + 1] = pc.green;
+    data[offset + 2] = pc.blue;
+    // Keep original alpha if bytes_per_pixel >= 4
+  }
+}
+
+/// System that palettizes images when they're loaded.
+///
+/// Add this system to automatically convert loaded images to palette colors.
+/// Mark images that should be palettized with the `PalettizeOnLoad` component.
+#[derive(Component)]
+pub struct PalettizeOnLoad;
+
+/// Plugin for the global palette system.
+pub struct PalettePlugin;
+
+impl Plugin for PalettePlugin {
+  fn build(&self, app: &mut App) {
+    app.init_asset::<PaletteConfig>();
+    app.init_asset_loader::<PaletteConfigLoader>();
+  }
+}

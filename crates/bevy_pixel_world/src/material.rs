@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::coords::{ColorIndex, MaterialId};
+use crate::coords::MaterialId;
 use crate::render::{Rgba, rgb};
 
 /// What happens to a pixel under a given effect (burning, detonation, etc.).
@@ -66,14 +66,6 @@ pub struct Material {
   pub base_temperature: u8,
   /// Per-material effect responses (burning, detonation, etc.).
   pub effects: MaterialEffects,
-}
-
-impl Material {
-  /// Sample color from palette using ColorIndex.
-  pub fn sample(&self, color: ColorIndex) -> Rgba {
-    let idx = (color.0 as usize * 7 / 255).min(7);
-    self.palette[idx]
-  }
 }
 
 /// Built-in material IDs.

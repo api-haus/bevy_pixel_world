@@ -1,0 +1,117 @@
+# Global 256-color palette configuration
+#
+# Uses the DUEL 1x palette from Lospec - 256 carefully curated colors
+# https://lospec.com/palette-list/duel
+
+[palette]
+image = "palettes/duel-1x.png"
+
+# Alternative: inline hex colors
+# Uncomment the colors array below and comment out the image line above to use inline colors.
+#
+# Extended palette with material-appropriate colors:
+# 0-15: PICO-8 base colors
+# 16-31: Extended PICO-8 secret colors
+# 32-63: Soil/earth tones (browns)
+# 64-95: Stone/rock tones (grays)
+# 96-127: Sand/desert tones (tans/yellows)
+# 128-159: Water/sky tones (blues)
+# 160-191: Wood/vegetation tones (warm browns/greens)
+# 192-223: Fire/heat tones (reds/oranges)
+# 224-255: Grayscale ramp
+#
+# colors = [
+#   # 0-15: PICO-8 base colors
+#   "#000000", "#1D2B53", "#7E2553", "#008751",
+#   "#AB5236", "#5F574F", "#C2C3C7", "#FFF1E8",
+#   "#FF004D", "#FFA300", "#FFEC27", "#00E436",
+#   "#29ADFF", "#83769C", "#FF77A8", "#FFCCAA",
+#
+#   # 16-31: Extended PICO-8 secret colors
+#   "#291814", "#111D35", "#422136", "#125359",
+#   "#742F29", "#49333B", "#A28879", "#F3EF7D",
+#   "#BE1250", "#FF6C24", "#A8E72E", "#00B543",
+#   "#065AB5", "#754665", "#FF6E59", "#FF9D81",
+#
+#   # 32-63: Soil/earth tones (32 shades for terrain depth)
+#   "#8B5A2B", "#825226", "#794A21", "#70421C",
+#   "#673A17", "#5E3212", "#552A0D", "#4C2208",
+#   "#7A4F26", "#714720", "#683F1A", "#5F3714",
+#   "#562F0E", "#4D2708", "#441F02", "#3B1700",
+#   "#9B6A3B", "#926235", "#895A2F", "#805229",
+#   "#774A23", "#6E421D", "#653A17", "#5C3211",
+#   "#AB7A4B", "#A27245", "#996A3F", "#906239",
+#   "#875A33", "#7E522D", "#754A27", "#6C4221",
+#
+#   # 64-95: Stone/rock tones (32 shades for rock depth)
+#   "#808080", "#767676", "#6C6C6C", "#626262",
+#   "#585858", "#4E4E4E", "#444444", "#3A3A3A",
+#   "#8A8A8A", "#808080", "#767676", "#6C6C6C",
+#   "#626262", "#585858", "#4E4E4E", "#444444",
+#   "#949494", "#8A8A8A", "#808080", "#767676",
+#   "#6C6C6C", "#626262", "#585858", "#4E4E4E",
+#   "#9E9E9E", "#949494", "#8A8A8A", "#808080",
+#   "#767676", "#6C6C6C", "#626262", "#585858",
+#
+#   # 96-127: Sand/desert tones (32 shades)
+#   "#EDC9AF", "#E1BF92", "#DAB482", "#D2AA73",
+#   "#C8A064", "#BE9655", "#B48C46", "#AA8237",
+#   "#F5D9BF", "#E9CFA2", "#DDC590", "#D1BB7E",
+#   "#C5B16C", "#B9A75A", "#AD9D48", "#A19336",
+#   "#FDE9CF", "#F1DFB2", "#E5D5A0", "#D9CB8E",
+#   "#CDC17C", "#C1B76A", "#B5AD58", "#A9A346",
+#   "#FFF9DF", "#F3EFC2", "#E7E5B0", "#DBDB9E",
+#   "#CFD18C", "#C3C77A", "#B7BD68", "#ABB356",
+#
+#   # 128-159: Water/sky tones (32 shades, includes transparency info in alpha)
+#   "#40A4DFB4", "#3791CDBE", "#2E7EBBC8", "#256BA9D2",
+#   "#1C5897DC", "#1345A4E6", "#0A3273F0", "#051F64FA",
+#   "#50B4EFAA", "#47A1DDB4", "#3E8ECBBE", "#3580B9C8",
+#   "#2C72A7D2", "#236495DC", "#1A5683E6", "#114871F0",
+#   "#60C4FFAA", "#57B1EDB4", "#4E9EDBBE", "#45B0C9C8",
+#   "#3CA2B7D2", "#3394A5DC", "#2A8693E6", "#217881F0",
+#   "#70D4FFAA", "#67C1EDB4", "#5EAEDBBE", "#55C0C9C8",
+#   "#4CB2B7D2", "#43A4A5DC", "#3A9693E6", "#318881F0",
+#
+#   # 160-191: Wood/vegetation tones (32 shades)
+#   "#CDAA7D", "#B99164", "#A5784B", "#916032",
+#   "#825532", "#6E4628", "#5A381E", "#462A14",
+#   "#DDB98D", "#C9A074", "#B5875B", "#A16E42",
+#   "#926549", "#7E5640", "#6A4837", "#563A2E",
+#   "#EDCC9D", "#D9B384", "#C59A6B", "#B18152",
+#   "#A27859", "#8E6950", "#7A5B47", "#664D3E",
+#   "#FDDCAD", "#E9C394", "#D5AA7B", "#C19162",
+#   "#B28869", "#9E7960", "#8A6B57", "#765D4E",
+#
+#   # 192-223: Fire/heat tones (32 shades)
+#   "#FF4500", "#FF5A00", "#FF6F00", "#FF8400",
+#   "#FF9900", "#FFAE00", "#FFC300", "#FFD800",
+#   "#FF3C00", "#FF5100", "#FF6600", "#FF7B00",
+#   "#FF9000", "#FFA500", "#FFBA00", "#FFCF00",
+#   "#FF3300", "#FF4800", "#FF5D00", "#FF7200",
+#   "#FF8700", "#FF9C00", "#FFB100", "#FFC600",
+#   "#FF2A00", "#FF3F00", "#FF5400", "#FF6900",
+#   "#FF7E00", "#FF9300", "#FFA800", "#FFBD00",
+#
+#   # 224-255: Grayscale ramp (32 shades from black to white)
+#   "#000000", "#080808", "#101010", "#181818",
+#   "#202020", "#282828", "#303030", "#383838",
+#   "#404040", "#484848", "#505050", "#585858",
+#   "#606060", "#686868", "#707070", "#787878",
+#   "#808080", "#888888", "#909090", "#989898",
+#   "#A0A0A0", "#A8A8A8", "#B0B0B0", "#B8B8B8",
+#   "#C0C0C0", "#C8C8C8", "#D0D0D0", "#D8D8D8",
+#   "#E0E0E0", "#E8E8E8", "#F0F0F0", "#FFFFFF",
+# ]
+
+[lut]
+# Distance function for RGB to palette mapping:
+# - rgb: Fast Euclidean distance in RGB space
+# - hsl: Better hue preservation
+# - oklab: Perceptually uniform, best quality (default)
+distance = "oklab"
+
+# Dithering mode:
+# - nearest: Map each pixel to single nearest color (default)
+# - dither: Use 2x2 Bayer dithering for gradients
+mode = "nearest"

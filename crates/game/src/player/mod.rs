@@ -2,6 +2,7 @@ pub mod components;
 mod flight;
 pub mod interpolation;
 pub mod movement;
+mod palettize;
 mod spawn;
 mod spawn_body;
 
@@ -73,6 +74,7 @@ impl Plugin for PlayerPlugin {
       (
         spawn_body::spawn_body_on_input,
         spawn_body::tag_new_bodies_as_bombs,
+        palettize::palettize_player_sprite,
       ),
     );
   }

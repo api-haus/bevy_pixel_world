@@ -8,29 +8,86 @@ use bevy::prelude::*;
 use super::PixelBody;
 use crate::coords::{ColorIndex, MaterialId};
 use crate::material::ids as material_ids;
+use crate::palette::GlobalPalette;
 use crate::pixel::Pixel;
+
+/// Finds the best matching color within a material's 8-color palette.
+///
+/// Returns a ColorIndex that will map to the best palette offset when
+/// the shader computes `material_id * 8 + (color_index * 7 / 255)`.
+fn find_best_material_color(
+  r: u8,
+  g: u8,
+  b: u8,
+  material: MaterialId,
+  palette: &GlobalPalette,
+) -> ColorIndex {
+  let base_idx = (material.0 as usize) * 8;
+  let mut best_offset = 0u8;
+  let mut best_dist = u32::MAX;
+
+  // Check each of the material's 8 palette colors
+  for offset in 0..8 {
+    let palette_idx = base_idx + offset;
+    if palette_idx >= 256 {
+      break;
+    }
+
+    let pc = palette.colors[palette_idx];
+    let dr = (r as i32 - pc.red as i32).unsigned_abs();
+    let dg = (g as i32 - pc.green as i32).unsigned_abs();
+    let db = (b as i32 - pc.blue as i32).unsigned_abs();
+    let dist = dr * dr + dg * dg + db * db;
+
+    if dist < best_dist {
+      best_dist = dist;
+      best_offset = offset as u8;
+    }
+  }
+
+  // Convert palette offset (0-7) to ColorIndex that shader will map back
+  // Shader does: offset = color_index * 7 / 255
+  // We want: color_index such that color_index * 7 / 255 = best_offset
+  // Use the middle of each range for more stable mapping
+  let color_index = match best_offset {
+    0 => 18,  // 0-36 maps to 0
+    1 => 54,  // 37-72 maps to 1
+    2 => 91,  // 73-109 maps to 2
+    3 => 127, // 110-145 maps to 3
+    4 => 163, // 146-181 maps to 4
+    5 => 200, // 182-218 maps to 5
+    6 => 236, // 219-254 maps to 6
+    _ => 255, // 255 maps to 7
+  };
+
+  ColorIndex(color_index)
+}
 
 /// Loader for converting images to pixel bodies.
 pub struct PixelBodyLoader;
 
 impl PixelBodyLoader {
-  /// Creates a PixelBody from a loaded Image asset.
+  /// Creates a PixelBody from a loaded Image asset using the global palette.
   ///
   /// Converts RGBA pixels to material + color:
   /// - Alpha < 128: void (not in shape mask)
-  /// - Alpha >= 128: solid material with color derived from RGB luminance
+  /// - Alpha >= 128: solid material with color index from palette LUT
   ///
   /// The material defaults to STONE for solid pixels.
-  pub fn from_image(image: &Image) -> Option<PixelBody> {
-    Self::from_image_with_material(image, material_ids::STONE)
+  pub fn from_image(image: &Image, palette: &GlobalPalette) -> Option<PixelBody> {
+    Self::from_image_with_material(image, material_ids::STONE, palette)
   }
 
   /// Creates a PixelBody from a loaded Image asset with a specific material.
   ///
   /// Converts RGBA pixels to the specified material + color:
   /// - Alpha < 128: void (not in shape mask)
-  /// - Alpha >= 128: specified material with color derived from RGB luminance
-  pub fn from_image_with_material(image: &Image, material: MaterialId) -> Option<PixelBody> {
+  /// - Alpha >= 128: specified material with color index from palette LUT
+  pub fn from_image_with_material(
+    image: &Image,
+    material: MaterialId,
+    palette: &GlobalPalette,
+  ) -> Option<PixelBody> {
     let width = image.width();
     let height = image.height();
 
@@ -75,10 +132,8 @@ impl PixelBodyLoader {
           continue;
         }
 
-        // Convert RGB to a luminance-based color index (0-255)
-        // Using standard luminance coefficients: 0.299*R + 0.587*G + 0.114*B
-        let luminance = (r as f32 * 0.299 + g as f32 * 0.587 + b as f32 * 0.114) as u8;
-        let color = ColorIndex(luminance);
+        // Find the best match within the material's 8-color palette
+        let color = find_best_material_color(r, g, b, material, palette);
 
         body.set_pixel(x, surface_y, Pixel::new(material, color));
       }
