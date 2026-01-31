@@ -85,7 +85,9 @@ fn sync_profile_from_world_config(
         profile.world_seed = config.world_seed;
         profile.threshold = config.threshold;
         profile.synced_from = Some(entity);
-        profile.dirty = true; // Trigger seeder update
+        // Don't set dirty - seeder already matches config on load.
+        // Setting dirty here would trigger ReseedAllChunks, overriding
+        // ReloadAllChunks from on_enter_playing and breaking persistence.
         info!(
           "Synced noise profile from level: seed={}, threshold={}, ent={}",
           config.world_seed,
