@@ -348,3 +348,11 @@ pub struct ReloadAllChunks;
 /// Should be followed by `ReseedAllChunks` to regenerate from procedural noise.
 #[derive(bevy::prelude::Message)]
 pub struct ClearPersistence;
+
+/// Message to reseed all chunks with fresh procedural data.
+///
+/// Unlike `ReseedAllChunks` (which may be used after `UpdateSeeder`), this
+/// ONLY transitions Active chunks to Seeding without updating the seeder.
+/// Use for edit mode transitions where you want fresh procedural data.
+#[derive(bevy::prelude::Message)]
+pub struct FreshReseedAllChunks;

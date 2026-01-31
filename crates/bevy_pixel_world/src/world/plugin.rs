@@ -7,8 +7,8 @@ use bevy::prelude::*;
 use web_time::Instant;
 
 use super::control::{
-  ClearPersistence, PersistenceComplete, ReloadAllChunks, RequestPersistence, ReseedAllChunks,
-  SimulationState, UpdateSeeder,
+  ClearPersistence, FreshReseedAllChunks, PersistenceComplete, ReloadAllChunks, RequestPersistence,
+  ReseedAllChunks, SimulationState, UpdateSeeder,
 };
 use super::persistence_systems::{
   LoadedChunkDataStore, dispatch_chunk_loads, dispatch_save_task, flush_persistence_queue,
@@ -17,9 +17,9 @@ use super::persistence_systems::{
 };
 use super::streaming::poll_seeding_tasks;
 use super::streaming::{
-  CullingConfig, SeedingTasks, clear_chunk_tracking, dispatch_seeding, handle_reload_request,
-  handle_reseed_request, handle_update_seeder, update_entity_culling, update_simulation_bounds,
-  update_streaming_windows,
+  CullingConfig, SeedingTasks, clear_chunk_tracking, dispatch_seeding, handle_fresh_reseed_request,
+  handle_reload_request, handle_reseed_request, handle_update_seeder, update_entity_culling,
+  update_simulation_bounds, update_streaming_windows,
 };
 pub use super::streaming::{SeededChunks, StreamingCamera, UnloadingChunks};
 pub(crate) use super::streaming::{SharedChunkMesh, SharedPaletteTexture};
@@ -105,7 +105,8 @@ impl Plugin for PixelWorldStreamingPlugin {
       .add_message::<ReseedAllChunks>()
       .add_message::<ReloadAllChunks>()
       .add_message::<ClearPersistence>()
-      .add_message::<UpdateSeeder>();
+      .add_message::<UpdateSeeder>()
+      .add_message::<FreshReseedAllChunks>();
 
     // Configure set ordering: Pre → Sim → Post
     app.configure_sets(
@@ -153,6 +154,7 @@ impl Plugin for PixelWorldStreamingPlugin {
         // Handle seeder update, reseed/reload/clear requests before dispatching new seeding tasks
         handle_update_seeder,
         handle_reseed_request,
+        handle_fresh_reseed_request,
         handle_reload_request,
         handle_clear_persistence,
         // Seeding: dispatch and poll async seeding tasks
