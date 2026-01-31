@@ -4,7 +4,7 @@ test:
     cargo test -p bevy_pixel_world
 
 dev:
-    cd crates/game && cargo run --features dev
+    cd crates/game && cargo run --features dev,editor
 
 game:
     cd crates/game && cargo run --release
