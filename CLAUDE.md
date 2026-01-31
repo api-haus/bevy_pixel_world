@@ -89,17 +89,9 @@ If no matching worktree exists, create one.
 git worktree add ../sim2d-arch-docs -b docs/architecture-reorg
 git worktree add ../sim2d-plugin-helpers -b refactor/plugin-helpers
 git worktree add ../sim2d-physics-desync -b fix/physics-desync-on-load
-
-# After creating the worktree, copy target/ to speed up first compilation:
-cp -r target/ ../sim2d-<suffix>/target/
 ```
 
-> **Tip**: Use `cp -r` (not `cp -al`) so each worktree gets independent files. Hard links would cause lock conflicts when compiling multiple worktrees concurrently. sccache still shares cached artifacts across worktrees.
-
-> **Tip**: After copying `target/`, remove stale CMake build artifacts to avoid path mismatch errors:
-> ```bash
-> rm -rf target/debug/build/fastnoise2-sys-*
-> ```
+> **Note**: Global `~/.cargo/config.toml` sets `target-dir` to `/home/midori/_dev/sim2d-target`. All worktrees automatically share this compilation cache — no manual copying needed.
 
 ### Conventions
 
