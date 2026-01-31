@@ -39,16 +39,15 @@ rustflags = [
 ]
 
 # Cranelift compiles faster but produces slower code than LLVM.
-# Disabled: runtime performance more important than compile time for now.
-#[profile.dev]
-#codegen-backend = "cranelift"
-#
-#[profile.dev.package."*"]
-#codegen-backend = "llvm"
-#
-## Wildcard doesn't cover workspace members - explicit override needed
-#[profile.dev.package.bevy_pixel_world]
-#codegen-backend = "llvm"
+[profile.dev]
+codegen-backend = "cranelift"
+
+[profile.dev.package."*"]
+codegen-backend = "llvm"
+
+# Wildcard doesn't cover workspace members - explicit override needed
+[profile.dev.package.bevy_pixel_world]
+codegen-backend = "llvm"
 
 # for Windows
 [target.x86_64-pc-windows-msvc]
