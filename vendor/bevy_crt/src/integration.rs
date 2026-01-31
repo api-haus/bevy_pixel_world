@@ -18,7 +18,7 @@ use bevy::{
 use bevy_pixel_world::PixelCameraState;
 
 use crate::materials::*;
-use crate::plugin::{CrtRenderTargets, CrtState, spawn_crt_pass};
+use crate::plugin::{CrtConfig, CrtRenderTargets, CrtState, spawn_crt_pass};
 
 /// Layer offset for CRT passes when integrated with PixelCamera.
 const CRT_INTEGRATION_LAYER_BASE: usize = 20;
@@ -34,6 +34,7 @@ const CRT_INTEGRATION_LAYER_BASE: usize = 20;
 pub fn setup_crt_with_pixel_camera<BlitMarker: Component>(
   mut commands: Commands,
   mut state: ResMut<CrtState>,
+  crt_config: Res<CrtConfig>,
   mut images: ResMut<Assets<Image>>,
   mut meshes: ResMut<Assets<Mesh>>,
   mut afterglow_materials: ResMut<Assets<AfterglowMaterial>>,
@@ -235,6 +236,7 @@ pub fn setup_crt_with_pixel_camera<BlitMarker: Component>(
     pre_pass: pre_target.clone(),
     frame_count: 0,
     source_size,
+    params: crt_config.to_params(),
   });
   spawn_crt_pass(
     &mut commands,

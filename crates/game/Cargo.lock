@@ -768,6 +768,7 @@ dependencies = [
  "bevy",
  "bevy_egui",
  "bevy_pixel_world",
+ "serde",
 ]
 
 [[package]]

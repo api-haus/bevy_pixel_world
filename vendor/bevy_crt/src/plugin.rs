@@ -5,6 +5,7 @@
 use bevy::{
   camera::RenderTarget,
   camera::visibility::RenderLayers,
+  ecs::system::SystemParam,
   prelude::*,
   render::render_resource::{
     Extent3d, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
@@ -80,7 +81,10 @@ impl Plugin for Crt2dPlugin {
     app.add_systems(Update, setup_crt_pipeline.run_if(not(crt_initialized)));
 
     // Per-frame systems
-    app.add_systems(PostUpdate, update_frame_count.run_if(crt_initialized));
+    app.add_systems(
+      PostUpdate,
+      (update_frame_count, update_crt_params).run_if(crt_initialized),
+    );
 
     // One-shot system to integrate with pixel camera (runs once after CRT init)
     app.add_systems(
@@ -105,26 +109,62 @@ fn crt_initialized(state: Res<CrtState>) -> bool {
   state.initialized
 }
 
-/// CRT effect configuration.
-#[derive(Resource)]
+/// CRT effect configuration with live-reloadable parameters.
+#[derive(Resource, Clone, Debug, serde::Deserialize)]
+#[serde(default)]
 pub struct CrtConfig {
-  /// Enable curvature effect.
-  pub curvature: bool,
-  /// Enable scanlines.
-  pub scanlines: bool,
-  /// Enable CRT mask.
-  pub mask: bool,
-  /// Enable bloom/glow.
-  pub bloom: bool,
+  /// Master enable/disable toggle.
+  pub enabled: bool,
+  /// Horizontal curvature (0.0 = flat, 0.03 = subtle, 0.1 = strong).
+  pub curvature_x: f32,
+  /// Vertical curvature (0.0 = flat, 0.04 = subtle, 0.1 = strong).
+  pub curvature_y: f32,
+  /// Scanline intensity (0.0 = none, 0.6 = visible, 1.0 = maximum).
+  pub scanline_intensity: f32,
+  /// Scanline sharpness (0.5 = soft, 0.75 = medium, 1.0 = sharp).
+  pub scanline_sharpness: f32,
+  /// CRT mask strength (0.0 = none, 0.3 = subtle, 1.0 = strong).
+  pub mask_strength: f32,
+  /// Mask type: 0 = phosphor, 2 = aperture grille, 6 = trinitron, -1 = none.
+  pub mask_type: i32,
+  /// Glow/bloom intensity (0.0 = none, 0.08 = subtle, 0.3 = strong).
+  pub glow: f32,
+  /// Brightness boost (1.0 = normal, 1.4 = brighter).
+  pub brightness: f32,
+  /// Output gamma (1.0 = linear, 1.75 = typical CRT, 2.2 = sRGB).
+  pub gamma: f32,
+  /// Corner border size (0.0 = sharp corners, 0.01 = subtle rounding).
+  pub corner_size: f32,
 }
 
 impl Default for CrtConfig {
   fn default() -> Self {
     Self {
-      curvature: true,
-      scanlines: true,
-      mask: true,
-      bloom: true,
+      enabled: true,
+      curvature_x: 0.03,
+      curvature_y: 0.04,
+      scanline_intensity: 0.6,
+      scanline_sharpness: 0.75,
+      mask_strength: 0.3,
+      mask_type: 0,
+      glow: 0.08,
+      brightness: 1.4,
+      gamma: 1.75,
+      corner_size: 0.01,
+    }
+  }
+}
+
+impl CrtConfig {
+  /// Convert config to shader-compatible CrtParams.
+  pub fn to_params(&self) -> CrtParams {
+    CrtParams {
+      curvature: Vec2::new(self.curvature_x, self.curvature_y),
+      scanline: Vec2::new(self.scanline_intensity, self.scanline_sharpness),
+      mask: Vec2::new(self.mask_strength, self.mask_type as f32),
+      glow_brightness: Vec2::new(self.glow, self.brightness),
+      gamma_corner: Vec2::new(self.gamma, self.corner_size),
+      enabled: u32::from(self.enabled),
     }
   }
 }
@@ -163,6 +203,19 @@ pub struct CrtPipelineEntity;
 #[derive(Component, Default)]
 pub struct CrtSourceCamera;
 
+/// SystemParam bundle for all CRT material asset resources.
+#[derive(SystemParam)]
+struct CrtMaterials<'w> {
+  afterglow: ResMut<'w, Assets<AfterglowMaterial>>,
+  pre: ResMut<'w, Assets<PreMaterial>>,
+  linearize: ResMut<'w, Assets<LinearizeMaterial>>,
+  post: ResMut<'w, Assets<PostMaterial>>,
+  bloom_h: ResMut<'w, Assets<BloomHorizontal>>,
+  bloom_v: ResMut<'w, Assets<BloomVertical>>,
+  post2: ResMut<'w, Assets<PostMaterial2>>,
+  decon: ResMut<'w, Assets<DeconvergenceMaterial>>,
+}
+
 /// Sets up the CRT post-processing pipeline.
 ///
 /// Automatically detects PixelBlitCamera from bevy_pixel_world (by name)
@@ -171,16 +224,10 @@ pub struct CrtSourceCamera;
 fn setup_crt_pipeline(
   mut commands: Commands,
   mut state: ResMut<CrtState>,
+  crt_config: Res<CrtConfig>,
   mut images: ResMut<Assets<Image>>,
   mut meshes: ResMut<Assets<Mesh>>,
-  mut afterglow_materials: ResMut<Assets<AfterglowMaterial>>,
-  mut pre_materials: ResMut<Assets<PreMaterial>>,
-  mut linearize_materials: ResMut<Assets<LinearizeMaterial>>,
-  mut post_materials: ResMut<Assets<PostMaterial>>,
-  mut bloom_h_materials: ResMut<Assets<BloomHorizontal>>,
-  mut bloom_v_materials: ResMut<Assets<BloomVertical>>,
-  mut post2_materials: ResMut<Assets<PostMaterial2>>,
-  mut decon_materials: ResMut<Assets<DeconvergenceMaterial>>,
+  mut mats: CrtMaterials,
   source_camera_query: Query<(Entity, &Camera), With<CrtSourceCamera>>,
   pixel_blit_camera_query: Query<(Entity, &Camera, &Name)>,
   windows: Query<&Window>,
@@ -283,7 +330,7 @@ fn setup_crt_pipeline(
     .unwrap_or(texture_size);
 
   // Pass 1: Afterglow
-  let afterglow_mat = afterglow_materials.add(AfterglowMaterial {
+  let afterglow_mat = mats.afterglow.add(AfterglowMaterial {
     source_image: source_target.clone(),
     texture_size,
     feedback: afterglow_in.clone(),
@@ -298,7 +345,7 @@ fn setup_crt_pipeline(
   );
 
   // Pass 2: Pre-shader
-  let pre_mat = pre_materials.add(PreMaterial {
+  let pre_mat = mats.pre.add(PreMaterial {
     source_image: source_target.clone(),
     texture_size,
     afterglow: afterglow_in.clone(),
@@ -313,7 +360,7 @@ fn setup_crt_pipeline(
   );
 
   // Pass 3: Linearize
-  let linearize_mat = linearize_materials.add(LinearizeMaterial {
+  let linearize_mat = mats.linearize.add(LinearizeMaterial {
     source_image: pre_target.clone(),
     texture_size,
     frame_count: 0,
@@ -328,7 +375,7 @@ fn setup_crt_pipeline(
   );
 
   // Pass 4: Pass1 (horizontal filtering)
-  let pass1_mat = post_materials.add(PostMaterial {
+  let pass1_mat = mats.post.add(PostMaterial {
     linearize_pass: linearize_target.clone(),
     texture_size,
   });
@@ -342,7 +389,7 @@ fn setup_crt_pipeline(
   );
 
   // Pass 5: Bloom horizontal
-  let bloom_h_mat = bloom_h_materials.add(BloomHorizontal {
+  let bloom_h_mat = mats.bloom_h.add(BloomHorizontal {
     linearize_pass: linearize_target.clone(),
     texture_size,
   });
@@ -356,7 +403,7 @@ fn setup_crt_pipeline(
   );
 
   // Pass 6: Bloom vertical
-  let bloom_v_mat = bloom_v_materials.add(BloomVertical {
+  let bloom_v_mat = mats.bloom_v.add(BloomVertical {
     source_image: bloom_h_target.clone(),
     texture_size,
   });
@@ -370,7 +417,7 @@ fn setup_crt_pipeline(
   );
 
   // Pass 7: Pass2 (vertical filtering + scanlines)
-  let pass2_mat = post2_materials.add(PostMaterial2 {
+  let pass2_mat = mats.post2.add(PostMaterial2 {
     pass_1: pass1_target.clone(),
     texture_size,
     linearize_pass: linearize_target.clone(),
@@ -386,7 +433,7 @@ fn setup_crt_pipeline(
   );
 
   // Pass 8: Deconvergence (final - renders to screen)
-  let decon_mat = decon_materials.add(DeconvergenceMaterial {
+  let decon_mat = mats.decon.add(DeconvergenceMaterial {
     source_image: pass2_target.clone(),
     texture_size,
     linearize_pass: linearize_target.clone(),
@@ -394,6 +441,7 @@ fn setup_crt_pipeline(
     pre_pass: pre_target.clone(),
     frame_count: 0,
     source_size,
+    params: crt_config.to_params(),
   });
   spawn_crt_pass(
     &mut commands,
@@ -493,6 +541,27 @@ fn update_frame_count(
 
   for (_, material) in decon_materials.iter_mut() {
     material.frame_count = frame;
+  }
+}
+
+/// Updates CRT parameters in deconvergence material when config changes.
+///
+/// Uses the same iter_mut() pattern as update_frame_count which already
+/// successfully updates materials every frame.
+fn update_crt_params(
+  crt_config: Res<CrtConfig>,
+  mut decon_materials: ResMut<Assets<DeconvergenceMaterial>>,
+) {
+  if crt_config.is_changed() {
+    let params = crt_config.to_params();
+    info!(
+      "CRT: Updating params - enabled={}, brightness={}, curvature=({}, {})",
+      params.enabled, params.glow_brightness.y, params.curvature.x, params.curvature.y
+    );
+
+    for (_, material) in decon_materials.iter_mut() {
+      material.params = params;
+    }
   }
 }
 

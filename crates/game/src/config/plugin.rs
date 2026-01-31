@@ -3,6 +3,7 @@ use bevy::{
   window::PrimaryWindow,
 };
 use bevy_common_assets::toml::TomlAssetPlugin;
+use bevy_crt::CrtConfig;
 use bevy_pixel_world::pixel_camera::PixelSceneCamera;
 
 use super::{ConfigLoaded, GameConfig};
@@ -29,6 +30,7 @@ impl Plugin for ConfigPlugin {
         update_window_on_config_change,
         update_gravity_on_config_change,
         update_camera_on_config_change,
+        update_crt_on_config_change,
       ),
     );
   }
@@ -113,5 +115,11 @@ fn update_camera_on_config_change(
         };
       }
     }
+  }
+}
+
+fn update_crt_on_config_change(config: Res<ConfigLoaded>, mut crt_config: ResMut<CrtConfig>) {
+  if config.is_changed() {
+    *crt_config = config.crt.clone();
   }
 }

@@ -13,6 +13,38 @@ pub struct TextureSizeUniform {
   pub size: Vec2,
 }
 
+/// Configurable CRT parameters passed to deconvergence shader.
+///
+/// Field order matters for WGSL alignment - Vec2 fields first, then scalars.
+#[derive(Clone, Copy, ShaderType)]
+pub struct CrtParams {
+  /// Curvature amount (x, y).
+  pub curvature: Vec2,
+  /// Scanline intensity and sharpness.
+  pub scanline: Vec2,
+  /// Mask strength and type (as f32 for uniform compatibility).
+  pub mask: Vec2,
+  /// Glow intensity and brightness boost.
+  pub glow_brightness: Vec2,
+  /// Output gamma and corner size.
+  pub gamma_corner: Vec2,
+  /// Whether CRT effect is enabled (1 = on, 0 = bypass).
+  pub enabled: u32,
+}
+
+impl Default for CrtParams {
+  fn default() -> Self {
+    Self {
+      curvature: Vec2::new(0.03, 0.04),
+      scanline: Vec2::new(0.6, 0.75),
+      mask: Vec2::new(0.3, 0.0),
+      glow_brightness: Vec2::new(0.08, 1.4),
+      gamma_corner: Vec2::new(1.75, 0.01),
+      enabled: 1,
+    }
+  }
+}
+
 /// Afterglow pass material - phosphor persistence effect.
 #[derive(Asset, TypePath, AsBindGroup, Clone)]
 pub struct AfterglowMaterial {
@@ -203,6 +235,10 @@ pub struct DeconvergenceMaterial {
   /// Source game resolution (for pixel-aligned mask/scanlines).
   #[uniform(10)]
   pub source_size: Vec2,
+
+  /// Configurable CRT parameters.
+  #[uniform(11)]
+  pub params: CrtParams,
 }
 
 impl Material2d for DeconvergenceMaterial {

@@ -1,6 +1,7 @@
 mod plugin;
 
 use bevy::{asset::Asset, prelude::*, reflect::TypePath};
+pub use bevy_crt::CrtConfig;
 pub use plugin::ConfigPlugin;
 use serde::{Deserialize, Deserializer, de};
 
@@ -11,6 +12,8 @@ pub struct GameConfig {
   pub physics: PhysicsConfig,
   pub player: PlayerConfig,
   pub day_cycle: DayCycleConfig,
+  #[serde(default)]
+  pub crt: CrtConfig,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -89,6 +92,7 @@ pub struct ConfigLoaded {
   pub physics: PhysicsConfig,
   pub player: PlayerConfig,
   pub day_cycle: DayCycleConfig,
+  pub crt: CrtConfig,
 }
 
 impl From<GameConfig> for ConfigLoaded {
@@ -99,6 +103,7 @@ impl From<GameConfig> for ConfigLoaded {
       physics: config.physics,
       player: config.player,
       day_cycle: config.day_cycle,
+      crt: config.crt,
     }
   }
 }

@@ -85,13 +85,26 @@ const EPS: f32 = 1e-10;
 @group(2) @binding(9) var<uniform> frame_count: u32;
 @group(2) @binding(10) var<uniform> source_size: vec2<f32>;
 
+// Configurable CRT parameters from Rust (field order must match Rust struct)
+struct CrtParams {
+    curvature: vec2<f32>,        // x, y warp amounts
+    scanline: vec2<f32>,         // intensity, sharpness
+    mask: vec2<f32>,             // strength, type
+    glow_brightness: vec2<f32>,  // glow, brightness
+    gamma_corner: vec2<f32>,     // gamma_out, corner_size
+    enabled: u32,                // 1 = on, 0 = bypass
+}
+@group(2) @binding(11) var<uniform> crt_params: CrtParams;
+
 fn warp(pos: vec2<f32>) -> vec2<f32> {
     let p = pos * 2.0 - 1.0;
     let warped = vec2<f32>(
         p.x * inverseSqrt(1.0 - C_SHAPE * p.y * p.y),
         p.y * inverseSqrt(1.0 - C_SHAPE * p.x * p.x)
     );
-    let result = mix(p, warped, vec2<f32>(WARP_X, WARP_Y) / C_SHAPE);
+    // Use configurable curvature from uniforms
+    let warp_amount = crt_params.curvature;
+    let result = mix(p, warped, warp_amount / C_SHAPE);
     return result * 0.5 + 0.5;
 }
 
@@ -120,7 +133,9 @@ fn humbar(pos: f32, frame: u32) -> f32 {
 }
 
 fn corner(pos: vec2<f32>, output_size: vec4<f32>) -> f32 {
-    let b = vec2<f32>(BSIZE1, BSIZE1) * vec2<f32>(1.0, output_size.x / output_size.y) * 0.05;
+    // Use configurable corner size from uniforms
+    let corner_size = crt_params.gamma_corner.y;
+    let b = vec2<f32>(corner_size, corner_size) * vec2<f32>(1.0, output_size.x / output_size.y) * 0.05;
     var p = clamp(pos, vec2<f32>(0.0), vec2<f32>(1.0));
     p = abs(2.0 * (p - 0.5));
 
@@ -134,7 +149,7 @@ fn corner(pos: vec2<f32>, output_size: vec4<f32>) -> f32 {
     p = max(p, vec2<f32>(crn));
 
     var res: vec2<f32>;
-    if BSIZE1 == 0.0 {
+    if corner_size == 0.0 {
         res = vec2<f32>(1.0);
     } else {
         res = mix(vec2<f32>(0.0), vec2<f32>(1.0), smoothstep(vec2<f32>(1.0), vec2<f32>(1.0) - b, sqrt(p)));
@@ -158,6 +173,10 @@ fn declip(c: vec3<f32>, b: f32) -> vec3<f32> {
 
 // Shadow mask - pos_in is in screen pixels, scale to align with game pixels
 fn mask_fn(pos_in: vec2<f32>, mx: f32) -> vec3<f32> {
+    // Use configurable mask strength and type from uniforms
+    let mask_str = crt_params.mask.x;
+    let mask_type = i32(crt_params.mask.y);
+
     // Scale screen coords to game pixel coords for alignment
     let pixel_scale = texture_size / source_size;
     var pos = pos_in / pixel_scale;
@@ -173,11 +192,11 @@ fn mask_fn(pos_in: vec2<f32>, mx: f32) -> vec3<f32> {
 
     var mask = vec3<f32>(MASK_DARK);
     let one = vec3<f32>(1.0);
-    let dark_compensate = mix(max(clamp(mix(MCUT, MASK_STR, mx), 0.0, 1.0) - 0.4, 0.0) + 1.0, 1.0, mx);
-    let mc = 1.0 - max(MASK_STR, 0.0);
+    let dark_compensate = mix(max(clamp(mix(MCUT, mask_str, mx), 0.0, 1.0) - 0.4, 0.0) + 1.0, 1.0, mx);
+    let mc = 1.0 - max(mask_str, 0.0);
 
     // Phosphor mask (type 0)
-    if SHADOW_MASK == 0 {
+    if mask_type == 0 {
         let px = fract(pos.x * 0.5);
         if px < 0.49 {
             mask = vec3<f32>(1.0, mc, 1.0);
@@ -186,7 +205,7 @@ fn mask_fn(pos_in: vec2<f32>, mx: f32) -> vec3<f32> {
         }
     }
     // Aperture-grille (type 2)
-    else if SHADOW_MASK == 2 {
+    else if mask_type == 2 {
         let px = fract(pos.x / 3.0);
         if px < 0.3 {
             mask.r = MASK_LIGHT;
@@ -197,7 +216,7 @@ fn mask_fn(pos_in: vec2<f32>, mx: f32) -> vec3<f32> {
         }
     }
     // Trinitron mask 6
-    else if SHADOW_MASK == 6 {
+    else if mask_type == 6 {
         mask = vec3<f32>(0.0);
         let px = fract(pos.x / 3.0);
         if px < 0.3 {
@@ -207,10 +226,10 @@ fn mask_fn(pos_in: vec2<f32>, mx: f32) -> vec3<f32> {
         } else {
             mask.b = 1.0;
         }
-        mask = clamp(mix(mix(one, mask, MCUT), mix(one, mask, MASK_STR), mx), vec3<f32>(0.0), vec3<f32>(1.0)) * dark_compensate;
+        mask = clamp(mix(mix(one, mask, MCUT), mix(one, mask, mask_str), mx), vec3<f32>(0.0), vec3<f32>(1.0)) * dark_compensate;
     }
-    // No mask
-    else if SHADOW_MASK == -1 {
+    // No mask (type -1)
+    else if mask_type == -1 {
         mask = vec3<f32>(1.0);
     }
     // Default to phosphor
@@ -252,6 +271,11 @@ fn slot_mask_fn(pos_in: vec2<f32>, m: f32) -> f32 {
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let uv = in.uv;
+
+    // Bypass CRT effect when disabled - pass through pre-shader output directly
+    if crt_params.enabled == 0u {
+        return textureSample(pre_texture, pre_sampler, uv);
+    }
 
     let inv_text_size = 1.0 / texture_size;
     let original_size = vec4<f32>(texture_size.x, texture_size.y, inv_text_size.x, inv_text_size.y);
@@ -308,7 +332,9 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     color = color * smask;
     color = pow(color, vec3<f32>(gamma_in / MASK_GAMMA));
 
-    let bb = mix(BRIGHT_BOOST, BRIGHT_BOOST1, colmx);
+    // Use configurable brightness from uniforms
+    let brightness = crt_params.glow_brightness.y;
+    let bb = mix(brightness, brightness * 0.8, colmx);
     color = color * bb;
 
     // Glow
@@ -332,26 +358,31 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
         color = declip(color, mix(1.0, w3, 0.6));
     }
 
-    // Glow application
+    // Glow application - use configurable glow from uniforms
+    let glow_amount = crt_params.glow_brightness.x;
     var glow_color = mix(glow_sample, 0.25 * color, 0.7 * colmx);
-    if GLOW >= 0.0 {
-        color = color + 0.5 * glow_color * GLOW;
+    if glow_amount >= 0.0 {
+        color = color + 0.5 * glow_color * glow_amount;
     } else {
         var cmask_sq = cmask * smask;
         cmask_sq = cmask_sq * cmask_sq;
         cmask_sq = cmask_sq * cmask_sq;
-        color = color + (-GLOW) * cmask_sq * glow_color;
+        color = color + (-glow_amount) * cmask_sq * glow_color;
     }
 
     color = min(color, vec3<f32>(1.0));
-    color = pow(color, vec3<f32>(1.0 / GAMMA_OUT));
+    // Use configurable gamma from uniforms
+    let gamma_out = crt_params.gamma_corner.x;
+    color = pow(color, vec3<f32>(1.0 / gamma_out));
 
-    // Scanlines - aligned to game pixels, not screen pixels
+    // Scanlines - aligned to game pixels, use configurable intensity/sharpness
+    let scanline_max_intensity = crt_params.scanline.x;
+    let scanline_sharpness = crt_params.scanline.y;
     let game_pixel_y = uv.y * source_size.y;
     let scanline_fract = fract(game_pixel_y);
     let scanline_intensity_linear = max(abs(4.0 * scanline_fract - 2.0) - 1.0, 0.0);
-    let scanline_intensity_full = smoothstep(0.0, 1.0, pow(scanline_intensity_linear, SCANLINE_SHARPNESS));
-    let scanline_intensity = scanline_intensity_full * MAX_SCANLINE_INTENSITY;
+    let scanline_intensity_full = smoothstep(0.0, 1.0, pow(scanline_intensity_linear, scanline_sharpness));
+    let scanline_intensity = scanline_intensity_full * scanline_max_intensity;
 
     // Hum bar and corner
     var bar_pos = pos.y;
