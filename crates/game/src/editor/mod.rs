@@ -11,7 +11,7 @@ mod ui;
 
 use bevy::prelude::*;
 #[cfg(feature = "editor")]
-use bevy_pixel_world::{PersistenceControl, ReloadAllChunks, ReseedAllChunks, SimulationState};
+use bevy_pixel_world::{PersistenceControl, ReloadAllChunks, SimulationState};
 #[cfg(feature = "editor")]
 use bevy_yoleck::YoleckEditorLevelsDirectoryPath;
 #[cfg(feature = "editor")]
@@ -102,10 +102,21 @@ fn load_default_level(mut commands: Commands, asset_server: Res<AssetServer>) {
 #[cfg(feature = "editor")]
 fn on_enter_editing(
   simulation: Option<ResMut<SimulationState>>,
-  persistence: Option<ResMut<PersistenceControl>>,
+  mut persistence: Option<ResMut<PersistenceControl>>,
   brush: Option<ResMut<bevy_pixel_world::BrushState>>,
-  mut reseed: bevy::ecs::message::MessageWriter<ReseedAllChunks>,
 ) {
+  // Trigger save BEFORE disabling persistence.
+  // This adds to pending_requests which will be processed by Update systems
+  // even after persistence is disabled (process_pending_save_requests doesn't
+  // check is_enabled). Chunks stay in Active state so needs_save() returns true.
+  // When entering play mode, ReloadAllChunks will load from disk.
+  if let Some(ref mut pers) = persistence {
+    if pers.is_active() {
+      let _handle = pers.save();
+      info!("Triggered save before entering edit mode");
+    }
+  }
+
   if let Some(mut sim) = simulation {
     sim.pause();
   }
@@ -115,7 +126,9 @@ fn on_enter_editing(
   if let Some(mut brush) = brush {
     brush.enabled = false;
   }
-  reseed.write(ReseedAllChunks); // Discard any playtest modifications
+  // Note: We intentionally do NOT reseed here. The save triggered above needs
+  // chunks to stay in Active state so needs_save() returns true. When re-entering
+  // play mode, ReloadAllChunks will load the saved state from disk.
   info!("Edit mode: simulation paused, persistence disabled, brush disabled");
 }
 

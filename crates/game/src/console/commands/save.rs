@@ -1,8 +1,10 @@
 //! Save command for world persistence management.
 
 use bevy::prelude::*;
-use bevy_console::{ConsoleCommand, reply};
-use bevy_pixel_world::{ClearPersistence, ReloadAllChunks, RequestPersistence, ReseedAllChunks};
+use bevy_console::{ConsoleCommand, PrintConsoleLine, reply};
+use bevy_pixel_world::{
+  ClearPersistence, PersistenceComplete, ReloadAllChunks, RequestPersistence, ReseedAllChunks,
+};
 use clap::Parser;
 
 #[derive(Parser, ConsoleCommand)]
@@ -38,7 +40,33 @@ pub fn save_command(
       reply!(log, "Save file cleared, world regenerating...");
     } else {
       save_request.write(RequestPersistence);
-      reply!(log, "Saving world...");
+      reply!(log, "Saving...");
+    }
+  }
+}
+
+/// System that listens for save completion and prints to console.
+///
+/// This ensures users see when the save actually finishes, not just when it
+/// starts. Critical for preventing data loss when switching to edit mode.
+pub fn notify_save_complete(
+  mut events: bevy::ecs::message::MessageReader<PersistenceComplete>,
+  mut console: bevy::ecs::message::MessageWriter<PrintConsoleLine>,
+  mut last_notified: Local<u64>,
+) {
+  for event in events.read() {
+    // Skip if we've already notified for this request (deduplication)
+    if event.request_id <= *last_notified {
+      continue;
+    }
+    *last_notified = event.request_id;
+
+    if event.success {
+      console.write(PrintConsoleLine::new("World saved.".to_string()));
+    } else if let Some(ref error) = event.error {
+      console.write(PrintConsoleLine::new(format!("Save failed: {}", error)));
+    } else {
+      console.write(PrintConsoleLine::new("Save failed.".to_string()));
     }
   }
 }
