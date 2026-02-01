@@ -9,12 +9,12 @@ See [pixel-layers architecture](../arhitecture/modularity/pixel-layers.md) for d
 
 ## Philosophy
 
-**Radical modularity:** The framework provides spatial data structures and iteration primitives. Nothing else.
+**Radical modularity:** The framework provides spatial data structures and iteration primitives. Minimal trait requirements.
 
-- **No `PixelBase` trait** — no framework-mandated pixel structure
+- **Minimal `PixelData` trait** — only `is_solid`, `is_dirty`, `set_dirty`
 - **No material system** — games define their own
 - **No simulations** — games implement their own rules
-- **No flags** — games choose what metadata they need
+- **No bitpacking** — games bring their own (bitflags, manual, etc.)
 
 **Clone-and-modify model:** While `bevy_pixel_world` will be published to crates.io, the intended workflow is:
 
@@ -40,33 +40,50 @@ The demo game is not an afterthought — it's the reference implementation showi
 - Cannot customize material system
 
 **POC (`pixel_macro`):**
-- `flags8!` — 8 named flags in 1 byte
-- `nibbles!` — 2 nibbles in 1 byte
-- `define_pixel!` — compose fields into `#[repr(C)]` struct
-- 26 passing tests
+- Proof-of-concept for bitpacking (not shipped with framework)
+- Games bring their own: `bitflags!`, manual bit ops, etc.
+- Demo game shows one approach
 
 ---
 
 ## Target State
 
 **Framework provides:**
+- `PixelData` trait — minimal interface (see below)
 - `Surface<T>` — generic 2D storage
-- `Chunk<T>` — chunk management (T: Copy + Default + 'static)
+- `Chunk<T>` — chunk management
 - `Canvas<T>` — multi-chunk world
 - `PixelWorld<T>` — Bevy resource wrapper
 - Iteration primitives (checkerboard phasing)
-- Rendering pipeline (texture upload, dirty tracking)
+- Collision mesh generation (uses `is_solid`)
+- Dirty tracking infrastructure (uses `is_dirty`, `set_dirty`)
+- Rendering pipeline (game provides color extraction)
 - Chunk pooling and persistence infrastructure
 
+**Minimal trait requirement:**
+
+```rust
+pub trait PixelData: Copy + Default + 'static {
+    /// Is this pixel solid? Used for collision mesh generation.
+    fn is_solid(&self) -> bool;
+
+    /// Does this pixel need simulation this tick?
+    fn is_dirty(&self) -> bool;
+
+    /// Mark pixel as dirty/clean for scheduling.
+    fn set_dirty(&mut self, dirty: bool);
+}
+```
+
 **Framework does NOT provide:**
-- Any pixel type
-- Any trait requirements beyond `Copy + Default + 'static`
+- Any pixel type definition
 - Material system
 - Simulation logic
-- Specific flags or metadata
+- Bitpacking macros (use `bitflags!` or manual)
+- Specific flags beyond solid/dirty
 
 **Game (reference implementation) provides:**
-- `GamePixel` struct via `define_pixel!`
+- `GamePixel` struct implementing `PixelData`
 - Material system and registry
 - All simulations (falling sand, burning, heat)
 - All game-specific flags and metadata

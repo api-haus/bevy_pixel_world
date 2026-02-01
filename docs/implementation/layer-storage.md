@@ -7,20 +7,23 @@
 ## Philosophy: Radical Modularity
 
 **Framework provides:**
+- `PixelData` trait — minimal interface for collision and scheduling
 - Generic storage: `Surface<T>`, `Chunk<T>`, `Canvas<T>`, `PixelWorld<T>`
-- Constraint: `T: Copy + Default + 'static` (nothing else)
+- Constraint: `T: PixelData` (is_solid, is_dirty, set_dirty)
+- Collision mesh generation (uses `is_solid`)
+- Dirty tracking (uses `is_dirty`, `set_dirty`)
 - Iteration primitives (checkerboard phasing)
 - Rendering infrastructure (game provides color extraction)
 - Optional: Separate layer storage for SoA data
 
 **Framework does NOT provide:**
-- Any pixel type
+- Any pixel type definition
 - Material system
-- Flags or metadata
+- Bitpacking macros (use `bitflags!` or manual)
 - Simulations
 
 **Game crate provides everything else:**
-- Pixel struct definition (using `pixel_macro`)
+- Pixel struct implementing `PixelData`
 - Material system
 - All simulations
 - All game-specific behavior
@@ -36,16 +39,36 @@ The framework is a generic spatial data structure library. The demo game is the 
 Game-defined struct stored in contiguous array. All fields swap atomically.
 
 ```rust
-// Game crate defines this using pixel_macro
-define_pixel! {
-    material: u8,
-    color: u8,
-    damage_variant: nibbles { damage, variant },
-    flags: flags8 { dirty, solid, falling, burning, wet, pixel_body },
+// Game crate defines this (using bitflags! or manual bit ops)
+use bitflags::bitflags;
+
+bitflags! {
+    #[derive(Clone, Copy, Default)]
+    pub struct PixelFlags: u8 {
+        const DIRTY = 0x01;
+        const SOLID = 0x02;
+        // ... more flags
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct GamePixel {
+    pub material: u8,
+    pub color: u8,
+    pub damage: u8,
+    pub flags: PixelFlags,
+}
+
+// Implement the minimal trait
+impl PixelData for GamePixel {
+    fn is_solid(&self) -> bool { self.flags.contains(PixelFlags::SOLID) }
+    fn is_dirty(&self) -> bool { self.flags.contains(PixelFlags::DIRTY) }
+    fn set_dirty(&mut self, v: bool) { self.flags.set(PixelFlags::DIRTY, v); }
 }
 
 // Framework stores it generically
-pub struct Chunk<T: Copy + Default + 'static> {
+pub struct Chunk<T: PixelData> {
     pixels: Surface<T>,  // Array of GamePixel
     // ...
 }
@@ -59,9 +82,19 @@ Optional additional data stored in separate arrays. Used for:
 - Optional per-pixel data (velocity, age)
 
 ```rust
-// Game crate defines these
-define_layer!(Heat, element: u8, sample_rate: 4);
-define_layer!(Velocity, element: (i8, i8), sample_rate: 1, swap_follow: true);
+// Game crate defines these (API TBD)
+struct HeatLayer;
+impl Layer for HeatLayer {
+    type Element = u8;
+    const SAMPLE_RATE: u32 = 4;
+}
+
+struct VelocityLayer;
+impl Layer for VelocityLayer {
+    type Element = (i8, i8);
+    const SAMPLE_RATE: u32 = 1;
+    const SWAP_FOLLOW: bool = true;
+}
 ```
 
 ---
@@ -88,7 +121,7 @@ Chunk<GamePixel> (512×512):
 ## Chunk Structure
 
 ```rust
-pub struct Chunk<T: Copy + Default + 'static> {
+pub struct Chunk<T: PixelData> {
     /// Game-defined pixel data (AoS)
     pub pixels: Surface<T>,
 
@@ -161,7 +194,7 @@ The framework provides iteration primitives. The game provides all logic.
 Pixel struct swap is a single memory operation:
 
 ```rust
-impl<T: Copy + Default + 'static> Canvas<T> {
+impl<T: PixelData> Canvas<T> {
     pub fn swap(&mut self, a: WorldPos, b: WorldPos) {
         // Single memcpy for entire pixel struct
         if a.chunk() == b.chunk() {

@@ -8,25 +8,55 @@ Modular layer system where the **game defines its own pixel structure**.
 
 ## Core Concept
 
-**Radical modularity:** The framework has no opinion about what a pixel contains.
+**Radical modularity:** The framework has minimal opinions about pixel contents.
 
-- Framework provides: `Chunk<T>`, `Canvas<T>`, iteration primitives
-- Framework requires: `T: Copy + Default + 'static` (nothing else)
+- Framework provides: `Chunk<T>`, `Canvas<T>`, iteration primitives, collision
+- Framework requires: `T: PixelData` (minimal trait, see below)
 - Game defines: pixel struct with whatever fields it needs
 
+### Minimal Trait
+
+The framework needs two pieces of information from pixels:
+
+```rust
+pub trait PixelData: Copy + Default + 'static {
+    /// Is this pixel solid? Used for collision mesh generation.
+    fn is_solid(&self) -> bool;
+
+    /// Does this pixel need simulation this tick?
+    fn is_dirty(&self) -> bool;
+
+    /// Mark pixel as dirty/clean for scheduling.
+    fn set_dirty(&mut self, dirty: bool);
+}
 ```
-// Framework doesn't care what's in here
-GamePixel {
-    material: u8,     // game concept
-    color: u8,        // game concept
-    damage: u8,       // game concept
-    flags: u8,        // game concept
+
+**Why these?**
+- `is_solid` — Collision system generates meshes from solid pixels (marching squares)
+- `is_dirty` / `set_dirty` — Scheduling skips stable pixels for performance
+
+**How you implement them is your choice:**
+- `bitflags!` macro
+- Separate bool fields
+- Manual bit manipulation
+- Whatever works for your game
+
+```rust
+// Game defines this however it wants
+struct GamePixel {
+    material: u8,
+    color: u8,
+    damage: u8,
+    flags: MyFlags,  // using bitflags! or custom
 }
 
-// Framework just stores T and provides spatial operations
-Chunk<GamePixel>
-Canvas<GamePixel>
-PixelWorld<GamePixel>
+impl PixelData for GamePixel {
+    fn is_solid(&self) -> bool { self.flags.contains(MyFlags::SOLID) }
+    fn is_dirty(&self) -> bool { self.flags.contains(MyFlags::DIRTY) }
+    fn set_dirty(&mut self, v: bool) {
+        self.flags.set(MyFlags::DIRTY, v);
+    }
+}
 ```
 
 ## Demo Game as Reference
@@ -624,158 +654,81 @@ world.register_layer::<HeatLayer>(LayerConfig::default());  // transient, resimu
 | Fixed set per session | Dynamic registration would complicate sync |
 | Declare sample rate at compile time | Enables static allocation sizing |
 
-## Design Exploration: Bitpacked Pixel Macro
+## Bitpacking: Bring Your Own
 
-The `pixel_macro` crate provides tools for game developers to define their pixel structs.
+The framework does **not** provide bitpacking macros. Games bring their own tools:
 
-### Philosophy
-
-**Framework provides:**
-- Generic storage: `Chunk<T>`, `Canvas<T>`, `PixelWorld<T>`
-- Iteration primitives
-- Rendering infrastructure (game provides color extraction)
-- Constraint: `T: Copy + Default + 'static`
-
-**Game defines:**
-- Pixel struct with whatever fields it needs
-- Field names, bit widths, packing order
-- All simulation logic
-- Material system (if any)
-
-The framework doesn't know what "burning" or "damage" or even "material" means. These are all game concepts.
-
-### Goals
-
-1. **Game owns everything** — Framework is just spatial infrastructure
-2. **Semantic names** — `pixel.burning()` not `pixel.flags & 0x08`
-3. **Optimal packing** — Sub-byte fields, no wasted bits
-4. **Swap atomicity** — Entire pixel struct swaps as one unit
-5. **Zero-cost** — Accessor methods inline to bit operations
-
-### Proposed Macro: `define_pixel!`
+### Option 1: `bitflags!` (Recommended)
 
 ```rust
-// In game crate — game defines its pixel
-define_pixel! {
-    material: u8,           // 8 bits - game's material system
-    color: u8,              // 8 bits - palette index
-    damage: u4,             // 4 bits - 0-15 damage levels
-    variant: u4,            // 4 bits - 0-15 visual variants
-    flags: flags8 {
-        dirty,              // game uses for scheduling
-        solid,              // game uses for collision
-        falling,            // game uses for physics
-        burning,
-        wet,
-        pixel_body,
-    },
+use bitflags::bitflags;
+
+bitflags! {
+    #[derive(Clone, Copy, Default)]
+    pub struct PixelFlags: u8 {
+        const DIRTY      = 0b0000_0001;
+        const SOLID      = 0b0000_0010;
+        const FALLING    = 0b0000_0100;
+        const BURNING    = 0b0000_1000;
+        const WET        = 0b0001_0000;
+        const PIXEL_BODY = 0b0010_0000;
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct GamePixel {
+    pub material: u8,
+    pub color: u8,
+    pub damage: u8,
+    pub flags: PixelFlags,
+}
+
+impl PixelData for GamePixel {
+    fn is_solid(&self) -> bool { self.flags.contains(PixelFlags::SOLID) }
+    fn is_dirty(&self) -> bool { self.flags.contains(PixelFlags::DIRTY) }
+    fn set_dirty(&mut self, v: bool) { self.flags.set(PixelFlags::DIRTY, v); }
 }
 ```
 
-**Total: 8 + 8 + 4 + 4 + 8 = 32 bits = 4 bytes**
-
-### Generated Code
-
-The macro generates a `#[repr(C)]` struct with byte fields:
+### Option 2: Manual Bit Manipulation
 
 ```rust
 #[repr(C)]
-#[derive(Clone, Copy, Default, PartialEq, Eq)]
-pub struct Pixel {
-    pub material: u8,       // byte 0
-    pub color: u8,          // byte 1
-    packed_damage_var: u8,  // byte 2 (nibbles)
-    flags: u8,              // byte 3
+#[derive(Clone, Copy, Default)]
+pub struct GamePixel {
+    pub material: u8,
+    pub color: u8,
+    pub damage_variant: u8,  // high nibble: damage, low nibble: variant
+    pub flags: u8,
 }
 
-impl Pixel {
-    // Byte field access (direct)
-    #[inline] pub fn material(&self) -> u8 { self.material }
-    #[inline] pub fn color(&self) -> u8 { self.color }
-
-    // Nibble access (shift + mask)
-    #[inline] pub fn damage(&self) -> u8 { self.packed_damage_var >> 4 }
-    #[inline] pub fn variant(&self) -> u8 { self.packed_damage_var & 0x0F }
-
-    #[inline]
+impl GamePixel {
+    // Nibble access
+    pub fn damage(&self) -> u8 { self.damage_variant >> 4 }
+    pub fn variant(&self) -> u8 { self.damage_variant & 0x0F }
     pub fn set_damage(&mut self, v: u8) {
-        debug_assert!(v < 16);
-        self.packed_damage_var = (self.packed_damage_var & 0x0F) | (v << 4);
+        self.damage_variant = (self.damage_variant & 0x0F) | (v << 4);
     }
 
-    // Flag access (bit test)
-    #[inline] pub fn dirty(&self) -> bool { self.flags & 0x01 != 0 }
-    #[inline] pub fn solid(&self) -> bool { self.flags & 0x02 != 0 }
-    #[inline] pub fn falling(&self) -> bool { self.flags & 0x04 != 0 }
-    #[inline] pub fn burning(&self) -> bool { self.flags & 0x08 != 0 }
-
-    #[inline]
+    // Flag access
+    pub fn burning(&self) -> bool { self.flags & 0x08 != 0 }
     pub fn set_burning(&mut self, v: bool) {
         if v { self.flags |= 0x08; } else { self.flags &= !0x08; }
     }
 }
-```
 
-The struct is `#[repr(C)]` so memory layout matches shader expectations.
-
-### Field Types
-
-Byte-aligned for shader compatibility:
-
-| Type | Size | Use Case |
-|------|------|----------|
-| `u8` | 1 byte | Material, color, damage |
-| `u16` | 2 bytes | Extended material ID, large counters |
-| `flags8 { ... }` | 1 byte | 8 named boolean flags |
-| `nibbles { a, b }` | 1 byte | Two 4-bit values (0-15 each) |
-
-**Nibble packing** (two u4 values in one byte):
-
-```rust
-define_pixel! {
-    material: u8,
-    color: u8,
-    packed: nibbles { damage, variant },  // byte 2: damage in high nibble, variant in low
-    flags: flags8 { dirty, solid, falling, burning, wet, pixel_body, _r6, _r7 },
-}
-
-// Generated accessors
-impl Pixel {
-    pub fn damage(&self) -> u8 { (self.packed >> 4) & 0x0F }
-    pub fn set_damage(&mut self, v: u8) {
-        debug_assert!(v < 16);
-        self.packed = (self.packed & 0x0F) | (v << 4);
-    }
-    pub fn variant(&self) -> u8 { self.packed & 0x0F }
-    // ...
-}
-```
-
-Everything stays byte-aligned. Shaders can read any byte directly.
-
-### Packing: Byte-Aligned for Shaders
-
-Everything is byte-aligned. Shaders read bytes, not arbitrary bits.
-
-```rust
-define_pixel! {
-    material: u8,       // byte 0
-    color: u8,          // byte 1
-    damage_variant: u8, // byte 2 (game splits internally: high nibble damage, low nibble variant)
-    flags: flags8 {     // byte 3 (8 flags in one byte)
-        dirty,
-        solid,
-        falling,
-        burning,
-        wet,
-        pixel_body,
-        _reserved6,
-        _reserved7,
+impl PixelData for GamePixel {
+    fn is_solid(&self) -> bool { self.flags & 0x02 != 0 }
+    fn is_dirty(&self) -> bool { self.flags & 0x01 != 0 }
+    fn set_dirty(&mut self, v: bool) {
+        if v { self.flags |= 0x01; } else { self.flags &= !0x01; }
     }
 }
-```
 
-**Memory layout (4 bytes, shader-friendly):**
+### Shader Access
+
+Use `#[repr(C)]` for predictable memory layout:
 
 ```
 ┌──────────┬──────────┬──────────┬──────────┐
@@ -787,57 +740,25 @@ define_pixel! {
 **WGSL shader access:**
 
 ```wgsl
-// Reading from texture or buffer
 let pixel_data: u32 = textureLoad(pixel_texture, coord, 0).r;
 let material = pixel_data & 0xFFu;
 let color = (pixel_data >> 8u) & 0xFFu;
-let damage = (pixel_data >> 16u) & 0xF0u >> 4u;  // high nibble
-let variant = (pixel_data >> 16u) & 0x0Fu;        // low nibble
 let flags = (pixel_data >> 24u) & 0xFFu;
 
-// Flag checks
-let is_burning = (flags & 0x08u) != 0u;  // bit 3
-let is_wet = (flags & 0x10u) != 0u;      // bit 4
+let is_burning = (flags & 0x08u) != 0u;
 ```
-
-### Flag Blocks
-
-Flags are grouped into 8-bit blocks. One `flags8` block = 8 boolean flags in one byte.
-
-```rust
-define_pixel! {
-    material: u8,
-    color: u8,
-
-    // First flag block
-    core_flags: flags8 {
-        dirty, solid, falling,
-        burning, wet, pixel_body,
-        _r6, _r7,
-    },
-
-    // Second flag block (if needed)
-    game_flags: flags8 {
-        electrified, frozen, radioactive, pressurized,
-        _r4, _r5, _r6, _r7,
-    },
-}
-```
-
-Games with fewer flags use one block. Games with many flags add more blocks. Each block is one byte, cleanly addressable in shaders.
 
 ### Framework Integration
 
-The framework is generic over any `T: Copy + Default + 'static`:
+The framework is generic over `T: PixelData`:
 
 ```rust
-// Framework storage is generic
-pub struct Chunk<T: Copy + Default + 'static> {
+pub struct Chunk<T: PixelData> {
     pixels: Surface<T>,
     // ...
 }
 
-pub struct PixelWorld<T: Copy + Default + 'static> {
+pub struct PixelWorld<T: PixelData> {
     canvas: Canvas<T>,
     // ...
 }
@@ -857,40 +778,12 @@ fn main() {
 }
 ```
 
-### Validation
-
-The macro performs compile-time validation:
-
-```rust
-define_pixel! {
-    material: u8,
-    damage: u4,
-    oops: u9,  // ERROR: u9 not supported, max is u8
-}
-```
-
-No "required fields" — the game decides what it needs.
-
 ### Separate SoA Layers
 
-Not all data belongs in the packed pixel. Declare separate layers for:
+Not all data belongs in the pixel struct. Register separate layers for:
 - Data that doesn't swap with pixels (spatial fields)
 - Downsampled grids (heat, pressure)
 - Optional per-pixel data (velocity, age)
-
-```rust
-// Game crate: packed pixel (AoS, swaps atomically)
-define_pixel! {
-    material: u8,
-    color: u8,
-    damage_variant: nibbles { damage, variant },
-    flags: flags8 { dirty, solid, falling, burning, wet, pixel_body },
-}
-
-// Game crate: separate layers (SoA, independent lifetime)
-define_layer!(Heat, element: u8, sample_rate: 4, swap_follow: false);
-define_layer!(Velocity, element: (i8, i8), sample_rate: 1, swap_follow: true);
-```
 
 The game decides what goes in the pixel vs. separate layers based on:
 - **In pixel:** Data that must swap together (material, color, damage)
@@ -910,33 +803,32 @@ Games define exactly what they need. Byte-alignment ensures shader compatibility
 
 ### Implementation Notes
 
-**Crate:** `pixel_macro` (POC exists with 26 tests)
+**Minimal trait to implement:**
 
-**Implemented:**
-- `flags8!` — 8 named boolean flags in 1 byte
-- `nibbles!` — 2 nibbles in 1 byte
-- `define_pixel!` — compose into `#[repr(C)]` struct
-
-**Remaining work:**
-1. Integrate with framework as generic parameter
-2. Add `define_layer!` for SoA layers
-3. Wire up color extraction callback for rendering
-
-### Status
-
-**POC complete.** The `pixel_macro` crate demonstrates the approach. Integration with framework pending.
-
-Current framework code still uses hardcoded:
 ```rust
-pub struct Pixel {
-    pub material: MaterialId,
-    pub color: ColorIndex,
-    pub damage: u8,
-    pub flags: PixelFlags,  // bitflags! macro, hardcoded names
+pub trait PixelData: Copy + Default + 'static {
+    fn is_solid(&self) -> bool;
+    fn is_dirty(&self) -> bool;
+    fn set_dirty(&mut self, dirty: bool);
 }
 ```
 
-This will move to the game crate as part of the modularity refactor.
+**Recommended approach:**
+- Use `bitflags!` for flags (widely used, well-tested)
+- Use `#[repr(C)]` for shader compatibility
+- Keep pixel size small (2-8 bytes typical)
+
+**No framework-provided bitpacking** — games bring their own tools.
+
+### Status
+
+**Not yet implemented.** Current framework uses hardcoded `Pixel` struct.
+
+The modularity refactor will:
+1. Add `PixelData` trait to framework
+2. Make storage generic over `T: PixelData`
+3. Move `Pixel` definition to demo game
+4. Add color extraction callback for rendering
 
 ## Related Documentation
 
