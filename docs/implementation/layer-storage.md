@@ -1,331 +1,303 @@
-# Plan: Layer Storage Architecture
+# Layer Storage Architecture
 
-## Context
+## Framework vs Game Crate
 
-**Note:** This section describes the *old* architecture being replaced.
+The framework provides **infrastructure only**:
+- `Pixel` (material + flags) as the sole innate layer
+- Layer traits (`SwapLayer`, `PositionalLayer`)
+- Bundle/storage macros (`define_bundle!`, `define_swap_layer!`)
+- Accessor types (`LayerMut<L>`, `LayerRef<L>`)
+- Iteration primitives (`PhasedIter<L>`)
 
-Current chunk storage (old):
-- `pixels: PixelSurface` - AoS, 4-byte `Pixel` struct (material, color, damage, flags)
-- `heat: Box<[u8]>` - hardcoded downsampled layer
-- No layer abstraction - fields are baked into struct
+The **game crate** provides everything else:
+- Layer definitions (ColorLayer, DamageLayer, HeatLayer, etc.)
+- Bundle compositions (e.g., FallingSandBundle for the demo game)
+- **All simulations** including falling sand automata
+- Material definitions and interactions
 
-Goal: Store arbitrary layer configurations per chunk, supporting:
-- Different games with different layer needs
-- Built-in PixelLayer (Material + Flags, 2 bytes)
-- Built-in layers (Color, Damage)
-- Custom user layers (e.g., GroupingLayer for building games)
-- Mixed sample rates (1:1, 4:1, etc.)
+The framework ships zero simulations and zero layers beyond `Pixel`. This is the only sane design: the framework is a generic pixel-world harness; actual game mechanics belong to the game.
 
-## Requirements
+### Pixel Flags
 
-- **Compile-time layer sets**: Layers registered at build time, fixed per binary
-- **Custom first-class**: User-defined layers equal to built-ins
-- **Minimal generics**: `Chunk` stays concrete, no viral `Chunk<L>`
-- **World-coordinate access**: Simulations use `WorldPos`, not chunk-local indices
-- **Iterator-driven scheduling**: Schedule mode determined by iterator type in system signature
-- **Layer categories**: Swap-follow (moves with pixel) vs positional (stays at location)
+The framework's `Pixel` includes 8 flag bits:
+- **3 reserved** (framework-controlled): dirty, solid, falling
+- **5 customizable** (game-defined): burning, wet, pixel_body, etc.
 
 ---
 
-## Architecture Overview
+## Core Concept
 
-Three-layer design separating storage, access, and iteration:
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  Simulation System                                          │
-│  fn my_sim(iter: PhasedIter<L>, mut pixels: ResMut<L>)      │
-└─────────────────────────────────────────────────────────────┘
-          │                           │
-          │ yields WorldFragment      │ PixelAccess trait
-          ▼                           ▼
-┌─────────────────────┐    ┌─────────────────────────────────┐
-│  PhasedIter<L>      │    │  LayerResource<L>               │
-│  (SystemParam)      │    │  wraps Canvas + layer index     │
-│  4-phase iteration  │    │  get/set/swap via WorldPos      │
-│  closure-based API  │    │  swap triggers swap-follow      │
-└─────────────────────┘    └─────────────────────────────────┘
-                                      │
-                                      │ routes to correct chunk
-                                      ▼
-                           ┌─────────────────────────────────┐
-                           │  Canvas                         │
-                           │  HashMap<ChunkPos, &mut Chunk>  │
-                           └─────────────────────────────────┘
-                                      │
-                                      │ layer index lookup
-                                      ▼
-                           ┌─────────────────────────────────┐
-                           │  Chunk                          │
-                           │  pixel: Box<[Pixel]>            │
-                           │  layers: Vec<LayerStorage>      │
-                           └─────────────────────────────────┘
-                                      │
-                                      │ type-erased bytes
-                                      ▼
-                           ┌─────────────────────────────────┐
-                           │  LayerStorage                   │
-                           │  data: Box<[u8]>                │
-                           │  category: LayerCategory        │
-                           └─────────────────────────────────┘
-```
-
-## Layer Categories
-
-Layers fall into two categories based on whether their data belongs to the **pixel** or the **location**:
-
-### Category Decision Tree
+Two-level abstraction separating semantic API from internal storage:
 
 ```
-Does the data belong to the pixel or the location?
-├── Pixel (moves with pixel) → Swap-follow
-│   - ColorLayer: pixel's palette index
-│   - DamageLayer: accumulated damage on pixel
-│   - GroupingLayer: pixel's group membership
-│   - TemperatureLayer: pixel IS hot
-│
-└── Location (pixel passes through) → Positional
-    - HeatLayer: ambient heat at location
-    - PressureLayer: fluid pressure gradient
-    - WindLayer: environmental wind
-    - RadiationLayer: radiation at position
+Semantic Layer (API)           →    Packed Storage (Internal)
+──────────────────────────────────────────────────────────────
+define_swap_layer!(ColorLayer)      ┐
+define_swap_layer!(DamageLayer)     ├→  SwapUnit { pixel, color, damage }
+Pixel (material + flags)            ┘
+
+Simulation uses:                    Storage is:
+  LayerMut<ColorLayer>                Surface<SwapUnit>
+  color.set(pos, 42)                  chunk.data[idx].color = 42
 ```
 
-### Swap-Follow Behavior
-
-When PixelLayer swaps, registered swap-follow layers swap automatically:
-
-```rust
-// ✓ Recommended: swap on PixelLayer, others follow
-pixels.swap(a, b);  // ColorLayer, DamageLayer swap automatically
-
-// ⚠ Allowed: direct swap on any layer (at your own risk)
-color.swap(a, b);   // works, but you're responsible for consistency
-```
-
-All layers support `swap()`—use at your own risk for maintaining consistency.
+Simulations use layer types (preserved semantics). Framework generates packed storage (optimized memory layout). Swap is single atomic operation.
 
 ---
 
-## Layer 1: Storage (Per-Chunk)
+## Layer Traits
 
-### Layer Trait
+### SwapLayer (Moves with Pixel)
 
-Declares element type, sample rate, and name:
+Data belongs to the pixel. When `Pixel` swaps, all swap-layers swap atomically as one unit.
 
 ```rust
-trait Layer: 'static {
-    type Element: Copy + Default + Send + Sync + 'static;
-    const SAMPLE_RATE: u32;
+/// Swap-follow layer - data moves with pixel
+trait SwapLayer: 'static {
+    type Element: Copy + Default;
     const NAME: &'static str;
 }
-```
 
-### LayerStorage (Type-Erased)
-
-Each chunk holds type-erased layer data:
-
-```rust
-struct LayerStorage {
-    data: Box<[u8]>,
-    element_size: usize,
-    len: usize,
-}
-
-impl LayerStorage {
-    /// SAFETY: Caller must ensure T matches the registered element type
-    unsafe fn as_slice<T>(&self) -> &[T] {
-        std::slice::from_raw_parts(self.data.as_ptr() as *const T, self.len)
-    }
-
-    unsafe fn as_slice_mut<T>(&mut self) -> &mut [T] {
-        std::slice::from_raw_parts_mut(self.data.as_mut_ptr() as *mut T, self.len)
-    }
-}
-```
-
-### Chunk Structure
-
-PixelLayer (material + flags) is always present. Optional layers stored in registry order:
-
-```rust
-struct Chunk {
-    pixel: Box<[Pixel]>,          // innate, always present (2 bytes each)
-    layers: Vec<LayerStorage>,    // opt-in, indexed by LayerHandle
-    // ... dirty rects, collision flags, etc.
-}
-
-#[repr(C)]
-struct Pixel {
-    material: MaterialId,  // u8
-    flags: PixelFlags,     // u8
-}
-```
-
-### LayerRegistry
-
-Tracks registered layers, provides metadata for chunk allocation:
-
-```rust
-#[derive(Resource)]
-pub struct LayerRegistry {
-    layers: Vec<LayerMeta>,
-    type_to_index: HashMap<TypeId, usize>,
-    swap_follow_layer_indices: Vec<usize>,  // populated during registration
-}
-
-struct LayerMeta {
-    name: &'static str,
-    element_size: usize,
-    sample_rate: u32,
-    type_id: TypeId,
-    category: LayerCategory,
-}
-
-enum LayerCategory {
-    SwapFollow,  // Moves with pixel; auto-swaps when PixelLayer swaps
-    Positional,  // Stays at location
-}
-
-impl LayerRegistry {
-    fn register<L: Layer>(&mut self, category: LayerCategory) -> usize {
-        let idx = self.layers.len();
-        self.layers.push(LayerMeta { /* ... */ category });
-        self.type_to_index.insert(TypeId::of::<L>(), idx);
-
-        // Track swap-follow layers for PixelLayer to use
-        if matches!(category, LayerCategory::SwapFollow) {
-            self.swap_follow_layer_indices.push(idx);
+// Definition macro
+macro_rules! define_swap_layer {
+    ($name:ident, $elem:ty, $label:literal) => {
+        struct $name;
+        impl SwapLayer for $name {
+            type Element = $elem;
+            const NAME: &'static str = $label;
         }
-        idx
-    }
+    };
+}
+
+// Game crate defines its layers:
+define_swap_layer!(ColorLayer, u8, "color");
+define_swap_layer!(DamageLayer, u8, "damage");
+define_swap_layer!(GroupingLayer, u16, "grouping");
+```
+
+### PositionalLayer (Stays at Location)
+
+Data belongs to the location. Pixels pass through without affecting it. Stored as separate SoA arrays.
+
+```rust
+/// Positional layer - data stays at location
+trait PositionalLayer: 'static {
+    type Element: Copy + Default;
+    const NAME: &'static str;
+    const SAMPLE_RATE: u32;  // 1 = per-pixel, 4 = 4×4 regions
+}
+
+// Definition macro
+macro_rules! define_positional_layer {
+    ($name:ident, $elem:ty, $label:literal, $rate:expr) => {
+        struct $name;
+        impl PositionalLayer for $name {
+            type Element = $elem;
+            const NAME: &'static str = $label;
+            const SAMPLE_RATE: u32 = $rate;
+        }
+    };
+}
+
+// Game crate defines its positional layers:
+define_positional_layer!(HeatLayer, u8, "heat", 4);       // 4×4 downsample
+define_positional_layer!(PressureLayer, u16, "pressure", 8);  // 8×8 downsample
+```
+
+---
+
+## Bundle Composition
+
+The `define_bundle!` macro composes swap-layers into packed internal structs.
+
+```rust
+// Framework provides ONLY the base Pixel type (not a bundle macro invocation)
+// Games build bundles on top of Pixel:
+
+// Game crate (e.g., falling-sand-demo) defines its bundles:
+define_bundle! {
+    /// Falling sand game bundle (4 bytes)
+    FallingSandBundle = Pixel + ColorLayer + DamageLayer;
+
+    /// Builder variant with grouping (8 bytes, padded)
+    BuilderBundle = Pixel + ColorLayer + DamageLayer + GroupingLayer;
 }
 ```
 
-When `LayerResource<PixelLayer>` is created, it clones `swap_follow_layer_indices` from the registry.
+### Generated Code (FallingSandBundle)
 
-### Chunk Allocation
-
-Chunks allocate storage for all registered layers:
+The macro generates:
 
 ```rust
-impl Chunk {
-    pub fn new(registry: &LayerRegistry, chunk_size: u32) -> Self {
-        let pixel_count = (chunk_size * chunk_size) as usize;
+/// Internal packed struct - not exposed to simulations
+#[repr(C, align(4))]
+#[derive(Clone, Copy, Default)]
+struct FallingSandBundleSwapUnit {
+    material: MaterialId,  // 1 byte (from Pixel)
+    flags: PixelFlags,     // 1 byte (from Pixel)
+    color: u8,             // 1 byte (from ColorLayer)
+    damage: u8,            // 1 byte (from DamageLayer)
+}
 
-        let layers = registry.layers.iter().map(|meta| {
-            let cells_per_dim = chunk_size / meta.sample_rate;
-            let cell_count = (cells_per_dim * cells_per_dim) as usize;
-            LayerStorage::new(cell_count, meta.element_size, meta.category)
-        }).collect();
+/// Layer accessor trait - maps layer type to field
+trait LayerAccess<L: SwapLayer> {
+    fn get(&self) -> L::Element;
+    fn set(&mut self, v: L::Element);
+}
 
-        Chunk {
-            pixel: vec![Pixel::default(); pixel_count].into(),
-            layers,
-            ..Default::default()
-        }
+/// Implementation for ColorLayer
+impl LayerAccess<ColorLayer> for FallingSandBundleSwapUnit {
+    fn get(&self) -> u8 { self.color }
+    fn set(&mut self, v: u8) { self.color = v }
+}
+
+/// Implementation for DamageLayer
+impl LayerAccess<DamageLayer> for FallingSandBundleSwapUnit {
+    fn get(&self) -> u8 { self.damage }
+    fn set(&mut self, v: u8) { self.damage = v }
+}
+
+/// Implementation for Pixel
+impl LayerAccess<Pixel> for FallingSandBundleSwapUnit {
+    fn get(&self) -> PixelData { PixelData { material: self.material, flags: self.flags } }
+    fn set(&mut self, v: PixelData) {
+        self.material = v.material;
+        self.flags = v.flags;
     }
 }
 ```
 
 ---
 
-## Layer 2: World-Level Access
-
-### PixelAccess Trait
-
-Framework provides uniform access API for all layers:
+## Chunk Structure
 
 ```rust
-trait PixelAccess {
-    type Element;
+pub struct Chunk<S: SwapUnit> {
+    /// Packed swap-layer data (AoS - Array of Structures)
+    pub swap_data: Surface<S>,
 
-    fn get(&self, pos: WorldPos) -> Self::Element;
-    fn set(&mut self, pos: WorldPos, value: Self::Element);
-    fn swap(&mut self, a: WorldPos, b: WorldPos);
-    fn swap_unchecked(&mut self, a: WorldPos, b: WorldPos);
+    /// Positional layers (SoA - Structure of Arrays, separate arrays)
+    positional: PositionalLayers,
+
+    /// Metadata
+    tile_dirty_rects: Box<[TileDirtyRect]>,
+    tile_collision_dirty: Box<[bool]>,
+    pos: Option<ChunkPos>,
+}
+
+/// Registry of positional layer arrays
+struct PositionalLayers {
+    heat: Option<Box<[u8]>>,       // if HeatLayer registered
+    pressure: Option<Box<[u16]>>,  // if PressureLayer registered
+    // ... additional positional layers
 }
 ```
 
-All layers support `swap()`. PixelLayer swap triggers automatic swap on registered swap-follow layers. Direct swap on other layers is allowed—use at your own risk.
+### Memory Layout
 
-### LayerResource
+```
+FallingSandBundle Chunk (512×512):
+┌────────────────────────────────────────────────────────┐
+│ SwapUnit[0..262144] (AoS, 4 bytes each)                │  ← 1 MB
+│ ┌──────────┬───────┬───────┬────────┐                  │
+│ │ material │ flags │ color │ damage │ × 262144         │
+│ └──────────┴───────┴───────┴────────┘                  │
+├────────────────────────────────────────────────────────┤
+│ Heat[0..16384] (SoA, 4×4 downsample, 1 byte each)      │  ← 16 KB
+│ Pressure[0..4096] (SoA, 8×8 downsample, 2 bytes each)  │  ← 8 KB
+└────────────────────────────────────────────────────────┘
+```
 
-Each registered layer becomes a world-level resource wrapping Canvas:
+---
+
+## Simulation API
+
+Simulations use layer types. Framework maps to internal storage via `LayerMut<L>` / `LayerRef<L>`.
 
 ```rust
-/// World-level access to a specific layer across all chunks
-#[derive(Resource)]
-struct LayerResource<L: Layer> {
-    canvas: Canvas,           // shared reference to chunk map
-    layer_index: usize,       // index into Chunk.layers
+// In game crate - framework provides no simulations
+fn falling_sand_sim(
+    iter: PhasedIter<Pixel>,
+    mut pixels: LayerMut<Pixel>,       // Access via layer type
+    mut color: LayerMut<ColorLayer>,   // Access via layer type
+    materials: Res<MaterialRegistry>,
+) {
+    iter.for_each(|frag| {
+        let pos = frag.pos();
+        let pixel = pixels.get(pos);
+        if pixel.is_void() { return; }
+
+        if let Some(target) = try_fall(pos, &pixels, &materials) {
+            pixels.swap(pos, target);
+            // ColorLayer, DamageLayer swap automatically (same SwapUnit)
+        }
+    });
+}
+```
+
+### LayerMut Implementation
+
+```rust
+/// Provides layer-typed access to packed storage
+pub struct LayerMut<'w, L: SwapLayer> {
+    canvas: &'w mut Canvas,
     _marker: PhantomData<L>,
 }
 
-impl<L: Layer> PixelAccess for LayerResource<L> {
-    type Element = L::Element;
-
-    fn get(&self, pos: WorldPos) -> L::Element {
-        let (chunk_pos, local) = pos.to_chunk_and_local();
-        let chunk = self.canvas.get(chunk_pos)?;
-        let storage = &chunk.layers[self.layer_index];
-        unsafe { storage.as_slice::<L::Element>()[local_index] }
+impl<L: SwapLayer> LayerMut<'_, L> {
+    pub fn get(&self, pos: WorldPos) -> L::Element {
+        let chunk = self.canvas.get(pos.chunk())?;
+        let unit = &chunk.swap_data[pos.local_index()];
+        <S as LayerAccess<L>>::get(unit)  // Compiler resolves via trait
     }
 
-    fn swap(&mut self, a: WorldPos, b: WorldPos) {
-        // Swap just this layer's data
-        self.canvas.swap_layer(self.layer_index, a, b);
+    pub fn set(&mut self, pos: WorldPos, value: L::Element) {
+        let chunk = self.canvas.get_mut(pos.chunk())?;
+        let unit = &mut chunk.swap_data[pos.local_index()];
+        <S as LayerAccess<L>>::set(unit, value)
     }
 }
 ```
 
-### PixelLayer Swap-Follow Implementation
-
-`LayerResource<PixelLayer>` is special—it holds the swap-follow indices and swaps all layers atomically:
+### LayerRef (Read-Only)
 
 ```rust
-#[derive(Resource)]
-struct LayerResource<PixelLayer> {
-    canvas: Canvas,
-    layer_index: usize,  // always 0 for PixelLayer (innate)
-    swap_follow_layer_indices: Vec<usize>,  // indices of swap-follow layers
+/// Read-only layer access
+pub struct LayerRef<'w, L: SwapLayer> {
+    canvas: &'w Canvas,
+    _marker: PhantomData<L>,
 }
 
-impl PixelAccess for LayerResource<PixelLayer> {
-    fn swap(&mut self, a: WorldPos, b: WorldPos) {
-        // 1. Swap PixelLayer
-        self.canvas.swap_layer(0, a, b);
-
-        // 2. Swap all swap-follow layers inline
-        for &layer_idx in &self.swap_follow_layer_indices {
-            self.canvas.swap_layer(layer_idx, a, b);
-        }
+impl<L: SwapLayer> LayerRef<'_, L> {
+    pub fn get(&self, pos: WorldPos) -> L::Element {
+        let chunk = self.canvas.get(pos.chunk())?;
+        let unit = &chunk.swap_data[pos.local_index()];
+        <S as LayerAccess<L>>::get(unit)
     }
 }
 ```
 
-### Canvas Swap Implementation
+---
 
-Canvas handles the actual byte swapping, including cross-chunk:
+## Swap Mechanics
+
+Since all swap-layers are packed into one struct, swap is a single atomic operation:
 
 ```rust
 impl Canvas {
-    fn swap_layer(&mut self, layer_idx: usize, a: WorldPos, b: WorldPos) {
-        let (chunk_a, local_a) = a.to_chunk_and_local();
-        let (chunk_b, local_b) = b.to_chunk_and_local();
-
-        if chunk_a == chunk_b {
-            // Same chunk: direct swap
-            let chunk = self.get_mut(chunk_a);
-            chunk.layers[layer_idx].swap(local_a, local_b);
+    pub fn swap(&mut self, a: WorldPos, b: WorldPos) {
+        // Single memcpy for entire SwapUnit
+        if a.chunk() == b.chunk() {
+            let chunk = self.get_mut(a.chunk());
+            chunk.swap_data.swap(a.local_index(), b.local_index());
         } else {
-            // Cross-chunk: get both, swap elements
-            let (ca, cb) = self.get_two_mut(chunk_a, chunk_b);
-            let val_a = ca.layers[layer_idx].get(local_a);
-            let val_b = cb.layers[layer_idx].get(local_b);
-            ca.layers[layer_idx].set(local_a, val_b);
-            cb.layers[layer_idx].set(local_b, val_a);
+            let (ca, cb) = self.get_two_mut(a.chunk(), b.chunk());
+            std::mem::swap(
+                &mut ca.swap_data[a.local_index()],
+                &mut cb.swap_data[b.local_index()],
+            );
         }
+        // All swap-layers (color, damage, etc.) swapped atomically
     }
 }
 ```
@@ -334,383 +306,193 @@ impl Canvas {
 
 | Property | Implementation |
 |----------|----------------|
-| Atomic | All swap-follow layers swap in same function call |
-| No backtracking | Single pass through swap-follow indices |
-| No streaming | Direct memory operations |
-| Cross-chunk safe | Canvas handles both chunks in one call |
-
-### Type Aliases for Ergonomics
-
-Simulations use `ResMut<L>` which resolves to `ResMut<LayerResource<L>>`:
-
-```rust
-// In system signatures, these are equivalent:
-fn my_sim(mut material: ResMut<PixelLayer>) { ... }
-fn my_sim(mut material: ResMut<LayerResource<PixelLayer>>) { ... }
-```
-
-The framework registers `LayerResource<L>` as the resource for each layer type.
+| Atomic | Single memory operation swaps all layer data |
+| No loop | No iteration over layer indices |
+| Cache-friendly | Contiguous memory access |
+| Cross-chunk safe | Canvas handles both chunks |
 
 ---
 
-## Layer 3: Iteration (Schedule Mode)
+## Positional Layer Access
 
-### Iterator Types Determine Schedule Mode
-
-The iterator type in a simulation's signature selects the scheduling strategy:
-
-| Iterator | Schedule Mode | Safety |
-|----------|---------------|--------|
-| `PhasedIter<L>` | 4-phase checkerboard | Safe for local ops |
-| `ParallelIter<L>` | All pixels at once | **Unsafe** (consumer handles races) |
-| (regular loop) | Sequential | Always safe |
-
-### PhasedIter
-
-Wraps existing `parallel_simulate` infrastructure. System runs 4 times per tick:
+Positional layers use separate accessor types since they're stored in SoA:
 
 ```rust
-/// Yields WorldPos in checkerboard phase order
-struct PhasedIter<'w, L: Layer> {
-    phase: Phase,              // current phase (A, B, C, D)
-    tiles: &'w [TilePos],      // tiles for this phase
-    current_tile: usize,
-    current_pixel: usize,
+pub struct PositionalMut<'w, L: PositionalLayer> {
+    canvas: &'w mut Canvas,
     _marker: PhantomData<L>,
 }
 
-impl<L: Layer> SystemParam for PhasedIter<'_, L> {
-    // Framework calls system 4 times, advancing phase each time
-    // Barrier between phases ensures spatial isolation
-}
-```
+impl<L: PositionalLayer> PositionalMut<'_, L> {
+    pub fn get(&self, pos: WorldPos) -> L::Element {
+        let chunk = self.canvas.get(pos.chunk())?;
+        let cell_pos = pos.local() / L::SAMPLE_RATE;
+        chunk.positional.get::<L>(cell_pos)
+    }
 
-### ParallelIter
-
-All pixels yielded simultaneously. No synchronization:
-
-```rust
-/// Yields all WorldPos in parallel (unsafe)
-struct ParallelIter<'w, L: Layer> {
-    canvas: &'w Canvas,
-    _marker: PhantomData<L>,
-}
-```
-
-### Sequential (No Special Iterator)
-
-Just use `layer.iter_all()`:
-
-```rust
-fn complex_sim(mut material: ResMut<PixelLayer>) {
-    for pos in material.iter_all() {
-        // Single-threaded, can mutate global state
+    pub fn set(&mut self, pos: WorldPos, value: L::Element) {
+        let chunk = self.canvas.get_mut(pos.chunk())?;
+        let cell_pos = pos.local() / L::SAMPLE_RATE;
+        chunk.positional.set::<L>(cell_pos, value)
     }
 }
 ```
 
 ---
 
-## Built-in Layers
+## Bundle Memory Calculations
 
-### PixelLayer (Innate)
-
-```rust
-struct PixelLayer;  // Always present (innate)
-impl Layer for PixelLayer {
-    type Element = Pixel;  // { material: MaterialId, flags: PixelFlags }
-    const SAMPLE_RATE: u32 = 1;
-    const NAME: &'static str = "pixel";
-}
-
-#[repr(C)]
-struct Pixel {
-    material: MaterialId,  // u8
-    flags: PixelFlags,     // u8
-}
-```
-
-### Core Layers (Default Bundle)
-
-```rust
-struct ColorLayer;  // Swap-follow
-impl Layer for ColorLayer {
-    type Element = ColorIndex;
-    const SAMPLE_RATE: u32 = 1;
-    const NAME: &'static str = "color";
-}
-
-struct DamageLayer;  // Swap-follow
-impl Layer for DamageLayer {
-    type Element = u8;
-    const SAMPLE_RATE: u32 = 1;
-    const NAME: &'static str = "damage";
-}
-```
-
-### GroupingLayer (Builder Bundle)
-
-```rust
-struct GroupingLayer;  // Swap-follow
-impl Layer for GroupingLayer {
-    type Element = GroupingId;  // u16: 0 = none, 1+ = group
-    const SAMPLE_RATE: u32 = 1;
-    const NAME: &'static str = "grouping";
-}
-```
-
-### Downsampled Layers (Opt-in, Positional)
-
-```rust
-struct HeatLayer;  // Positional (NOT swap-follow)
-impl Layer for HeatLayer {
-    type Element = u8;
-    const SAMPLE_RATE: u32 = 4;  // 4×4 pixels per cell
-    const NAME: &'static str = "heat";
-}
-```
-
-For downsampled layers, divide coordinates explicitly:
-
-```rust
-fn heat_sim(iter: PhasedIter<HeatLayer>, mut heat: ResMut<HeatLayer>) {
-    iter.for_each(|frag| {
-        // pos is already in heat-cell coordinates
-        let value = heat.get(frag.pos());
-    });
-}
-```
+| Bundle | Layers | Raw Size | Aligned | Per Chunk (512²) |
+|--------|--------|----------|---------|------------------|
+| Pixel only (framework) | Pixel | 2B | 2B | 512 KB |
+| FallingSandBundle (game) | +Color+Damage | 4B | 4B | 1 MB |
+| BuilderBundle (game) | +Grouping | 6B | 8B | 2 MB |
 
 ---
 
 ## Plugin Builder API
 
-### Registration
-
 ```rust
+// In game crate - framework provides no simulations
 PixelWorldPlugin::builder()
-    .with_bundle(DefaultBundle)     // PixelLayer + Color + Damage
-    .with_layer::<GroupingLayer>().swap_follow()  // explicit swap-follow
-    .with_layer::<HeatLayer>()      // positional (default)
-    .with_layer::<PressureLayer>()
+    .with_bundle(FallingSandBundle)          // Game's bundle (Pixel + Color + Damage)
+    .with_bundle_upload(UploadSchedule::Dirty)
+
+    .with_positional::<HeatLayer>()
+        .upload(UploadSchedule::DirtyThrottled(4))  // Every 4th tick if changed
+
+    .with_positional::<VelocityLayer>()      // No .upload() = CPU-only
+
     .with_simulations((
-        falling_sand_sim,           // PhasedIter<PixelLayer>
-        heat_diffusion_sim,         // PhasedIter<HeatLayer>
+        falling_sand_sim,
+        heat_diffusion_sim,
     ))
-    .with_simulations((
-        decay_sim,
-        interaction_sim,
-    ).chain())                      // Force sequential
     .build()
 ```
 
-### Execution Model
-
-- Tuples run in parallel (if layer deps allow)
-- `.chain()` forces sequential ordering
-- Bevy scheduler handles inter-system parallelism based on declared layer access
-
 ---
 
-## Example Simulations
+## GPU Upload Scheduling
 
-### Falling Sand (PhasedParallel)
+Layers declare when their data uploads to GPU. The framework manages dirty tracking and upload timing.
+
+### UploadSchedule Enum
+
+All schedules require the layer to be dirty. Unchanged data never uploads.
 
 ```rust
-fn falling_sand_sim(
-    iter: PhasedIter<PixelLayer>,
-    mut pixels: ResMut<PixelLayer>,
-    materials: Res<MaterialRegistry>,
+enum UploadSchedule {
+    /// Upload every tick if layer dirty
+    Dirty,
+
+    /// Upload every N ticks if layer dirty
+    DirtyThrottled(u32),
+}
+
+// No .upload() call = layer is CPU-only, never uploaded to GPU
+```
+
+### Upload Execution
+
+All schedules implicitly check layer-specific dirty status. Unchanged layers never upload.
+
+```rust
+// Framework runs after simulation tick completes
+fn upload_system(
+    chunks: Query<&Chunk>,
+    bundle_schedule: Res<BundleUploadSchedule>,
+    positional_schedules: Res<PositionalUploadSchedules>,
+    tick: Res<SimTick>,
+    mut gpu: ResMut<GpuContext>,
 ) {
-    iter.for_each(|frag| {
-        if let Some(target) = try_fall_and_slide(frag.pos(), &pixels, &materials) {
-            pixels.swap(frag.pos(), target);
-            // ColorLayer, DamageLayer, GroupingLayer swap automatically
+    for chunk in chunks.iter() {
+        // Bundle (SwapUnit) upload - only if bundle data changed
+        if bundle_schedule.should_upload(&chunk.swap_dirty, tick.0) {
+            gpu.upload_bundle_texture(chunk);
+            chunk.swap_dirty = false;
         }
-    });
-}
-```
 
-### Heat Diffusion (PhasedParallel, Downsampled)
-
-```rust
-fn heat_diffusion_sim(
-    iter: PhasedIter<HeatLayer>,
-    mut heat: ResMut<HeatLayer>,
-) {
-    iter.for_each(|frag| {
-        let neighbors_avg = heat.neighbors_avg(frag.pos());
-        let current = heat.get(frag.pos());
-        heat.set(frag.pos(), (current + neighbors_avg) / 2);
-    });
-}
-```
-
-### Complex Interaction (Sequential)
-
-```rust
-fn complex_interaction_sim(
-    mut pixels: ResMut<PixelLayer>,
-    mut global_state: ResMut<InteractionState>,
-) {
-    for pos in pixels.iter_all() {
-        // No special iterator = sequential
-        global_state.process(pos, &mut pixels);
+        // Positional layer uploads - only if that layer changed
+        for (layer_id, schedule) in positional_schedules.iter() {
+            if schedule.should_upload(&chunk.positional_dirty[layer_id], tick.0) {
+                gpu.upload_positional_texture(chunk, layer_id);
+                chunk.positional_dirty[layer_id] = false;
+            }
+        }
     }
 }
-```
 
----
+impl UploadSchedule {
+    fn should_upload(&self, dirty: bool, tick: u64) -> bool {
+        if !dirty { return false; }
 
-## GroupingLayer Usage
-
-GroupingLayer enables unified brick/pixel-body mechanics. See [Grouping](../arhitecture/modularity/grouping.md) for the full model.
-
-```rust
-// Register with swap-follow
-PixelWorldPlugin::builder()
-    .with_bundle(DefaultBundle)
-    .with_layer::<GroupingLayer>().swap_follow()
-    .build()
-
-// In simulation: group membership moves with pixel
-fn falling_sand_sim(
-    iter: PhasedIter<PixelLayer>,
-    mut pixels: ResMut<PixelLayer>,
-    groups: Res<GroupRegistry>,
-) {
-    iter.for_each(|frag| {
-        if let Some(target) = try_fall(frag.pos(), &pixels) {
-            pixels.swap(frag.pos(), target);
-            // GroupingLayer swaps automatically
+        match self {
+            Self::Dirty => true,
+            Self::DirtyThrottled(n) => tick % (*n as u64) == 0,
         }
-    });
-}
-```
-
----
-
-## Advantages
-
-| Aspect | Result |
-|--------|--------|
-| Type safety | ✓ Layer type in signature guarantees correct element type |
-| No generics pollution | ✓ Chunk is concrete |
-| World-coordinate access | ✓ Systems work with WorldPos, not chunk internals |
-| Schedule mode selection | ✓ Iterator type determines parallelism |
-| Bevy integration | ✓ Layer deps → automatic inter-system parallelism |
-
-## Trade-offs
-
-| Concern | Mitigation |
-|---------|------------|
-| Unsafe in storage access | Encapsulated in framework, type-checked at resource level |
-| Layer set fixed at compile time | Macro provides flexibility within binary |
-| Canvas indirection | Tile-local access eliminates per-pixel lookup (see below) |
-
----
-
-## Potential Future Optimizations
-
-These are hypotheses for future investigation. **Benchmark before implementing.**
-
-### Context: Dirty Rect Tracking
-
-Dirty rect tracking already eliminates ~90% of tiles from simulation under typical workloads. Only actively changing regions are iterated.
-
-This means:
-- Per-pixel overhead only applies to ~10% of world
-- The biggest optimization is already in place (skipping dormant tiles)
-- Micro-optimizations have diminishing returns
-
-### Hypothesis: Cached Chunk Neighborhood
-
-Current WorldPos API does HashMap lookup per pixel access. Potential optimization: pre-resolve chunk neighborhood per tile.
-
-**Idea:** For any tile, we know which chunks it can access (center + up to 8 neighbors). Cache these before iterating:
-
-```rust
-// Hypothetical API
-iter.for_each_tile(|tile: TileContext| {
-    for pos in tile.iter_positions() {
-        let pixel = tile.get(pos);     // O(1) via cached refs?
-        tile.swap(pos, pos.below());   // cross-chunk handled uniformly
     }
-});
+}
+
+// Layers without .upload() are not in positional_schedules — never uploaded
+```
 ```
 
-**Questions to benchmark:**
-- Is HashMap lookup actually the bottleneck? (May be well-optimized)
-- Does neighborhood caching beat branch predictor on hot HashMap?
-- What's the setup overhead for edge tiles with partial neighborhoods?
+### Typical Configuration
 
-### Hypothesis: Swap-Follow Loop Unrolling
+| Layer | Schedule | Rationale |
+|-------|----------|-----------|
+| SwapUnit bundle | `Dirty` | Immediate visual feedback |
+| HeatLayer | `DirtyThrottled(4)` | Slow diffusion; shader interpolates |
+| GlowLayer | `DirtyThrottled(2)` | Visual effect; slight delay acceptable |
+| VelocityLayer | (none) | Simulation-only; not rendered |
+| PressureLayer | (none) | Affects behavior, not visual |
 
-Current design loops through swap-follow indices. For common bundles (2-3 layers), could unroll.
+---
 
-**Questions:**
-- Is the loop measurable overhead at all?
-- Does `SmallVec<[_; 4]>` already optimize this sufficiently?
+## Key Design Decisions
 
-### Known: Memory Layout
-
-Layers use SoA. Tile iteration accesses mostly-contiguous regions:
-
-```
-Per-tile access (32×32 = 1024 pixels):
-  PixelLayer: 2 KB
-  ColorLayer: 1 KB
-  → Fits in L1 cache
-```
-
-This is likely already cache-friendly. Row-major layout benefits GPU upload.
+1. **Simulations use layer types** - preserves semantics, enables Bevy's dependency inference
+2. **Storage is opaque packed struct** - single swap operation, cache-friendly
+3. **Macro generates accessors** - type-safe bridge between semantic and storage
+4. **Positional layers stay SoA** - different access pattern, often downsampled
+5. **No runtime layer registry** - bundles fixed at compile time for maximum optimization
+6. **Framework is barebones** - only Pixel layer + infrastructure; games define everything else
 
 ---
 
 ## Files to Create/Modify
 
-1. **`src/layer/mod.rs`** (new)
-   - `Layer` trait
-   - `LayerStorage`
-   - `LayerRegistry`, `LayerMeta`
+### Framework Crate
 
-2. **`src/layer/access.rs`** (new)
-   - `PixelAccess` trait
-   - `LayerResource<L>` implementing PixelAccess
+1. **`src/layer/mod.rs`**
+   - `SwapLayer`, `PositionalLayer` traits
+   - `define_swap_layer!`, `define_positional_layer!` macros
 
-3. **`src/layer/iter.rs`** (new)
-   - `PhasedIter<L>` wrapping existing parallel_simulate
-   - `ParallelIter<L>` for unsafe all-at-once
+2. **`src/layer/bundle.rs`**
+   - `define_bundle!` macro
+   - `SwapUnit` trait for generated structs
+   - `LayerAccess<L>` trait
 
-4. **`src/layer/builtin.rs`** (new)
-   - `PixelLayer` (innate: Material + Flags), `ColorLayer`, `DamageLayer`
-   - `HeatLayer`, etc.
+3. **`src/layer/access.rs`**
+   - `LayerMut<L>`, `LayerRef<L>` for swap layers
+   - `PositionalMut<L>`, `PositionalRef<L>` for positional layers
+
+4. **`src/primitives/pixel.rs`**
+   - `Pixel` struct (material + flags)
+   - `PixelFlags` with 3 reserved + 5 customizable bits
 
 5. **`src/primitives/chunk.rs`**
-   - Add `base: Box<[MaterialId]>` (innate)
-   - Replace `heat` with `layers: Vec<LayerStorage>`
+   - `Chunk<S: SwapUnit>` with generic swap unit
+   - `PositionalLayers` storage
 
-6. **`src/lib.rs`**
-   - Builder API: `.with_layer::<L>()`, `.with_simulations()`
-   - Bundle presets: `MinimalBundle`, `DefaultBundle`
+### Game Crate (e.g., falling-sand-demo)
 
-7. **`src/scheduling/blitter.rs`**
-   - Extract iteration logic for PhasedIter to wrap
+1. **`src/layers.rs`**
+   - ColorLayer, DamageLayer, GroupingLayer definitions
+   - HeatLayer, PressureLayer definitions
 
-## Resolved Questions
+2. **`src/bundle.rs`**
+   - FallingSandBundle, BuilderBundle definitions
 
-1. **Swap-follow coordination**: Framework-tracked via `.swap_follow()` at registration. PixelLayer swap triggers automatic swap on all registered swap-follow layers.
-
-2. **Canvas lifetime**: SystemParam with explicit lifetime, rebuilt each tick (current approach).
-
-3. **Downsampled iteration**: Heat cells (matches storage granularity). Iterators yield positions in the layer's native resolution.
-
-4. **Cross-chunk swap-follow**: Guaranteed by system ordering. All pixel simulation systems are orchestrated by the framework with declarative syntax, scheduled at the same fixed tickrate. No locking required—cross-chunk pixel access is safe by construction.
-
-## Verification
-
-1. Register layers via builder, verify resources created
-2. Create chunk, verify layer storage sizes match sample rates
-3. PhasedIter yields correct positions per phase
-4. Cross-chunk swap via PixelAccess routes correctly
-5. Bevy parallelizes systems with disjoint layer writes
+3. **`src/simulation/mod.rs`**
+   - falling_sand_sim, heat_diffusion_sim, etc.

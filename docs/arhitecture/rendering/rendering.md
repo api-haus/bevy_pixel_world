@@ -24,17 +24,15 @@ Chunks are uploaded to GPU textures when their content changes.
 
 ### Layer Upload
 
-Each layer can be uploaded independently based on its schedule:
+Layers upload based on their schedule. All schedules require the layer to be dirty—unchanged data never uploads.
 
-| Layer | Default Schedule | Behavior |
-|-------|------------------|----------|
-| Color | `OnChange` | Upload when color data changes |
-| Heat | `Periodic(4)` | Upload every 4th tick for glow effects |
-| Material | — | Not uploaded directly (used for color lookup) |
-| BrickLayer.id | `OnChange` | Upload when brick assignments change |
-| BrickLayer.damage | `Periodic(4)` | Upload for damage visualization |
+| Layer | Schedule | Behavior |
+|-------|----------|----------|
+| SwapUnit bundle | `Dirty` | Upload every tick if changed |
+| Heat | `DirtyThrottled(4)` | Upload every 4th tick if changed |
+| Glow | `DirtyThrottled(2)` | Upload every 2nd tick if changed |
 
-**Note:** The Color layer is optional. Without it, rendering derives color directly from material definitions in the material registry. See [Pixel Layers](../modularity/pixel-layers.md) for upload schedules.
+**Note:** Color is part of the SwapUnit bundle and uploads with it. See [Pixel Layers](../modularity/pixel-layers.md) for upload schedule details.
 
 ### Brick Layer Rendering
 
@@ -114,7 +112,7 @@ When the chunk seeder places a material with an identity texture:
 | Brick    | Repeating brick pattern | Structured appearance    |
 | Wood     | Grain lines             | Directional wood texture |
 
-**Note:** Identity textures are part of the advanced PCG pipeline. See [PCG World Ideas](../world-generation/pcg-ideas.md) for integration
+**Note:** Identity textures are part of an advanced PCG pipeline (see docs/ideas for concepts).
 with stamps and WFC-based generation.
 
 ## Related Documentation

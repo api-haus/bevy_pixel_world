@@ -15,10 +15,11 @@ These values are set at plugin construction time:
 | `chunk_size` | 512 | 256, 512, 1024 | Pixels per chunk edge |
 
 ```
+// Game crate configures the plugin
 PixelWorldPlugin::builder()
     .with_chunk_size(512)
-    .with_bundle(DefaultBundle)
-    .with_layer::<BrickLayer<16>>()
+    .with_bundle(FallingSandBundle)  // Game-defined bundle
+    .with_positional::<HeatLayer>()  // Game-defined layers
     .build()
 ```
 
@@ -48,7 +49,7 @@ preserving internal positional consistency.
 
 Derived values are expressed as formulas, not magic numbers:
 
-| Constant          | Formula                                      | Value (chunk_size=512, Default Bundle) |
+| Constant          | Formula                                      | Value (chunk_size=512, 4-byte bundle) |
 |-------------------|----------------------------------------------|----------------------------------------|
 | `POOL_SIZE`       | `WINDOW_WIDTH * WINDOW_HEIGHT`               | 24 chunks              |
 | `TILES_PER_CHUNK` | `chunk_size / TILE_SIZE`                     | 32 tiles               |
@@ -56,7 +57,7 @@ Derived values are expressed as formulas, not magic numbers:
 | `BRICKS_PER_CHUNK`| `GRID²` (always)                             | 256 (GRID=16)          |
 | `BRICK_PIXELS`    | `chunk_size / GRID`                          | 32×32 pixels           |
 
-**Note:** `bytes_per_pixel` depends on registered layers. Minimal Bundle = 1 byte, Default Bundle = 4 bytes. See [Pixel Layers](../modularity/pixel-layers.md) for layer configurations.
+**Note:** `bytes_per_pixel` depends on the game-defined bundle. Pixel only = 2 bytes, typical falling sand bundle = 4 bytes. See [Pixel Layers](../modularity/pixel-layers.md) for layer configurations.
 
 **Constraint:** `chunk_size` must be evenly divisible by `TILE_SIZE`. This ensures the checkerboard pattern aligns
 across chunk boundaries. See [Simulation](../simulation/simulation.md) for details.
@@ -133,16 +134,16 @@ details.
 
 ## Memory Budget
 
-Memory depends on registered layers. With Default Bundle (4 bytes per pixel):
+Memory depends on the game-defined bundle. With a typical 4-byte bundle (Pixel + Color + Damage):
 
 - Chunk memory: 512 × 512 × 4 = 1 MB per chunk
 - Total pool: 24 × 1 MB = 24 MB
 - World coverage: (6 × 512) × (4 × 512) = 3072 × 2048 pixels
 
-With Minimal Bundle (1 byte per pixel):
+With Pixel only (2 bytes per pixel):
 
-- Chunk memory: 512 × 512 × 1 = 256 KB per chunk
-- Total pool: 24 × 256 KB = 6 MB
+- Chunk memory: 512 × 512 × 2 = 512 KB per chunk
+- Total pool: 24 × 512 KB = 12 MB
 
 See [Pixel Layers](../modularity/pixel-layers.md) for detailed memory calculations per configuration.
 

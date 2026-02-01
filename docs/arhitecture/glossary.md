@@ -22,7 +22,7 @@ Terms describing the four-level spatial organization.
 | **World** | Infinite 2D coordinate space providing global addressing. Has no direct memory representation. | [spatial-hierarchy.md](foundational/spatial-hierarchy.md) |
 | **Chunk** | Fixed-size rectangular pixel buffer. Unit of pooling, streaming, persistence, and rendering.   | [spatial-hierarchy.md](foundational/spatial-hierarchy.md) |
 | **Tile**  | Subdivision of a chunk used for checkerboard scheduling and dirty rect tracking.               | [spatial-hierarchy.md](foundational/spatial-hierarchy.md) |
-| **Pixel** | Fundamental simulation unit. PixelLayer (2 bytes: material + flags) is always present; additional layers (color, damage) are opt-in. | [pixel-format.md](foundational/pixel-format.md) |
+| **Pixel** | Fundamental simulation unit. Framework's sole innate type (2 bytes: material + flags). Additional layers are game-defined. | [pixel-format.md](foundational/pixel-format.md) |
 
 ### Coordinate Systems
 
@@ -65,17 +65,36 @@ themselves. See [materials.md](simulation/materials.md) for the full convention.
 
 ---
 
-## Pixel Data
+## Layer System
 
-Per-pixel data organized into layers. PixelLayer (material + flags) is always present; other layers are opt-in.
+Per-pixel data organized into layers with two-level abstraction: semantic types (API) → packed storage (internal).
+
+The framework provides only infrastructure (traits, macros, accessors) and the `Pixel` type. All other layers, bundles, and simulations are game-defined.
+
+### Core Concepts
+
+| Term           | Definition                                                                                                      | Documentation                          |
+|----------------|-----------------------------------------------------------------------------------------------------------------|----------------------------------------|
+| **SwapUnit**   | Macro-generated packed struct containing Pixel + all swap-layer fields. Internal storage representation.         | [layer-storage.md](../implementation/layer-storage.md) |
+| **SwapLayer**  | Layer whose data moves with the pixel. Packed into SwapUnit for atomic swap. Game-defined (e.g., ColorLayer).   | [pixel-layers.md](modularity/pixel-layers.md) |
+| **PositionalLayer** | Layer whose data stays at location. Stored as separate SoA array. Game-defined (e.g., HeatLayer).          | [pixel-layers.md](modularity/pixel-layers.md) |
+| **Bundle**     | Composition of Pixel + 1 or more swap-layers into a packed SwapUnit. Game-defined via `define_bundle!` macro.   | [pixel-layers.md](modularity/pixel-layers.md) |
+
+### Access Types
+
+| Term           | Definition                                                                                                      | Documentation                          |
+|----------------|-----------------------------------------------------------------------------------------------------------------|----------------------------------------|
+| **LayerMut<L>** | Mutable typed accessor for swap-layer L. Maps semantic access to packed SwapUnit field.                        | [layer-storage.md](../implementation/layer-storage.md) |
+| **LayerRef<L>** | Read-only typed accessor for swap-layer L.                                                                      | [layer-storage.md](../implementation/layer-storage.md) |
+| **PositionalMut<L>** | Mutable accessor for positional layer L. Maps to separate SoA array.                                       | [layer-storage.md](../implementation/layer-storage.md) |
+
+### Framework-Provided
 
 | Term               | Type | Definition                                                            | Documentation                      |
 |--------------------|------|-----------------------------------------------------------------------|------------------------------------|
-| **PixelLayer**     | 2 bytes | Innate base layer containing material ID (u8) + flags (u8). Always present. | [pixel-layers.md](modularity/pixel-layers.md) |
+| **Pixel**          | 2 bytes | Framework's sole innate type: material ID (u8) + flags (u8). Part of every SwapUnit. | [pixel-layers.md](modularity/pixel-layers.md) |
 | **Material field** | u8   | Type identifier indexing into material registry.                      | [pixel-format.md](foundational/pixel-format.md) |
-| **Flags field**    | u8   | Packed boolean states for simulation and rendering. Part of PixelLayer. | [pixel-format.md](foundational/pixel-format.md) |
-| **Color field**    | u8   | Palette index for rendering; allows per-pixel visual variation. Opt-in layer. | [pixel-format.md](foundational/pixel-format.md) |
-| **Damage field**   | u8   | Accumulated damage; triggers destruction/transformation at threshold. Opt-in layer. | [pixel-format.md](foundational/pixel-format.md) |
+| **Flags field**    | u8   | 3 reserved bits (framework) + 5 customizable bits (game). Part of Pixel. | [pixel-format.md](foundational/pixel-format.md) |
 
 ### Pixel Flags
 
@@ -88,24 +107,15 @@ Per-pixel data organized into layers. PixelLayer (material + flags) is always pr
 | **wet**        | 4   | Pixel is saturated with liquid. Prevents ignition; modifies behavior.                                  |
 | **pixel_body** | 5   | Pixel belongs to a pixel body. Set during blit, cleared after CA. Excluded from terrain collision.    |
 
-### Layer System
+---
 
-| Term              | Definition                                                                                                 | Documentation                          |
-|-------------------|------------------------------------------------------------------------------------------------------------|----------------------------------------|
-| **Layer**         | Trait defining per-pixel or downsampled data. Declares element type, sample rate, and name.                | [pixel-layers.md](modularity/pixel-layers.md) |
-| **Swap-follow**   | Layer category where data belongs to the pixel and moves with it when PixelLayer swaps. Examples: Color, Damage. | [pixel-layers.md](modularity/pixel-layers.md) |
-| **Positional**    | Layer category where data belongs to the location, not the pixel. Pixels pass through. Examples: Heat, Pressure. | [pixel-layers.md](modularity/pixel-layers.md) |
-| **DefaultBundle** | Preset registering PixelLayer + Color + Damage (4 bytes/pixel). Standard falling sand configuration.      | [pixel-layers.md](modularity/pixel-layers.md) |
-| **MinimalBundle** | Preset registering PixelLayer only (2 bytes/pixel). Maximum performance, custom simulation.                | [pixel-layers.md](modularity/pixel-layers.md) |
-
-### Simulation Types
+## Simulation Types
 
 | Term              | Definition                                                                                                 | Documentation                          |
 |-------------------|------------------------------------------------------------------------------------------------------------|----------------------------------------|
 | **WorldPos**      | Global pixel coordinate in world space. Used by simulations for pixel addressing across chunks.            | [simulation-extensibility.md](modularity/simulation-extensibility.md) |
 | **WorldFragment** | Context passed to simulation closures. Contains position and normalized coordinates.                       | [simulation-extensibility.md](modularity/simulation-extensibility.md) |
 | **SimContext**    | Resource containing simulation tick, seed, and jitter for deterministic randomness.                        | [simulation-extensibility.md](modularity/simulation-extensibility.md) |
-| **PixelAccess**   | Trait providing get/set/swap operations on layers via WorldPos. Framework implements for all layers.       | [layer-storage.md](../implementation/layer-storage.md) |
 
 ---
 
@@ -192,11 +202,11 @@ Terms for world generation systems.
 
 | Term        | Definition                                                                           | Documentation                        |
 |-------------|--------------------------------------------------------------------------------------|--------------------------------------|
-| **PCG**     | Procedural Content Generation - algorithmic creation of world content.               | [pcg-ideas.md](world-generation/pcg-ideas.md)         |
+| **PCG**     | Procedural Content Generation - algorithmic creation of world content.               | [chunk-seeding.md](chunk-management/chunk-seeding.md) |
 | **Noise**   | Coherent random functions (Perlin, Simplex, Cellular, Value) for terrain generation. | [chunk-seeding.md](chunk-management/chunk-seeding.md) |
-| **WFC**     | Wave Function Collapse - constraint-based generation for macro-level structure.      | [pcg-ideas.md](world-generation/pcg-ideas.md)         |
-| **Stamp**   | Preset formation (cave, tree, building) placed during generation via stencil masks.  | [pcg-ideas.md](world-generation/pcg-ideas.md)         |
-| **Stencil** | Shape mask defining where a stamp applies to the world.                              | [pcg-ideas.md](world-generation/pcg-ideas.md)         |
+| **WFC**     | Wave Function Collapse - constraint-based generation for macro-level structure.      | (ideas)         |
+| **Stamp**   | Preset formation (cave, tree, building) placed during generation via stencil masks.  | (ideas)         |
+| **Stencil** | Shape mask defining where a stamp applies to the world.                              | (ideas)         |
 
 ---
 

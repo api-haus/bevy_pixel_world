@@ -14,10 +14,8 @@ The pixel sandbox is designed as an extensible library, not a closed application
 
 | Document | Purpose |
 |----------|---------|
-| [Rendering Backends](rendering-backends.md) | Abstract render targets for different output modes |
-| [Pixel Layers](pixel-layers.md) | Unified layer system with sample rate, swap-follow, render modularity |
+| [Pixel Layers](pixel-layers.md) | Unified layer system with swap-follow, render modularity |
 | [Simulation Extensibility](simulation-extensibility.md) | Pluggable simulation rules and reusable library functions |
-| [Grouping](grouping.md) | Unified grouping model (bricks = sleeping pixel bodies) |
 
 ## Design Principles
 

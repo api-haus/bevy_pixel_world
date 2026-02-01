@@ -62,8 +62,7 @@ A basic proof-of-concept pipeline for initial development:
 2. **Layer placement** - Depth-based material assignment (dirt, stone, bedrock)
 3. **Cave carving** - 3D noise creates underground cavities (optional)
 
-This serves as a minimal seeder example. For production-quality worlds, see [PCG World Ideas](../world-generation/pcg-ideas.md) for advanced
-generation with WFC, stamps, and hierarchical content.
+This serves as a minimal seeder example. Production-quality worlds may use advanced techniques like WFC, stamps, and hierarchical content (see docs/ideas).
 
 ### Noise Configuration
 
@@ -235,7 +234,6 @@ This prevents flat, uniform terrain while keeping material identity consistent.
 - [Chunk Persistence](../persistence/chunk-persistence.md) - Save/load system for modified chunks
 - [Chunk Pooling](chunk-pooling.md) - Lifecycle that triggers seeding
 - [Streaming Window](../streaming/streaming-window.md) - Determines which chunks need seeding
-- [PCG World Ideas](../world-generation/pcg-ideas.md) - Advanced generation with stamps and WFC
 - [Materials](../simulation/materials.md) - Material definitions for seeded pixels
 - [Configuration Reference](../foundational/configuration.md) - Seeder parameters
 - [Architecture Overview](../README.md)

@@ -128,16 +128,15 @@ for recovery/validation.
 
 ### Layer Data
 
-Each persistent layer is saved alongside the base Material layer. Layer persistence is configured at registration:
+Each persistent layer is saved alongside the base Pixel layer. Layer persistence is configured at registration by the game crate:
 
 | Layer | Persistent | Rationale |
 |-------|------------|-----------|
-| Material | Always | Type identity must persist |
-| Color | Yes (Default Bundle) | Player-placed colors |
-| Damage | Yes (Default Bundle) | Accumulated state |
-| Flags | Partial | Only `pixel_body` persists; simulation flags regenerate |
-| Heat | No | Resimulates from burning pixels |
-| Temperature | Optional | Game-specific |
+| Pixel (material+flags) | Always | Type identity must persist |
+| Color | Game-defined | Player-placed colors |
+| Damage | Game-defined | Accumulated state |
+| Heat | Typically no | Resimulates from burning pixels |
+| Temperature | Game-specific | Depends on game mechanics |
 
 See [Pixel Layers](../modularity/pixel-layers.md) for layer persistence configuration.
 
@@ -203,7 +202,7 @@ flowchart LR
 └────────────────┴─────────────────────────────────────────────┘
 
 Position: Linear index into chunk buffer (24 bits supports 512×512 = 262K pixels)
-New Pixel: Full pixel value (size varies by bundle; 4 bytes for DefaultBundle)
+New Pixel: Full pixel value (size varies by game-defined bundle)
 ```
 
 **Special markers:**

@@ -1,6 +1,8 @@
-# Unified Grouping
+# Grouping Ideas
 
-Bricks and pixel bodies are the same concept: groups of pixels that move and interact as units.
+> **Status:** Ideas for future consideration. Not part of core architecture.
+
+Bricks and pixel bodies could be the same concept: groups of pixels that move and interact as units.
 
 ## Core Insight
 
@@ -120,7 +122,7 @@ sequenceDiagram
     participant S as Sledgehammer
     participant D as DamageLayer
     participant G as GroupRegistry
-    participant P as PixelLayer
+    participant P as Pixel
 
     S->>D: Hit at (100, 50), force=80
     D->>D: Propagate damage in radius
@@ -175,17 +177,17 @@ When accumulated damage at position exceeds threshold:
 ## Layer Hierarchy
 
 ```
-PixelLayer (innate, 2 bytes)
+Pixel (framework, 2 bytes)
 ├── material: MaterialId (u8)
 └── flags: PixelFlags (u8)
 
-ColorLayer (opt-in, swap-follow, 1 byte)
+ColorLayer (game-defined, swap-layer, 1 byte)
 └── color: ColorIndex (u8)
 
-DamageLayer (opt-in, swap-follow, 1 byte)
+DamageLayer (game-defined, swap-layer, 1 byte)
 └── damage: u8
 
-GroupingLayer (opt-in, swap-follow, 2 bytes)
+GroupingLayer (game-defined, swap-layer, 2 bytes)
 └── group_id: GroupingId (u16)  // 0 = none, 1+ = group
 
 HeatLayer (opt-in, positional, 1 byte, sample_rate: 4)

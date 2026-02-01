@@ -118,14 +118,6 @@ Visual output systems.
 | [Rendering](rendering/rendering.md) | Chunk texture upload and material identity textures |
 | [Pixel Camera](rendering/pixel-camera.md) | Camera snapping and subpixel offset for artifact-free rendering |
 
-### World Generation
-
-Procedural content generation.
-
-| Document | Purpose |
-|----------|---------|
-| [PCG Ideas](world-generation/pcg-ideas.md) | Advanced generation with WFC, stamps |
-
 ### Streaming
 
 Infinite world management.
@@ -149,8 +141,7 @@ Extensibility architecture for crate consumers.
 | Document | Purpose |
 |----------|---------|
 | [Modularity Overview](modularity/README.md) | Extension points and design principles |
-| [Rendering Backends](modularity/rendering-backends.md) | Abstract render targets (GPU, terminal, headless) |
-| [Pixel Layers](modularity/pixel-layers.md) | Unified layer system (sample rate, swap-follow, render) |
+| [Pixel Layers](modularity/pixel-layers.md) | Unified layer system (swap-follow, render) |
 | [Simulation Extensibility](modularity/simulation-extensibility.md) | Pluggable rules and library functions |
 
 ## Data Flow

@@ -1,6 +1,8 @@
-# Rendering Backends
+# Rendering Backends Ideas
 
-Abstract render targets for different output modes.
+> **Status:** Ideas for future consideration. Not part of core architecture.
+
+Abstract render targets for different output modes (terminal, headless).
 
 ## Overview
 

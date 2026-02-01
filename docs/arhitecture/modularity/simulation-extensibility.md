@@ -20,7 +20,7 @@ Simulation = Bevy System + ScheduleMode
 - `PhasedParallel`: Checkerboard 4-phase (spatial isolation)
 - `Sequential`: One pixel at a time (always safe)
 
-**Swap-follow:** When PixelLayer swaps, registered swap-follow layers (ColorLayer, DamageLayer, etc.) swap automatically. All layers support direct swap if needed.
+**Swap-follow:** When `Pixel` swaps, all swap-layers in the bundle swap atomically. Single memory operation, no per-layer loop.
 
 ## Two Levels of Parallelism
 
@@ -140,7 +140,7 @@ trait PixelAccess {
 }
 ```
 
-**Swap-follow:** When PixelLayer swaps, registered swap-follow layers swap automatically. All layers support direct `swap()` if needed—use at your own risk for consistency.
+**Swap-follow:** When `Pixel` swaps, all swap-layers in the bundle swap atomically. Single memory operation.
 
 For downsampled layers, divide coordinates explicitly:
 
@@ -155,8 +155,8 @@ No implicit conversions—addressing stays transparent.
 
 ```rust
 fn falling_sand_sim(
-    iter: PhasedIter<PixelLayer>,
-    mut pixels: ResMut<PixelLayer>,
+    iter: PhasedIter<Pixel>,
+    mut pixels: LayerMut<Pixel>,
     materials: Res<MaterialRegistry>,
 ) {
     iter.for_each(|frag| {
@@ -182,8 +182,8 @@ fn falling_sand_sim(
 
 ```rust
 fn chaos_shuffle_sim(
-    iter: ParallelIter<PixelLayer>,
-    mut pixels: ResMut<PixelLayer>,
+    iter: ParallelIter<Pixel>,
+    mut pixels: LayerMut<Pixel>,
 ) {
     iter.for_each(|frag| {
         // All pixels yielded simultaneously across threads
@@ -200,7 +200,7 @@ No synchronization. Use for intentionally racy effects.
 
 ```rust
 fn complex_interaction_sim(
-    mut pixels: ResMut<PixelLayer>,
+    mut pixels: LayerMut<Pixel>,
     mut global_state: ResMut<InteractionState>,
 ) {
     for pos in pixels.iter_all() {
@@ -221,20 +221,21 @@ Mimics Bevy's tuple and `.chain()` semantics:
 - **`.chain()`** = force sequential order
 
 ```rust
+// Game crate - all bundles, layers, and simulations are game-defined
 PixelWorldPlugin::builder()
-    .with_bundle(DefaultBundle)
-    .with_layer::<HeatLayer>()
+    .with_bundle(FallingSandBundle)  // Game's bundle (Pixel + Color + Damage)
+    .with_positional::<HeatLayer>()  // Game's positional layer
 
     // Parallel group: tuple without .chain()
     .with_simulations((
-        falling_sand_sim,   // PhasedIter<PixelLayer>, writes PixelLayer
+        falling_sand_sim,   // PhasedIter<Pixel>, writes Pixel
         heat_diffusion_sim, // PhasedIter<HeatLayer>, writes HeatLayer
     ))
 
     // Sequential group: .chain() forces order
     .with_simulations((
-        decay_sim,        // sequential, writes PixelLayer
-        interaction_sim,  // sequential, writes PixelLayer
+        decay_sim,        // sequential, writes Pixel
+        interaction_sim,  // sequential, writes Pixel
     ).chain())
 
     .build()
@@ -258,10 +259,11 @@ PixelWorldPlugin::builder()
 ### Example: Minimal Physics Game
 
 ```rust
+// Game with just Pixel layer (no color, damage, etc.)
 PixelWorldPlugin::builder()
-    .with_bundle(MinimalBundle)
+    .with_bundle(MinimalGameBundle)  // Game's minimal bundle (Pixel only)
     .with_simulations((
-        simple_falling_sim,  // PhasedIter<PixelLayer>
+        simple_falling_sim,  // PhasedIter<Pixel>
     ))
     .build()
 ```
@@ -269,22 +271,23 @@ PixelWorldPlugin::builder()
 ### Example: Thermal Sandbox
 
 ```rust
+// Game with thermal layers
 PixelWorldPlugin::builder()
-    .with_bundle(DefaultBundle)
-    .with_layer::<HeatLayer>()
-    .with_layer::<PressureLayer>()
+    .with_bundle(FallingSandBundle)       // Game's bundle
+    .with_positional::<HeatLayer>()       // Game's positional layers
+    .with_positional::<PressureLayer>()
 
     // Physics + diffusion in parallel (disjoint layer writes)
     .with_simulations((
-        falling_sand_sim,    // PhasedIter<PixelLayer>
+        falling_sand_sim,    // PhasedIter<Pixel>
         heat_diffusion_sim,  // PhasedIter<HeatLayer>
         pressure_sim,        // PhasedIter<PressureLayer>
     ))
 
     // Reactions chained after (same layer)
     .with_simulations((
-        thermal_melting_sim, // sequential, writes PixelLayer
-        explosion_sim,       // sequential, writes PixelLayer
+        thermal_melting_sim, // sequential, writes Pixel
+        explosion_sim,       // sequential, writes Pixel
     ).chain())
 
     .build()
@@ -294,9 +297,9 @@ PixelWorldPlugin::builder()
 
 ```rust
 PixelWorldPlugin::builder()
-    .with_bundle(MinimalBundle)
+    .with_bundle(MinimalGameBundle)  // Game's minimal bundle
     .with_simulations((
-        chaos_shuffle_sim,  // ParallelIter<PixelLayer> (intentionally racy)
+        chaos_shuffle_sim,  // ParallelIter<Pixel> (intentionally racy)
     ))
     .build()
 ```
@@ -350,7 +353,7 @@ Example implementations that users copy into their games and modify:
 // Demo game's falling sand - users copy and modify
 fn try_fall_and_slide(
     pos: WorldPos,
-    pixels: &PixelLayer,
+    pixels: &LayerRef<Pixel>,
     materials: &MaterialRegistry,
     params: FallParams,
 ) -> Option<WorldPos> {
@@ -462,8 +465,8 @@ A complete demo simulation showing how to compose library functions:
 ```rust
 // Demo game's physics system (users copy and customize)
 fn falling_sand_sim(
-    iter: PhasedIter<PixelLayer>,
-    mut pixels: ResMut<PixelLayer>,
+    iter: PhasedIter<Pixel>,
+    mut pixels: LayerMut<Pixel>,
     materials: Res<MaterialRegistry>,
     ctx: Res<SimContext>,  // separate resource: tick, seed, jitter
 ) {
@@ -508,8 +511,8 @@ Delegate to library functions for common physics:
 
 ```rust
 fn magnetic_sim(
-    iter: PhasedIter<PixelLayer>,
-    mut pixels: ResMut<PixelLayer>,
+    iter: PhasedIter<Pixel>,
+    mut pixels: LayerMut<Pixel>,
     materials: Res<MaterialRegistry>,
 ) {
     iter.for_each(|frag| {
@@ -538,8 +541,8 @@ Read/write multiple layers in one system:
 
 ```rust
 fn thermal_rising_sim(
-    iter: PhasedIter<PixelLayer>,
-    mut pixels: ResMut<PixelLayer>,
+    iter: PhasedIter<Pixel>,
+    mut pixels: LayerMut<Pixel>,
     temperature: Res<TemperatureLayer>,  // read-only, swap-follow layer
 ) {
     iter.for_each(|frag| {
@@ -564,8 +567,8 @@ Override behavior for specific materials:
 
 ```rust
 fn custom_materials_sim(
-    iter: PhasedIter<PixelLayer>,
-    mut pixels: ResMut<PixelLayer>,
+    iter: PhasedIter<Pixel>,
+    mut pixels: LayerMut<Pixel>,
     materials: Res<MaterialRegistry>,
 ) {
     iter.for_each(|frag| {
@@ -601,10 +604,10 @@ The biggest win: dirty rect tracking skips ~90% of tiles under typical workloads
 ### Cache Locality
 
 Each tile (32×32 = 1024 pixels) fits in L1 cache:
-- PixelLayer: 2 KB
+- Pixel: 2 KB
 - ColorLayer: 1 KB
 - DamageLayer: 1 KB
-- **DefaultBundle: ~4 KB** (L1 is typically 32-64 KB)
+- **FallingSandBundle: ~4 KB** (L1 is typically 32-64 KB)
 
 ## Related Documentation
 

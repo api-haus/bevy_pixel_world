@@ -111,9 +111,8 @@ needs evaluation. Tile dirty rects define the spatial bounds for simulation sche
 
 The fundamental unit of the cellular automata simulation.
 
-- **PixelLayer (always):** Material + Flags (2 bytes) — innate, cannot be disabled
-- **Default Bundle:** PixelLayer + Color + Damage (4 bytes total)
-- **Minimal Bundle:** PixelLayer only (2 bytes)
+- **Pixel (always):** Material + Flags (2 bytes) — framework's sole innate type
+- **Bundles:** Game-defined compositions (e.g., Pixel + Color + Damage = 4 bytes)
 - Stores state needed for simulation and rendering
 - See [Pixel Format](pixel-format.md) for layer specifications
 - See [Pixel Layers](../modularity/pixel-layers.md) for bundle configurations
