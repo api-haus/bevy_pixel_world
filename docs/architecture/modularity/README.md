@@ -21,6 +21,20 @@ The pixel sandbox is designed as an extensible library, not a closed application
 | [Pixel Layers](pixel-layers.md) | Unified layer system with swap-follow, render modularity |
 | [Simulation Extensibility](simulation-extensibility.md) | Pluggable simulation rules and reusable library functions |
 
+## Ownership Boundary
+
+| Responsibility | Owner | Examples |
+|---------------|-------|----------|
+| **Spatial infrastructure** | Framework | `Chunk<T>`, `Canvas<T>`, streaming, collision mesh |
+| **Iteration primitives** | Framework | Checkerboard phasing, dirty tracking |
+| **Scheduling mechanics** | Framework | Tile phases, barriers, Bevy integration |
+| **Pixel struct** | Game | Fields, layout, bitpacking |
+| **Simulation rules** | Game | Falling, burning, melting, interactions |
+| **Material system** | Game | Registry, properties, reactions |
+| **Layer definitions** | Game | Which layers, sample rates, swap-follow |
+
+The framework provides the *how*, games define the *what*.
+
 ## Design Principles
 
 **Stable core, extensible surface:**

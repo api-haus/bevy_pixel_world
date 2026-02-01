@@ -33,9 +33,8 @@ Simulation = Bevy System + ScheduleMode
 - Layer dependencies inferred → Bevy handles inter-system parallelism
 
 **Schedule Mode** (pixel iteration within the system):
-- `FullyParallel`: All pixels at once, **UNSAFE** (consumer handles races)
-- `PhasedParallel`: Checkerboard 4-phase (spatial isolation)
-- `Sequential`: One pixel at a time (always safe)
+- `PhasedParallel`: Checkerboard 4-phase (spatial isolation, safe for local ops)
+- `Sequential`: One pixel at a time (always safe, for global state)
 
 **Swap-follow:** When `Pixel` swaps, all swap-layers in the bundle swap atomically. Single memory operation, no per-layer loop.
 
