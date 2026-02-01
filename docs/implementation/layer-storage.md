@@ -13,7 +13,8 @@
 - Collision mesh generation (uses `is_solid`)
 - Dirty tracking (uses `is_dirty`, `set_dirty`)
 - Iteration primitives (checkerboard phasing)
-- Rendering infrastructure (game provides color extraction)
+- Raw pixel upload (shader interprets bytes)
+- Palette utilities (LUT texture, generator, image conversion)
 - Optional: Separate layer storage for SoA data
 
 **Framework does NOT provide:**
@@ -227,26 +228,26 @@ impl<T: PixelData> Canvas<T> {
 
 ## Rendering Integration
 
-Game provides color extraction function:
+Raw pixel bytes uploaded to GPU. Shader interprets them directly.
 
-```rust
-// Game crate
-fn extract_color(pixel: &GamePixel, palette: &Palette) -> [u8; 4] {
-    if pixel.material() == 0 {
-        [0, 0, 0, 0]  // transparent void
-    } else {
-        palette.lookup(pixel.color())
-    }
-}
+```wgsl
+// Shader reads raw pixel data
+let pixel_data: u32 = textureLoad(pixel_texture, coord, 0).r;
+let color_index = (pixel_data >> 8u) & 0xFFu;  // byte 1 in our layout
 
-// Plugin setup
-app.add_plugins(PixelWorldPlugin::<GamePixel>::new(
-    config,
-    extract_color,  // Framework calls this for GPU upload
-));
+// Use palette LUT (framework provides texture)
+let rgba = textureSample(palette_lut, sampler, vec2f(f32(color_index) / 255.0, 0.0));
 ```
 
-Framework handles dirty tracking and upload scheduling. Game controls color logic.
+**Framework provides:**
+- Raw pixel texture upload (with dirty tracking)
+- Palette LUT texture generation
+- Palette utilities (generator, image conversion)
+
+**Game provides:**
+- `#[repr(C)]` pixel struct (predictable byte layout)
+- Palette data
+- Shader that knows the layout
 
 ---
 
@@ -256,7 +257,7 @@ Framework handles dirty tracking and upload scheduling. Game controls color logi
 // Game crate main.rs
 fn main() {
     App::new()
-        .add_plugins(PixelWorldPlugin::<GamePixel>::new(config, extract_color))
+        .add_plugins(PixelWorldPlugin::<Pixel>::new(config))
 
         // Game registers separate layers
         .add_systems(Startup, |mut world: ResMut<PixelWorld<GamePixel>>| {
@@ -292,11 +293,11 @@ Game chooses pixel size based on needs. Framework just stores `T`.
 
 ## Key Design Decisions
 
-1. **Framework is generic** - stores `T`, knows nothing about pixel internals
+1. **Framework is generic** - stores `T: PixelData`, minimal trait
 2. **Game owns pixel definition** - full control over fields, packing, semantics
 3. **Pixel struct swaps atomically** - single memory operation
 4. **Separate layers optional** - for data that needs different lifetime/resolution
-5. **Game provides color extraction** - framework doesn't know how to render
+5. **Raw GPU upload** - shader interprets bytes, no CPU transformation
 6. **Demo game as reference** - users clone and modify, not "install and use"
 
 ---

@@ -57,7 +57,8 @@ The demo game is not an afterthought — it's the reference implementation showi
 - Iteration primitives (checkerboard phasing)
 - Collision mesh generation (uses `is_solid`)
 - Dirty tracking infrastructure (uses `is_dirty`, `set_dirty`)
-- Rendering pipeline (game provides color extraction)
+- Raw pixel upload to GPU (no transformation)
+- Palette utilities (generator, LUT, image conversion)
 - Chunk pooling and persistence infrastructure
 
 **Minimal trait requirement:**
@@ -100,7 +101,7 @@ pub trait PixelData: Copy + Default + 'static {
 | M2 | Extract Pixel | Move `Pixel` struct to game crate |
 | M3 | Extract Material | Move material system to game crate |
 | M4 | Extract Simulation | Move all simulations to game crate |
-| M5 | Rendering Generics | Generic texture upload (game provides color extraction) |
+| M5 | Rendering Generics | Raw pixel upload, shader interprets bytes |
 | M6 | Polish | Documentation, examples, cleanup |
 
 ---
@@ -133,7 +134,7 @@ Sort findings into:
 |----------|--------|
 | Storage operations | Keep, make generic |
 | Iteration logic | Keep, make generic |
-| Rendering upload | Keep, add color extraction callback |
+| Rendering upload | Keep, upload raw bytes (shader interprets) |
 | Pixel field access | Move to game |
 | Material lookups | Move to game |
 | Simulation rules | Move to game |
@@ -351,54 +352,54 @@ pub fn falling_sand_system(world: &mut PixelWorld<GamePixel>, ...) {
 
 ## Phase M5: Rendering Generics
 
-Generic texture upload with game-provided color extraction.
+Raw pixel upload — GPU interprets bytes directly.
 
-### Problem
+### Approach
 
-Framework needs to upload pixel colors to GPU, but doesn't know pixel structure.
-
-### Solution: Color Callback
+No CPU-side color transformation. Upload raw pixel bytes, shader reads them.
 
 ```rust
-pub struct PixelWorldPlugin<T: Copy + Default + 'static> {
+// Plugin setup - no color callback needed
+pub struct PixelWorldPlugin<T: PixelData> {
     config: PixelWorldConfig,
-    /// Extracts RGBA color from pixel for GPU upload
-    color_fn: fn(&T) -> [u8; 4],
     _marker: PhantomData<T>,
 }
 
-impl<T: Copy + Default + 'static> PixelWorldPlugin<T> {
-    pub fn new(config: PixelWorldConfig, color_fn: fn(&T) -> [u8; 4]) -> Self {
-        Self { config, color_fn, _marker: PhantomData }
-    }
-}
-
-// Game usage:
-fn extract_color(pixel: &GamePixel) -> [u8; 4] {
-    palette.lookup(pixel.color)
-}
-
-app.add_plugins(PixelWorldPlugin::new(config, extract_color));
+// Simple setup
+app.add_plugins(PixelWorldPlugin::<Pixel>::new(config));
 ```
 
-### Alternative: Trait
+### GPU Side
 
-```rust
-pub trait HasColor {
-    fn to_rgba(&self) -> [u8; 4];
-}
+Shader interprets raw bytes using `#[repr(C)]` layout:
 
-pub struct PixelWorldPlugin<T: Copy + Default + 'static + HasColor> { ... }
+```wgsl
+let pixel_data: u32 = textureLoad(pixel_texture, coord, 0).r;
+let material = pixel_data & 0xFFu;
+let color_index = (pixel_data >> 8u) & 0xFFu;
+
+// Use palette LUT provided by framework
+let rgba = textureSample(palette_lut, sampler, vec2f(f32(color_index) / 255.0, 0.0));
 ```
 
-But this adds a trait requirement. Function pointer is more flexible.
+### Framework Provides
+
+- Raw pixel texture upload (dirty tracking)
+- Palette LUT texture generation
+- Palette utilities (generator, image conversion)
+
+### Game Responsibility
+
+- Define `#[repr(C)]` pixel struct
+- Know byte layout for shader
+- Provide palette data
 
 ### Files
 
 | File | Change |
 |------|--------|
-| `src/rendering/upload.rs` | Use color callback |
-| `src/world/plugin.rs` | Add color_fn parameter |
+| `src/rendering/upload.rs` | Upload raw bytes |
+| `src/rendering/palette.rs` | Palette LUT utilities |
 
 ---
 

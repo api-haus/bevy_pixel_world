@@ -250,8 +250,8 @@ flowchart TB
 
     subgraph Render["Render Pipeline"]
         direction LR
-        R1["GPU Upload<br/>(game provides color_fn)"]
-        R2["Backend"]
+        R1["Raw Upload<br/>(shader interprets)"]
+        R2["Backend + Palette LUT"]
     end
 
     Pixels --> R1
@@ -770,10 +770,7 @@ The game instantiates with its concrete type:
 // In game crate
 fn main() {
     App::new()
-        .add_plugins(PixelWorldPlugin::<GamePixel>::new(
-            config,
-            |pixel| palette.lookup(pixel.color()),  // color extraction
-        ))
+        .add_plugins(PixelWorldPlugin::<Pixel>::new(config))
         // ...
 }
 ```
@@ -828,7 +825,7 @@ The modularity refactor will:
 1. Add `PixelData` trait to framework
 2. Make storage generic over `T: PixelData`
 3. Move `Pixel` definition to demo game
-4. Add color extraction callback for rendering
+4. Upload raw bytes (shader interprets via palette LUT)
 
 ## Related Documentation
 
