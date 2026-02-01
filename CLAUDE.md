@@ -49,6 +49,10 @@ Minimal public exposure. Only what callers actually need.
 
 When working in a worktree, include its path in plan mode headers.
 
+### Submodules
+
+After merging changes to submodules, run `git submodule update --init` to checkout content.
+
 ---
 
 *See `docs/implementation/methodology.md` for rationale.*
