@@ -458,3 +458,106 @@ cargo test --test persistence_e2e
 - [x] Delta compression works for sparse modifications
 - [x] Full compression falls back when delta is larger
 - [x] Clean chunks skip persistence
+
+---
+
+## Feature: Pixel Bodies (Completed)
+
+Dynamic physics objects with pixel content that participate in CA simulation.
+
+**Files:**
+- `crates/bevy_pixel_world/src/pixel_body/mod.rs` - Core component
+- `crates/bevy_pixel_world/src/pixel_body/loader.rs` - PNG loading
+- `crates/bevy_pixel_world/src/pixel_body/spawn.rs` - Spawn commands
+- `crates/bevy_pixel_world/src/pixel_body/readback.rs` - Detect destruction
+- `crates/bevy_pixel_world/src/pixel_body/split.rs` - Connected components splitting
+
+**Key Features:**
+- Load PNG sprites as destructible physics bodies
+- Automatic collider generation via marching squares
+- Readback system detects CA/painting damage
+- Connected components analysis for splitting
+- Full persistence support
+
+**Acceptance Criteria:**
+
+- [x] Spawn pixel bodies from PNG assets
+- [x] Bodies fall under gravity and collide
+- [x] Painting/erasing damages body pixels
+- [x] Cut object in half → splits into separate bodies
+- [x] Fragments persist across save/load
+
+---
+
+## Feature: Named Saves (Completed)
+
+Copy-on-write save system with named slots.
+
+**Files:**
+- `crates/bevy_pixel_world/src/world/control.rs` - `PersistenceControl`
+- `crates/bevy_pixel_world/src/persistence/` - Save format
+
+**Key Features:**
+- `persistence.save("name")` API
+- `persistence.list_saves()` to enumerate
+- Copy-on-write for "Save As" semantics
+- Auto-save timer removed (consumer handles timing)
+
+**Migration:**
+
+| Before | After |
+|--------|-------|
+| `persistence.request_save()` | `persistence.save("world")` |
+
+---
+
+## Feature: Level Editor Integration (Completed)
+
+bevy-yoleck integration for visual level editing.
+
+**Files:**
+- `crates/game/src/editor/mod.rs` - Editor plugin, GameMode state
+- `crates/game/src/editor/entities/` - Spawn point, platform entities
+
+**Features:**
+- Edit mode: Yoleck UI active, drag entities
+- Play mode: Player spawns at spawn point
+- Toggle between modes at runtime
+- Level files in `assets/levels/`
+
+**Verification:**
+
+- [x] Edit mode: drag platforms and spawn points
+- [x] Play mode: player spawns and moves
+- [x] Changes persist to level files
+
+---
+
+## Feature: Level Editor Controls (Completed)
+
+Runtime control over simulation and persistence for editing.
+
+**Files:**
+- `crates/bevy_pixel_world/src/world/control.rs` - Events and control
+
+**API:**
+
+| Event/Method | Purpose |
+|-------------|---------|
+| `ReseedAllChunks` | Re-seed all chunks with new noise |
+| `persistence.disable()` | Disable persistence (edit mode) |
+| `persistence.enable()` | Re-enable persistence |
+| `SimulationState::paused` | Pause/resume CA simulation |
+
+**Integration:**
+
+```rust
+// Enter edit mode
+simulation.pause();
+persistence.disable();
+reseed_events.write(ReseedAllChunks);
+
+// Exit edit mode
+persistence.enable();
+simulation.resume();
+```

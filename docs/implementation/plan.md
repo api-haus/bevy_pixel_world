@@ -31,38 +31,25 @@ See [plan_history.md](plan_history.md) for archived phases.
 | 3 | Interaction | *Completed - see plan_history.md* |
 | 4 | Simulation | *Completed - see plan_history.md* |
 | 5.0 | Persistence | *Completed - see plan_history.md* |
-| 5 | Game Integration | Not started |
+| 5.1 | Pixel Bodies | *Completed - see plan_history.md* |
+| 5.2 | Editor Integration | *Completed - see plan_history.md* |
+| 5.3 | Player-World Collision | In Progress |
+| 5.4 | Player Tools (Dig/Place) | Not started |
 
 ---
 
-## Phase 5: Game Integration
+## Phase 5.3: Player-World Collision
 
-Integrate `bevy_pixel_world` simulation with the `game` crate player mechanics.
+Enable player physics body to collide with pixel terrain.
 
-**Goal:** Player interacts with pixel world - collision, digging, building.
+**Status:** In Progress - collision mesh generation exists, needs integration
 
-### 5.1 Pixel-Player Collision
+### Tasks
 
-Player physics body collides with solid/powder pixels.
-
-- Generate collision mesh from pixel data (marching squares)
-- Update collision mesh when chunks change
-- Player stands on terrain, blocked by walls
-
-### 5.2 Player Tools
-
-- Dig tool: remove pixels in radius around cursor
-- Place tool: add selected material pixels
-- Tool switching UI
-
-### 5.3 World Interaction
-
-- Player spawn position based on terrain
-- Camera follows player (with optional free-cam toggle)
-
-### Acceptance Criteria
-
-- Collision mesh uses Douglas-Peucker simplification (start with 1.0 pixel tolerance, tune based on testing)
+- [ ] Generate collision mesh from chunk pixel data (marching squares)
+- [ ] Update collision mesh when chunks change (dirty tracking)
+- [ ] Integrate with player movement controller
+- [ ] Douglas-Peucker simplification (start with 1.0 pixel tolerance)
 
 ### Verification
 
@@ -72,9 +59,47 @@ cargo run -p game
 
 - [ ] Player stands on solid terrain
 - [ ] Player blocked by walls
-- [ ] Dig tool removes pixels
-- [ ] Place tool adds pixels
-- [ ] Simulation continues around player
+- [ ] Can walk on pixel bodies
+
+---
+
+## Phase 5.4: Player Tools
+
+Add dig/place tools for player interaction with pixel world.
+
+**Status:** Not started
+
+### Tasks
+
+- [ ] Dig tool: remove pixels in radius around cursor
+- [ ] Place tool: add selected material pixels
+- [ ] Tool switching UI (or keybinds)
+- [ ] Tool range indicator
+
+### Verification
+
+- [ ] Left click digs pixels
+- [ ] Right click places pixels
+- [ ] Tool radius adjustable
+
+---
+
+## Phase 5.5: Camera & Spawn
+
+Camera follows player with free-cam toggle.
+
+**Status:** Partial - editor integration complete
+
+### Tasks
+
+- [x] Player spawn at spawn point (editor integration)
+- [ ] Camera follows player in play mode
+- [ ] Free-cam toggle (for creative mode)
+
+### Verification
+
+- [x] Player spawns at editor-defined spawn point
+- [ ] Camera tracks player movement
 
 ---
 
