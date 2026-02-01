@@ -6,223 +6,94 @@
 
 Refactor `bevy_pixel_world` from monolithic pixel simulation to generic spatial infrastructure.
 
-See [layer-storage.md](layer-storage.md) for storage details.
 See [pixel-layers architecture](../architecture/modularity/pixel-layers.md) for design rationale.
 
 ---
 
 ## Philosophy
 
-**Radical modularity:** The framework provides spatial data structures and iteration primitives. Minimal trait requirements.
+**Radical modularity:** The framework provides spatial data structures and iteration primitives. Games define everything else.
 
-- **Optional traits** — `PixelCollision`, `PixelDirty` (implement what you need)
-- **No material system** — games define their own
-- **No simulations** — games implement their own rules
-- **No bitpacking** — games bring their own (bitflags, manual, etc.)
+| Framework Provides | Framework Does NOT Provide |
+|-------------------|---------------------------|
+| `Surface<T>`, `Chunk<T>`, `Canvas<T>`, `PixelWorld<T>` | Any pixel type definition |
+| Optional traits: `PixelCollision`, `PixelDirty` | Material system |
+| Iteration primitives (checkerboard phasing) | Simulations |
+| Collision mesh generation (via `is_solid`) | Bitpacking macros |
+| Dirty tracking (via `is_dirty`, `set_dirty`) | Game-specific flags |
+| Raw pixel upload to GPU | Color transformation |
+| Palette utilities (LUT, generator) | |
 
-**Clone-and-modify model:** While `bevy_pixel_world` will be published to crates.io, the intended workflow is:
+**Minimal bounds:** `T: Copy + Default + 'static`
 
-1. Clone the repository
-2. Modify the demo game crate
-3. Build your own game from that foundation
-
-The demo game is not an afterthought — it's the reference implementation showing how to use the framework primitives.
-
----
-
-## Current State
-
-**Framework (`bevy_pixel_world`):**
-- Monolithic `Pixel` struct: `{ material, color, damage, flags }`
-- Hardcoded simulation logic
-- `Surface<Pixel>` as chunk storage
-- Material system embedded in framework
-
-**Game (`game`):**
-- Depends on framework's `Pixel` type
-- Cannot define custom pixel layouts
-- Cannot customize material system
-
-**Bitpacking:**
-- Games bring their own: `bitflags!`, manual bit ops, etc.
-- Demo game shows one approach
-- No framework-provided macros
+**Clone-and-modify model:** The demo game is the reference implementation. Users clone and modify it.
 
 ---
 
-## Target State
+## Current vs Target State
 
-**Framework provides:**
-- Optional traits: `PixelCollision`, `PixelDirty` (see below)
-- `Surface<T>` — generic 2D storage
-- `Chunk<T>` — chunk management
-- `Canvas<T>` — multi-chunk world
-- `PixelWorld<T>` — Bevy resource wrapper
-- Iteration primitives (checkerboard phasing)
-- Collision mesh generation (uses `is_solid`)
-- Dirty tracking infrastructure (uses `is_dirty`, `set_dirty`)
-- Raw pixel upload to GPU (no transformation)
-- Palette utilities (generator, LUT, image conversion)
-- Chunk pooling and persistence infrastructure
+### Current State
 
-**Optional traits (implement what you need):**
+```
+Framework (bevy_pixel_world):
+├── Pixel struct: { material, color, damage, flags }  ← HARDCODED
+├── Material system                                    ← HARDCODED
+├── Simulations (falling, burning, heat)              ← HARDCODED
+└── Surface<Pixel>
+
+Game:
+└── Cannot customize anything
+```
+
+### Target State
+
+```
+Framework (bevy_pixel_world):
+├── Surface<T>, Chunk<T>, Canvas<T>, PixelWorld<T>    ← GENERIC
+├── Optional traits: PixelCollision, PixelDirty       ← OPT-IN
+├── Iteration primitives                              ← INFRASTRUCTURE
+├── Raw pixel upload + palette utilities              ← RENDERING
+└── No pixel definition, no materials, no simulations
+
+Game (reference implementation):
+├── Pixel struct with bitflags                        ← GAME-DEFINED
+├── Material system                                   ← GAME-DEFINED
+├── Simulations (falling, burning, heat)              ← GAME-DEFINED
+└── Shows how to wire everything together
+```
+
+---
+
+## Core Design
+
+### Optional Traits
 
 ```rust
-/// For collision mesh generation
+/// For collision mesh generation (marching squares)
 pub trait PixelCollision {
     fn is_solid(&self) -> bool;
 }
 
-/// For simulation scheduling
+/// For dirty-based simulation scheduling
 pub trait PixelDirty {
     fn is_dirty(&self) -> bool;
     fn set_dirty(&mut self, dirty: bool);
 }
 ```
 
-No collision system? Don't implement `PixelCollision`.
-Custom dirty tracking? Don't implement `PixelDirty`.
+Implement what you need:
+- Want collision meshes? Implement `PixelCollision`
+- Want dirty-based scheduling? Implement `PixelDirty`
+- Need neither? Just use `T: Copy + Default + 'static`
 
-**Framework does NOT provide:**
-- Any pixel type definition
-- Material system
-- Simulation logic
-- Bitpacking macros (use `bitflags!` or manual)
-- Specific flags beyond solid/dirty
+### Storage Patterns
 
-**Game (reference implementation) provides:**
-- `Pixel` struct (optionally implementing `PixelCollision`, `PixelDirty`)
-- Material system and registry
-- All simulations (falling sand, burning, heat)
-- All game-specific flags and metadata
-- Example of how to wire everything together
+**1. Pixel Struct (AoS) — Primary**
 
----
-
-## Phase Overview
-
-| Phase | Focus | Deliverable |
-|-------|-------|-------------|
-| M0 | Audit & Isolate | Identify all framework→pixel coupling |
-| M1 | Generic Chunk | `Chunk<T>`, `Canvas<T>`, `PixelWorld<T>` with minimal bounds |
-| M2 | Extract Pixel | Move `Pixel` struct to game crate |
-| M3 | Extract Material | Move material system to game crate |
-| M4 | Extract Simulation | Move all simulations to game crate |
-| M5 | Rendering Generics | Raw pixel upload, shader interprets bytes |
-| M6 | Polish | Documentation, examples, cleanup |
-
----
-
-## Phase M0: Audit & Isolate
-
-Find all places framework code touches pixel internals.
-
-### Analysis Commands
-
-```bash
-# Find all Pixel field accesses
-rg "\.material|\.color|\.damage|\.flags" crates/bevy_pixel_world/src/
-
-# Find all Pixel type references
-rg "Pixel\b" crates/bevy_pixel_world/src/ --type rust
-
-# Find material system usage
-rg "Material|material_registry" crates/bevy_pixel_world/src/
-
-# Find simulation logic
-rg "simulate|falling|burning|spread" crates/bevy_pixel_world/src/
-```
-
-### Categorization
-
-Sort findings into:
-
-| Category | Action |
-|----------|--------|
-| Storage operations | Keep, make generic |
-| Iteration logic | Keep, make generic |
-| Rendering upload | Keep, upload raw bytes (shader interprets) |
-| Pixel field access | Move to game |
-| Material lookups | Move to game |
-| Simulation rules | Move to game |
-
-### Deliverable
-
-Document listing all coupling points and their resolution strategy.
-
----
-
-## Phase M1: Generic Chunk
-
-Make core storage types generic with minimal bounds.
-
-### Minimal Bounds
+Game-defined struct stored in contiguous array. All fields swap atomically.
 
 ```rust
-// Storage requires only this
-pub struct Chunk<T: Copy + Default + 'static> { ... }
-```
-
-No semantic requirements. No mandated fields. Just data that can be copied and defaulted.
-
-Optional traits for framework features:
-- `PixelCollision` → enables collision mesh generation
-- `PixelDirty` → enables dirty-based scheduling
-
-### Type Changes
-
-```rust
-// Before
-pub struct Chunk { data: Surface<Pixel>, ... }
-pub struct Canvas { chunks: HashMap<ChunkPos, Chunk>, ... }
-pub struct PixelWorld { canvas: Canvas, ... }
-
-// After
-pub struct Chunk<T> { data: Surface<T>, ... }
-pub struct Canvas<T> { chunks: HashMap<ChunkPos, Chunk<T>>, ... }
-pub struct PixelWorld<T> { canvas: Canvas<T>, ... }
-// where T: Copy + Default + 'static
-```
-
-### Plugin
-
-```rust
-pub struct PixelWorldPlugin<T: Copy + Default + 'static> {
-    config: PixelWorldConfig,
-    _marker: PhantomData<T>,
-}
-
-// Game usage:
-app.add_plugins(PixelWorldPlugin::<GamePixel>::new(config));
-```
-
-### Files
-
-| File | Change |
-|------|--------|
-| `src/primitives/surface.rs` | Already generic |
-| `src/primitives/chunk.rs` | `Chunk<T>` |
-| `src/world/canvas.rs` | `Canvas<T>` |
-| `src/world/mod.rs` | `PixelWorld<T>` |
-| `src/world/plugin.rs` | `PixelWorldPlugin<T>` |
-
-### Verification
-
-```bash
-cargo build -p bevy_pixel_world
-# Will fail until Pixel is moved, but generics should be valid
-```
-
----
-
-## Phase M2: Extract Pixel
-
-Move `Pixel` struct from framework to game.
-
-### Create Game Pixel
-
-```rust
-// game/src/pixel.rs
+// Game crate defines this
 use bitflags::bitflags;
 
 bitflags! {
@@ -246,95 +117,231 @@ pub struct Pixel {
     pub flags: PixelFlags,
 }
 
-// Optional: implement if you want collision mesh generation
 impl PixelCollision for Pixel {
     fn is_solid(&self) -> bool { self.flags.contains(PixelFlags::SOLID) }
 }
 
-// Optional: implement if you want dirty-based scheduling
 impl PixelDirty for Pixel {
     fn is_dirty(&self) -> bool { self.flags.contains(PixelFlags::DIRTY) }
     fn set_dirty(&mut self, v: bool) { self.flags.set(PixelFlags::DIRTY, v); }
 }
 ```
 
-### Framework Cleanup
+**2. Separate Layers (SoA) — Optional**
 
-Remove from framework:
-- `src/pixel/mod.rs` (or gut it)
-- `Pixel` struct definition
-- `PixelFlags` definition
-- Any pixel-specific logic
-
-### Temporary Shim
-
-During transition, framework can re-export game's pixel:
+For data with different lifetime/resolution:
 
 ```rust
-// bevy_pixel_world/src/lib.rs (temporary)
-pub use game::pixel::GamePixel as Pixel;
+// Heat at 1/4 resolution (one value per 4x4 region)
+struct HeatLayer;
+impl Layer for HeatLayer {
+    type Element = u8;
+    const SAMPLE_RATE: u32 = 4;
+}
+
+// Velocity follows pixel swaps
+struct VelocityLayer;
+impl Layer for VelocityLayer {
+    type Element = (i8, i8);
+    const SAMPLE_RATE: u32 = 1;
+    const SWAP_FOLLOW: bool = true;
+}
 ```
 
-Remove shim once all framework code is generic.
+### Memory Layout
 
-### Files
+For a 512x512 chunk with 4-byte pixel:
 
-| File | Change |
-|------|--------|
-| `game/src/pixel.rs` | New: `GamePixel` definition |
-| `game/src/lib.rs` | Add `mod pixel;` |
-| `bevy_pixel_world/src/pixel/` | Remove or stub |
+```
+Chunk<Pixel> (512x512):
+┌────────────────────────────────────────────────────────┐
+│ pixels: [Pixel; 262144]                                │  ← 1 MB
+│ ┌──────────┬───────┬────────┬───────┐                  │
+│ │ material │ color │ damage │ flags │ x 262144         │
+│ └──────────┴───────┴────────┴───────┘                  │
+├────────────────────────────────────────────────────────┤
+│ heat: [u8; 16384]  (sample_rate: 4)                    │  ← 16 KB (optional)
+└────────────────────────────────────────────────────────┘
+```
+
+| Pixel Size | Per Chunk (512x512) |
+|------------|---------------------|
+| 2 bytes | 512 KB |
+| 4 bytes (demo) | 1 MB |
+| 8 bytes | 2 MB |
+
+### Swap Mechanics
+
+Single memory operation for entire pixel struct:
+
+```rust
+impl<T: Copy + Default + 'static> Canvas<T> {
+    pub fn swap(&mut self, a: WorldPos, b: WorldPos) {
+        // Single memcpy for entire pixel struct
+        if a.chunk() == b.chunk() {
+            let chunk = self.get_mut(a.chunk());
+            chunk.pixels.swap(a.local_index(), b.local_index());
+        } else {
+            let (ca, cb) = self.get_two_mut(a.chunk(), b.chunk());
+            std::mem::swap(
+                &mut ca.pixels[a.local_index()],
+                &mut cb.pixels[b.local_index()],
+            );
+        }
+        // Also swap any layers marked swap_follow: true
+        self.swap_following_layers(a, b);
+    }
+}
+```
+
+### Rendering Integration
+
+Raw pixel bytes uploaded to GPU. Shader interprets them directly.
+
+```wgsl
+// Shader reads raw pixel data
+let pixel_data: u32 = textureLoad(pixel_texture, coord, 0).r;
+let color_index = (pixel_data >> 8u) & 0xFFu;  // byte 1
+
+// Use palette LUT (framework provides texture)
+let rgba = textureSample(palette_lut, sampler, vec2f(f32(color_index) / 255.0, 0.0));
+```
 
 ---
 
-## Phase M3: Extract Material
+## Implementation Phases
+
+```mermaid
+graph LR
+    M0[M0: Audit] --> M1[M1: Generic Chunk]
+    M1 --> M2[M2: Extract Pixel]
+    M1 --> M3[M3: Extract Material]
+    M2 --> M4[M4: Extract Simulation]
+    M3 --> M4
+    M4 --> M5[M5: Rendering Generics]
+    M5 --> M6[M6: Polish]
+```
+
+| Phase | Focus | Deliverable |
+|-------|-------|-------------|
+| M0 | Audit & Isolate | Document all framework→pixel coupling |
+| M1 | Generic Chunk | `Chunk<T>`, `Canvas<T>`, `PixelWorld<T>` |
+| M2 | Extract Pixel | Move `Pixel` struct to game crate |
+| M3 | Extract Material | Move material system to game crate |
+| M4 | Extract Simulation | Move all simulations to game crate |
+| M5 | Rendering Generics | Raw pixel upload, shader interprets bytes |
+| M6 | Polish | Documentation, examples, cleanup |
+
+---
+
+### Phase M0: Audit & Isolate
+
+Find all places framework code touches pixel internals.
+
+```bash
+# Find all Pixel field accesses
+rg "\.material|\.color|\.damage|\.flags" crates/bevy_pixel_world/src/
+
+# Find material system usage
+rg "Material|material_registry" crates/bevy_pixel_world/src/
+
+# Find simulation logic
+rg "simulate|falling|burning|spread" crates/bevy_pixel_world/src/
+```
+
+Categorize findings:
+
+| Category | Action |
+|----------|--------|
+| Storage operations | Keep, make generic |
+| Iteration logic | Keep, make generic |
+| Rendering upload | Keep, upload raw bytes |
+| Pixel field access | Move to game |
+| Material lookups | Move to game |
+| Simulation rules | Move to game |
+
+**Deliverable:** Document listing all coupling points and resolution strategy.
+
+---
+
+### Phase M1: Generic Chunk
+
+Make core storage types generic.
+
+```rust
+// Before
+pub struct Chunk { data: Surface<Pixel>, ... }
+pub struct Canvas { chunks: HashMap<ChunkPos, Chunk>, ... }
+
+// After
+pub struct Chunk<T: Copy + Default + 'static> { data: Surface<T>, ... }
+pub struct Canvas<T: Copy + Default + 'static> { ... }
+pub struct PixelWorld<T: Copy + Default + 'static> { ... }
+```
+
+Plugin becomes generic:
+
+```rust
+pub struct PixelWorldPlugin<T: Copy + Default + 'static> {
+    config: PixelWorldConfig,
+    _marker: PhantomData<T>,
+}
+
+// Game usage
+app.add_plugins(PixelWorldPlugin::<Pixel>::new(config));
+```
+
+| File | Change |
+|------|--------|
+| `src/primitives/surface.rs` | Already generic |
+| `src/primitives/chunk.rs` | `Chunk<T>` |
+| `src/world/canvas.rs` | `Canvas<T>` |
+| `src/world/mod.rs` | `PixelWorld<T>` |
+| `src/world/plugin.rs` | `PixelWorldPlugin<T>` |
+
+---
+
+### Phase M2: Extract Pixel
+
+Move `Pixel` struct from framework to game.
+
+**Create in game crate:**
+
+```rust
+// game/src/pixel.rs
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct Pixel {
+    pub material: u8,
+    pub color: u8,
+    pub damage: u8,
+    pub flags: PixelFlags,
+}
+```
+
+**Remove from framework:**
+- `src/pixel/mod.rs`
+- `Pixel` struct definition
+- `PixelFlags` definition
+
+---
+
+### Phase M3: Extract Material
 
 Move material system entirely to game.
 
-### Current Material System
-
 ```
-bevy_pixel_world/src/
-├── material/
-│   ├── mod.rs
-│   ├── registry.rs
-│   └── properties.rs
+// Move from framework to game
+bevy_pixel_world/src/material/  →  game/src/material/
 ```
 
-### Move to Game
-
-```
-game/src/
-├── material/
-│   ├── mod.rs
-│   ├── registry.rs
-│   ├── properties.rs
-│   └── definitions.rs  # Actual material data
-```
-
-### Framework Has No Material Concept
-
-The framework doesn't know what a "material" is. It stores generic `T` values.
-
-If games want materials, they:
-1. Define a material registry
-2. Store material IDs in their pixel type
-3. Look up properties when simulating
-
-### Files
-
-| File | Change |
-|------|--------|
-| `game/src/material/` | New: entire material system |
-| `bevy_pixel_world/src/material/` | Delete |
+The framework doesn't know what a "material" is. Games define their own.
 
 ---
 
-## Phase M4: Extract Simulation
+### Phase M4: Extract Simulation
 
 Move all simulation logic to game.
-
-### Current Simulations
 
 ```
 bevy_pixel_world/src/simulation/
@@ -346,96 +353,25 @@ bevy_pixel_world/src/simulation/
 └── scheduling.rs   → keep (infrastructure)
 ```
 
-### Framework Keeps
-
-**Iteration infrastructure:**
-- Checkerboard phasing primitives
-- Tile iteration helpers
-- Hash utilities for deterministic randomness
-
-**No simulation rules:**
-- Framework doesn't know pixels can "fall"
-- Framework doesn't know pixels can "burn"
-- All behavior is game-defined
-
-### Game Implements
-
-```rust
-// game/src/simulation/falling.rs
-pub fn falling_sand_system(world: &mut PixelWorld<GamePixel>, ...) {
-    // Game-specific falling logic using game's pixel type
-}
-```
-
-### Files
-
-| File | Change |
-|------|--------|
-| `game/src/simulation/` | New: all simulation logic |
-| `bevy_pixel_world/src/simulation/` | Keep only infrastructure |
+Framework keeps iteration infrastructure. Game implements all rules.
 
 ---
 
-## Phase M5: Rendering Generics
+### Phase M5: Rendering Generics
 
-Raw pixel upload — GPU interprets bytes directly.
+No CPU-side color transformation. Upload raw pixel bytes.
 
-### Approach
-
-No CPU-side color transformation. Upload raw pixel bytes, shader reads them.
-
-```rust
-// Plugin setup - minimal bounds
-pub struct PixelWorldPlugin<T: Copy + Default + 'static> {
-    config: PixelWorldConfig,
-    _marker: PhantomData<T>,
-}
-
-// Simple setup
-app.add_plugins(PixelWorldPlugin::<Pixel>::new(config));
-```
-
-### GPU Side
-
-Shader interprets raw bytes using `#[repr(C)]` layout:
-
-```wgsl
-let pixel_data: u32 = textureLoad(pixel_texture, coord, 0).r;
-let material = pixel_data & 0xFFu;
-let color_index = (pixel_data >> 8u) & 0xFFu;
-
-// Use palette LUT provided by framework
-let rgba = textureSample(palette_lut, sampler, vec2f(f32(color_index) / 255.0, 0.0));
-```
-
-### Framework Provides
-
-- Raw pixel texture upload (dirty tracking)
-- Palette LUT texture generation
-- Palette utilities (generator, image conversion)
-
-### Game Responsibility
-
-- Define `#[repr(C)]` pixel struct
-- Know byte layout for shader
-- Provide palette data
-
-### Files
-
-| File | Change |
-|------|--------|
-| `src/rendering/upload.rs` | Upload raw bytes |
-| `src/rendering/palette.rs` | Palette LUT utilities |
+| Framework Provides | Game Provides |
+|-------------------|---------------|
+| Raw pixel texture upload | `#[repr(C)]` pixel struct |
+| Dirty tracking | Palette data |
+| Palette LUT generation | Shader that knows layout |
 
 ---
 
-## Phase M6: Polish
+### Phase M6: Polish
 
-Documentation, examples, final cleanup.
-
-### Demo Game as Reference
-
-The game crate becomes comprehensive documentation:
+Demo game becomes comprehensive documentation:
 
 ```
 game/
@@ -443,51 +379,13 @@ game/
 │   ├── pixel.rs         # How to define pixels
 │   ├── material/        # How to build material system
 │   ├── simulation/      # How to implement simulations
-│   │   ├── falling.rs
-│   │   ├── burning.rs
-│   │   └── heat.rs
 │   └── main.rs          # How to wire it all together
 └── README.md            # "Start here"
 ```
 
-### Framework Examples
-
-Minimal examples showing framework primitives:
-
-```
-bevy_pixel_world/examples/
-├── minimal.rs           # Simplest possible setup
-├── custom_pixel.rs      # Define your own pixel type
-└── iteration.rs         # Using iteration primitives
-```
-
-### Documentation Updates
-
-- README: Emphasize clone-and-modify workflow
-- Architecture docs: Remove PixelBase references
-- API docs: Document generic interfaces
-
 ---
 
 ## Testing Strategy
-
-### Framework Tests
-
-Test generic infrastructure:
-- `Surface<T>` operations with various T
-- `Chunk<T>` lifecycle
-- Iteration primitives
-- Persistence (serialize/deserialize generic data)
-
-### Game Tests
-
-Test reference implementation:
-- Pixel macro output
-- Material registry
-- Simulation correctness
-- Integration with framework
-
-### Verification Commands
 
 ```bash
 # Framework builds without game
@@ -503,37 +401,25 @@ cargo test --workspace
 cargo run -p game
 ```
 
+**Framework tests:** Generic infrastructure (`Surface<T>`, `Chunk<T>`, iteration, persistence)
+
+**Game tests:** Reference implementation (pixel struct, materials, simulations)
+
 ---
 
 ## Risk Mitigation
 
 | Risk | Mitigation |
 |------|------------|
-| Generic bounds too restrictive | Start minimal (Copy + Default + 'static), add only if needed |
-| Performance regression | Benchmark before/after, function pointers should inline |
-| API churn | Complete refactor in feature branch, merge when stable |
+| Generic bounds too restrictive | Start minimal (`Copy + Default + 'static`), add only if needed |
+| Performance regression | Benchmark before/after |
+| API churn | Complete refactor in feature branch |
 | User confusion | Strong documentation, demo game as canonical example |
-
----
-
-## Dependencies
-
-```mermaid
-graph LR
-    M0[M0: Audit] --> M1[M1: Generic Chunk]
-    M1 --> M2[M2: Extract Pixel]
-    M1 --> M3[M3: Extract Material]
-    M2 --> M4[M4: Extract Simulation]
-    M3 --> M4
-    M4 --> M5[M5: Rendering Generics]
-    M5 --> M6[M6: Polish]
-```
 
 ---
 
 ## Related Documentation
 
-- [Layer Storage Architecture](layer-storage.md) - Storage design details
-- [Pixel Layers](../architecture/modularity/pixel-layers.md) - Layer system overview
+- [Pixel Layers Architecture](../architecture/modularity/pixel-layers.md) - Layer system design
 - [Simulation Extensibility](../architecture/modularity/simulation-extensibility.md) - Simulation API
 - [Implementation Methodology](methodology.md) - Testing principles
