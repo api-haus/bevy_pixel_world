@@ -52,6 +52,9 @@ just test                   # or: cargo test -p bevy_pixel_world
 
 # WASM development server
 just serve                  # or: cd crates/game && trunk serve
+
+# Build NoiseTool (required for noise profile editing in level editor)
+just build-noise-tool
 ```
 
 ### Controls

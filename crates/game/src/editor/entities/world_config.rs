@@ -119,7 +119,7 @@ fn open_in_noise_tool(ipc: &mut Option<noise_ipc::NoiseIpc>, ent: &str) {
 
   // Launch NoiseTool if not already running
   if !already_running {
-    let noise_tool_path = "./vendor/FastNoise2/build/Release/bin/NodeEditor";
+    let noise_tool_path = "../../vendor/FastNoise2/build/Release/bin/NodeEditor";
     match std::process::Command::new(noise_tool_path).spawn() {
       Ok(_) => info!("Launched NoiseTool"),
       Err(e) => {
