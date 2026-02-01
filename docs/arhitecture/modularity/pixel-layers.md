@@ -10,52 +10,50 @@ Modular layer system where the **game defines its own pixel structure**.
 
 **Radical modularity:** The framework has minimal opinions about pixel contents.
 
-- Framework provides: `Chunk<T>`, `Canvas<T>`, iteration primitives, collision
-- Framework requires: `T: PixelData` (minimal trait, see below)
+- Framework provides: `Chunk<T>`, `Canvas<T>`, iteration primitives
+- Framework requires: `T: Copy + Default + 'static` (that's it)
 - Game defines: pixel struct with whatever fields it needs
 
-### Minimal Trait
+### Optional Traits
 
-The framework needs two pieces of information from pixels:
+Framework features that need pixel information use optional traits:
 
 ```rust
-pub trait PixelData: Copy + Default + 'static {
-    /// Is this pixel solid? Used for collision mesh generation.
+/// For collision mesh generation (marching squares)
+pub trait PixelCollision {
     fn is_solid(&self) -> bool;
+}
 
-    /// Does this pixel need simulation this tick?
+/// For dirty-based simulation scheduling
+pub trait PixelDirty {
     fn is_dirty(&self) -> bool;
-
-    /// Mark pixel as dirty/clean for scheduling.
     fn set_dirty(&mut self, dirty: bool);
 }
 ```
 
-**Why these?**
-- `is_solid` — Collision system generates meshes from solid pixels (marching squares)
-- `is_dirty` / `set_dirty` — Scheduling skips stable pixels for performance
-
-**How you implement them is your choice:**
-- `bitflags!` macro
-- Separate bool fields
-- Manual bit manipulation
-- Whatever works for your game
+**Implement what you need:**
+- Want collision meshes? Implement `PixelCollision`
+- Want dirty-based scheduling? Implement `PixelDirty`
+- Don't need them? Don't implement them
 
 ```rust
 // Game defines this however it wants
-struct GamePixel {
+struct Pixel {
     material: u8,
     color: u8,
     damage: u8,
-    flags: MyFlags,  // using bitflags! or custom
+    flags: MyFlags,
 }
 
-impl PixelData for GamePixel {
+// Optional: for collision
+impl PixelCollision for Pixel {
     fn is_solid(&self) -> bool { self.flags.contains(MyFlags::SOLID) }
+}
+
+// Optional: for scheduling
+impl PixelDirty for Pixel {
     fn is_dirty(&self) -> bool { self.flags.contains(MyFlags::DIRTY) }
-    fn set_dirty(&mut self, v: bool) {
-        self.flags.set(MyFlags::DIRTY, v);
-    }
+    fn set_dirty(&mut self, v: bool) { self.flags.set(MyFlags::DIRTY, v); }
 }
 ```
 
@@ -684,8 +682,11 @@ pub struct GamePixel {
     pub flags: PixelFlags,
 }
 
-impl PixelData for GamePixel {
+impl PixelCollision for GamePixel {
     fn is_solid(&self) -> bool { self.flags.contains(PixelFlags::SOLID) }
+}
+
+impl PixelDirty for GamePixel {
     fn is_dirty(&self) -> bool { self.flags.contains(PixelFlags::DIRTY) }
     fn set_dirty(&mut self, v: bool) { self.flags.set(PixelFlags::DIRTY, v); }
 }
@@ -718,13 +719,17 @@ impl GamePixel {
     }
 }
 
-impl PixelData for GamePixel {
+impl PixelCollision for GamePixel {
     fn is_solid(&self) -> bool { self.flags & 0x02 != 0 }
+}
+
+impl PixelDirty for GamePixel {
     fn is_dirty(&self) -> bool { self.flags & 0x01 != 0 }
     fn set_dirty(&mut self, v: bool) {
         if v { self.flags |= 0x01; } else { self.flags &= !0x01; }
     }
 }
+```
 
 ### Shader Access
 
@@ -750,15 +755,15 @@ let is_burning = (flags & 0x08u) != 0u;
 
 ### Framework Integration
 
-The framework is generic over `T: PixelData`:
+The framework is generic over `T: Copy + Default + 'static`:
 
 ```rust
-pub struct Chunk<T: PixelData> {
+pub struct Chunk<T: Copy + Default + 'static> {
     pixels: Surface<T>,
     // ...
 }
 
-pub struct PixelWorld<T: PixelData> {
+pub struct PixelWorld<T: Copy + Default + 'static> {
     canvas: Canvas<T>,
     // ...
 }
@@ -800,11 +805,12 @@ Games define exactly what they need. Byte-alignment ensures shader compatibility
 
 ### Implementation Notes
 
-**Minimal trait to implement:**
+**Storage requires:** `T: Copy + Default + 'static`
 
+**Optional traits:**
 ```rust
-pub trait PixelData: Copy + Default + 'static {
-    fn is_solid(&self) -> bool;
+pub trait PixelCollision { fn is_solid(&self) -> bool; }
+pub trait PixelDirty {
     fn is_dirty(&self) -> bool;
     fn set_dirty(&mut self, dirty: bool);
 }
@@ -822,8 +828,8 @@ pub trait PixelData: Copy + Default + 'static {
 **Not yet implemented.** Current framework uses hardcoded `Pixel` struct.
 
 The modularity refactor will:
-1. Add `PixelData` trait to framework
-2. Make storage generic over `T: PixelData`
+1. Add optional traits to framework (`PixelCollision`, `PixelDirty`)
+2. Make storage generic over `T: Copy + Default + 'static`
 3. Move `Pixel` definition to demo game
 4. Upload raw bytes (shader interprets via palette LUT)
 

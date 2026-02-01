@@ -11,7 +11,7 @@ See [pixel-layers architecture](../arhitecture/modularity/pixel-layers.md) for d
 
 **Radical modularity:** The framework provides spatial data structures and iteration primitives. Minimal trait requirements.
 
-- **Minimal `PixelData` trait** — only `is_solid`, `is_dirty`, `set_dirty`
+- **Optional traits** — `PixelCollision`, `PixelDirty` (implement what you need)
 - **No material system** — games define their own
 - **No simulations** — games implement their own rules
 - **No bitpacking** — games bring their own (bitflags, manual, etc.)
@@ -49,7 +49,7 @@ The demo game is not an afterthought — it's the reference implementation showi
 ## Target State
 
 **Framework provides:**
-- `PixelData` trait — minimal interface (see below)
+- Optional traits: `PixelCollision`, `PixelDirty` (see below)
 - `Surface<T>` — generic 2D storage
 - `Chunk<T>` — chunk management
 - `Canvas<T>` — multi-chunk world
@@ -61,20 +61,23 @@ The demo game is not an afterthought — it's the reference implementation showi
 - Palette utilities (generator, LUT, image conversion)
 - Chunk pooling and persistence infrastructure
 
-**Minimal trait requirement:**
+**Optional traits (implement what you need):**
 
 ```rust
-pub trait PixelData: Copy + Default + 'static {
-    /// Is this pixel solid? Used for collision mesh generation.
+/// For collision mesh generation
+pub trait PixelCollision {
     fn is_solid(&self) -> bool;
+}
 
-    /// Does this pixel need simulation this tick?
+/// For simulation scheduling
+pub trait PixelDirty {
     fn is_dirty(&self) -> bool;
-
-    /// Mark pixel as dirty/clean for scheduling.
     fn set_dirty(&mut self, dirty: bool);
 }
 ```
+
+No collision system? Don't implement `PixelCollision`.
+Custom dirty tracking? Don't implement `PixelDirty`.
 
 **Framework does NOT provide:**
 - Any pixel type definition
@@ -84,7 +87,7 @@ pub trait PixelData: Copy + Default + 'static {
 - Specific flags beyond solid/dirty
 
 **Game (reference implementation) provides:**
-- `GamePixel` struct implementing `PixelData`
+- `Pixel` struct (optionally implementing `PixelCollision`, `PixelDirty`)
 - Material system and registry
 - All simulations (falling sand, burning, heat)
 - All game-specific flags and metadata
@@ -152,15 +155,15 @@ Make core storage types generic with minimal bounds.
 ### Minimal Bounds
 
 ```rust
-// The ONLY requirements on T
-pub trait PixelData: Copy + Default + 'static {}
-impl<T: Copy + Default + 'static> PixelData for T {}
-
-// Or just use the bounds directly (no trait needed)
+// Storage requires only this
 pub struct Chunk<T: Copy + Default + 'static> { ... }
 ```
 
 No semantic requirements. No mandated fields. Just data that can be copied and defaulted.
+
+Optional traits for framework features:
+- `PixelCollision` → enables collision mesh generation
+- `PixelDirty` → enables dirty-based scheduling
 
 ### Type Changes
 
@@ -239,8 +242,13 @@ pub struct Pixel {
     pub flags: PixelFlags,
 }
 
-impl PixelData for Pixel {
+// Optional: implement if you want collision mesh generation
+impl PixelCollision for Pixel {
     fn is_solid(&self) -> bool { self.flags.contains(PixelFlags::SOLID) }
+}
+
+// Optional: implement if you want dirty-based scheduling
+impl PixelDirty for Pixel {
     fn is_dirty(&self) -> bool { self.flags.contains(PixelFlags::DIRTY) }
     fn set_dirty(&mut self, v: bool) { self.flags.set(PixelFlags::DIRTY, v); }
 }
@@ -373,8 +381,8 @@ Raw pixel upload — GPU interprets bytes directly.
 No CPU-side color transformation. Upload raw pixel bytes, shader reads them.
 
 ```rust
-// Plugin setup - no color callback needed
-pub struct PixelWorldPlugin<T: PixelData> {
+// Plugin setup - minimal bounds
+pub struct PixelWorldPlugin<T: Copy + Default + 'static> {
     config: PixelWorldConfig,
     _marker: PhantomData<T>,
 }

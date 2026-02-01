@@ -7,9 +7,9 @@
 ## Philosophy: Radical Modularity
 
 **Framework provides:**
-- `PixelData` trait — minimal interface for collision and scheduling
+- Optional traits: `PixelCollision`, `PixelDirty` (implement what you need)
 - Generic storage: `Surface<T>`, `Chunk<T>`, `Canvas<T>`, `PixelWorld<T>`
-- Constraint: `T: PixelData` (is_solid, is_dirty, set_dirty)
+- Constraint: `T: Copy + Default + 'static` (minimal)
 - Collision mesh generation (uses `is_solid`)
 - Dirty tracking (uses `is_dirty`, `set_dirty`)
 - Iteration primitives (checkerboard phasing)
@@ -24,7 +24,7 @@
 - Simulations
 
 **Game crate provides everything else:**
-- Pixel struct implementing `PixelData`
+- Pixel struct (optionally implementing `PixelCollision`, `PixelDirty`)
 - Material system
 - All simulations
 - All game-specific behavior
@@ -61,16 +61,20 @@ pub struct GamePixel {
     pub flags: PixelFlags,
 }
 
-// Implement the minimal trait
-impl PixelData for GamePixel {
+// Optional: for collision mesh generation
+impl PixelCollision for GamePixel {
     fn is_solid(&self) -> bool { self.flags.contains(PixelFlags::SOLID) }
+}
+
+// Optional: for dirty-based scheduling
+impl PixelDirty for GamePixel {
     fn is_dirty(&self) -> bool { self.flags.contains(PixelFlags::DIRTY) }
     fn set_dirty(&mut self, v: bool) { self.flags.set(PixelFlags::DIRTY, v); }
 }
 
 // Framework stores it generically
-pub struct Chunk<T: PixelData> {
-    pixels: Surface<T>,  // Array of GamePixel
+pub struct Chunk<T: Copy + Default + 'static> {
+    pixels: Surface<T>,
     // ...
 }
 ```
@@ -122,7 +126,7 @@ Chunk<GamePixel> (512×512):
 ## Chunk Structure
 
 ```rust
-pub struct Chunk<T: PixelData> {
+pub struct Chunk<T: Copy + Default + 'static> {
     /// Game-defined pixel data (AoS)
     pub pixels: Surface<T>,
 
@@ -195,7 +199,7 @@ The framework provides iteration primitives. The game provides all logic.
 Pixel struct swap is a single memory operation:
 
 ```rust
-impl<T: PixelData> Canvas<T> {
+impl<T: Copy + Default + 'static> Canvas<T> {
     pub fn swap(&mut self, a: WorldPos, b: WorldPos) {
         // Single memcpy for entire pixel struct
         if a.chunk() == b.chunk() {
@@ -293,7 +297,7 @@ Game chooses pixel size based on needs. Framework just stores `T`.
 
 ## Key Design Decisions
 
-1. **Framework is generic** - stores `T: PixelData`, minimal trait
+1. **Framework is generic** - stores `T: Copy + Default + 'static`, optional traits
 2. **Game owns pixel definition** - full control over fields, packing, semantics
 3. **Pixel struct swaps atomically** - single memory operation
 4. **Separate layers optional** - for data that needs different lifetime/resolution
