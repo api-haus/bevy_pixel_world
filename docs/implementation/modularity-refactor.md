@@ -1,5 +1,9 @@
 # Implementation Plan: Modularity Refactor
 
+> **Status: Not Yet Implemented**
+>
+> This is the implementation plan for refactoring to radical modularity. Current code uses hardcoded `Pixel` struct with `material`, `color`, `damage`, `flags`.
+
 Refactor `bevy_pixel_world` from monolithic pixel simulation to generic spatial infrastructure.
 
 See [layer-storage.md](layer-storage.md) for storage details.

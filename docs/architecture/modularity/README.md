@@ -1,5 +1,9 @@
 # Modularity
 
+> **Status: Planned Architecture**
+>
+> This describes target modularity. Current implementation uses hardcoded `Pixel` struct. The layer system and macros described in sub-documents are not yet implemented.
+
 Extensibility architecture for rendering backends, pixel layers, and simulation rules.
 
 ## Overview
