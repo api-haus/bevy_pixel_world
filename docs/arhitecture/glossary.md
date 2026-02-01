@@ -22,7 +22,7 @@ Terms describing the four-level spatial organization.
 | **World** | Infinite 2D coordinate space providing global addressing. Has no direct memory representation. | [spatial-hierarchy.md](foundational/spatial-hierarchy.md) |
 | **Chunk** | Fixed-size rectangular pixel buffer. Unit of pooling, streaming, persistence, and rendering.   | [spatial-hierarchy.md](foundational/spatial-hierarchy.md) |
 | **Tile**  | Subdivision of a chunk used for checkerboard scheduling and dirty rect tracking.               | [spatial-hierarchy.md](foundational/spatial-hierarchy.md) |
-| **Pixel** | Fundamental simulation unit. Framework's sole innate type (2 bytes: material + flags). Additional layers are game-defined. | [pixel-format.md](foundational/pixel-format.md) |
+| **Pixel** | Fundamental simulation unit. Game-defined struct stored in chunks. Framework is generic over pixel type. | [pixel-layers.md](modularity/pixel-layers.md) |
 
 ### Coordinate Systems
 
@@ -67,45 +67,35 @@ themselves. See [materials.md](simulation/materials.md) for the full convention.
 
 ## Layer System
 
-Per-pixel data organized into layers with two-level abstraction: semantic types (API) → packed storage (internal).
+Two storage patterns for per-pixel data:
 
-The framework provides only infrastructure (traits, macros, accessors) and the `Pixel` type. All other layers, bundles, and simulations are game-defined.
+1. **Pixel struct (AoS):** Game-defined struct, swaps atomically
+2. **Separate layers (SoA):** Additional arrays for spatial/downsampled data
+
+The framework provides generic storage (`Chunk<T>`). Games define pixel structure and any separate layers.
 
 ### Core Concepts
 
 | Term           | Definition                                                                                                      | Documentation                          |
 |----------------|-----------------------------------------------------------------------------------------------------------------|----------------------------------------|
-| **SwapUnit**   | Macro-generated packed struct containing Pixel + all swap-layer fields. Internal storage representation.         | [layer-storage.md](../implementation/layer-storage.md) |
-| **SwapLayer**  | Layer whose data moves with the pixel. Packed into SwapUnit for atomic swap. Game-defined (e.g., ColorLayer).   | [pixel-layers.md](modularity/pixel-layers.md) |
-| **PositionalLayer** | Layer whose data stays at location. Stored as separate SoA array. Game-defined (e.g., HeatLayer).          | [pixel-layers.md](modularity/pixel-layers.md) |
-| **Bundle**     | Composition of Pixel + 1 or more swap-layers into a packed SwapUnit. Game-defined via `define_bundle!` macro.   | [pixel-layers.md](modularity/pixel-layers.md) |
+| **Pixel struct** | Game-defined struct (via `define_pixel!` macro) containing all per-pixel fields. Stored in AoS layout.        | [pixel-layers.md](modularity/pixel-layers.md) |
+| **Separate layer** | Optional SoA array for data with different lifetime/resolution than pixel struct. Game-defined.              | [pixel-layers.md](modularity/pixel-layers.md) |
+| **swap_follow** | Layer configuration: whether data moves with pixel swaps (true) or stays at location (false).                  | [pixel-layers.md](modularity/pixel-layers.md) |
+| **sample_rate** | Layer resolution: 1 = per-pixel, 4 = 4×4 regions, etc. Only applies to separate layers.                        | [pixel-layers.md](modularity/pixel-layers.md) |
 
-### Access Types
+### Example Pixel Structure (Demo Game)
 
-| Term           | Definition                                                                                                      | Documentation                          |
-|----------------|-----------------------------------------------------------------------------------------------------------------|----------------------------------------|
-| **LayerMut<L>** | Mutable typed accessor for swap-layer L. Maps semantic access to packed SwapUnit field.                        | [layer-storage.md](../implementation/layer-storage.md) |
-| **LayerRef<L>** | Read-only typed accessor for swap-layer L.                                                                      | [layer-storage.md](../implementation/layer-storage.md) |
-| **PositionalMut<L>** | Mutable accessor for positional layer L. Maps to separate SoA array.                                       | [layer-storage.md](../implementation/layer-storage.md) |
+The demo game defines a 4-byte pixel. Other games can define different structures.
 
-### Framework-Provided
+| Field      | Type | Definition                                                                                           |
+|------------|------|------------------------------------------------------------------------------------------------------|
+| material   | u8   | Type identifier indexing into game's material registry.                                              |
+| color      | u8   | Palette index for rendering.                                                                         |
+| damage     | u4   | Accumulated damage (0-15).                                                                           |
+| variant    | u4   | Visual variant (0-15).                                                                               |
+| flags      | u8   | 8 boolean flags defined by game (dirty, solid, falling, burning, etc.).                             |
 
-| Term               | Type | Definition                                                            | Documentation                      |
-|--------------------|------|-----------------------------------------------------------------------|------------------------------------|
-| **Pixel**          | 2 bytes | Framework's sole innate type: material ID (u8) + flags (u8). Part of every SwapUnit. | [pixel-layers.md](modularity/pixel-layers.md) |
-| **Material field** | u8   | Type identifier indexing into material registry.                      | [pixel-format.md](foundational/pixel-format.md) |
-| **Flags field**    | u8   | 3 reserved bits (framework) + 5 customizable bits (game). Part of Pixel. | [pixel-format.md](foundational/pixel-format.md) |
-
-### Pixel Flags
-
-| Flag           | Bit | Definition                                                                                             |
-|----------------|-----|--------------------------------------------------------------------------------------------------------|
-| **dirty**      | 0   | Pixel needs simulation this tick. Stable pixels have `dirty=0` and are skipped.                        |
-| **solid**      | 1   | Cached check: material state is `solid` or `powder` (not `liquid` or `gas`). Used by collision system. |
-| **falling**    | 2   | Pixel has downward momentum. Excluded from collision mesh while set.                                   |
-| **burning**    | 3   | Pixel is on fire. Propagates to flammable neighbors; increments damage.                                |
-| **wet**        | 4   | Pixel is saturated with liquid. Prevents ignition; modifies behavior.                                  |
-| **pixel_body** | 5   | Pixel belongs to a pixel body. Set during blit, cleared after CA. Excluded from terrain collision.    |
+These are game-defined concepts. The framework doesn't require any specific fields.
 
 ---
 

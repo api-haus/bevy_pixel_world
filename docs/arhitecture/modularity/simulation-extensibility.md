@@ -1,6 +1,23 @@
 # Simulation Extensibility
 
+> **Status: Planned Architecture**
+>
+> This document describes simulation patterns for games. All simulations are game-implemented. The framework provides iteration primitives; games implement rules.
+
 Pluggable simulation rules and reusable library functions.
+
+## Philosophy
+
+**Framework provides:**
+- Iteration primitives (checkerboard phasing, sequential, parallel)
+- Dirty tracking infrastructure
+- Bevy system scheduling integration
+
+**Game implements:**
+- All simulation rules (falling sand, burning, melting)
+- Material interactions
+- Heat diffusion
+- Any game-specific behavior
 
 ## Core Model
 
@@ -120,7 +137,7 @@ struct SimContext {
 
 ### Layers and PixelAccess
 
-Layers define their data type and sample rate. The framework automatically provides `PixelAccess`:
+Separate layers define their data type and sample rate. The framework provides generic access traits:
 
 ```rust
 // User defines layer properties

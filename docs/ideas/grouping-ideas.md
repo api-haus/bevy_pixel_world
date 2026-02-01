@@ -176,16 +176,14 @@ When accumulated damage at position exceeds threshold:
 
 ## Layer Hierarchy
 
+> **Note:** This shows the old model with framework-provided Pixel. With radical modularity, games define the entire pixel struct. See [pixel-layers.md](../arhitecture/modularity/pixel-layers.md).
+
 ```
-Pixel (framework, 2 bytes)
-├── material: MaterialId (u8)
-└── flags: PixelFlags (u8)
-
-ColorLayer (game-defined, swap-layer, 1 byte)
-└── color: ColorIndex (u8)
-
-DamageLayer (game-defined, swap-layer, 1 byte)
-└── damage: u8
+GamePixel (game-defined, 4 bytes)
+├── material: u8
+├── color: u8
+├── damage_variant: u8 (nibbles)
+└── flags: u8
 
 GroupingLayer (game-defined, swap-layer, 2 bytes)
 └── group_id: GroupingId (u16)  // 0 = none, 1+ = group

@@ -2,85 +2,66 @@
 
 > **Status: Planned Architecture**
 >
-> This document describes a planned layer system. Current implementation uses a monolithic 4-byte `Pixel` struct (material, color, damage, flags). The builder API, `define_bundle!` macro, and `LayerMut`/`LayerRef` accessors described here are not yet implemented.
+> This document describes a planned layer system. Current implementation uses a monolithic 4-byte `Pixel` struct (material, color, damage, flags). The macros and generic infrastructure described here are not yet implemented.
 
-Modular layer system where every piece of per-pixel data is an opt-in layer.
+Modular layer system where the **game defines its own pixel structure**.
 
 ## Core Concept
 
-The only mandatory data per pixel is the **Material ID** (1 byte). Everything else—color, damage, flags, temperature—is an optional layer that simulations opt into.
+**Radical modularity:** The framework has no opinion about what a pixel contains.
+
+- Framework provides: `Chunk<T>`, `Canvas<T>`, iteration primitives
+- Framework requires: `T: Copy + Default + 'static` (nothing else)
+- Game defines: pixel struct with whatever fields it needs
 
 ```
-Base Layer (always present):
-  Material: u8  // 1 byte, indexes material registry
+// Framework doesn't care what's in here
+GamePixel {
+    material: u8,     // game concept
+    color: u8,        // game concept
+    damage: u8,       // game concept
+    flags: u8,        // game concept
+}
 
-Default Bundle Layers (opt-in, included in preset):
-  Color: u8     // palette index
-  Damage: u8    // accumulated damage
-  Flags: u8     // dirty, solid, falling, burning, wet, pixel_body
-
-Additional Layers (opt-in):
-  Temperature, Velocity, Heat, Pressure, etc.
+// Framework just stores T and provides spatial operations
+Chunk<GamePixel>
+Canvas<GamePixel>
+PixelWorld<GamePixel>
 ```
 
-## Layer Bundles
+## Demo Game as Reference
 
-Bundles are presets that register common layer combinations:
-
-| Bundle | Layers | Use Case |
-|--------|--------|----------|
-| **Minimal** | Material only | Maximum performance, custom simulation |
-| **Default** | Material + Color + Damage + Flags | Standard falling sand (backward compatible) |
-| **Custom** | Builder API | Game-specific combinations |
-
-### Builder API
+The demo game shows one way to structure pixels. Users clone and modify.
 
 ```
-PixelWorldPlugin::builder()
-    .with_bundle(DefaultBundle)  // or MinimalBundle
-    .with_layer::<HeatLayer>()
-    .with_layer::<TemperatureLayer>()
-    .with_simulation::<FallingSandSim>()
-    .with_simulation::<HeatDiffusionSim>()
-    .build()
+Demo Game Pixel (4 bytes):
+  Material: u8    // indexes game's material registry
+  Color: u8       // palette index for rendering
+  Damage: u8      // accumulated damage
+  Flags: u8       // dirty, solid, falling, burning, etc.
+
+Your Game Pixel (whatever you need):
+  // Define your own fields, your own meaning
 ```
 
-### Default Bundle
+This is not a "bundle system" with presets. It's "here's how we did it, adapt to your needs."
 
-The Default Bundle provides backward-compatible behavior matching the current "4-byte pixel" model:
+## Separate Layers (SoA)
 
-| Layer | Purpose | Required By |
-|-------|---------|-------------|
-| Material | Type ID, always present | All simulations |
-| Color | Palette index for rendering | Rendering systems |
-| Damage | Accumulated damage | Destruction, decay |
-| Flags | Simulation state bits | CA physics, collision |
-
-## Base Layer (Innate)
-
-Every chunk has a hardcoded base layer containing material IDs. This is not opt-in - it's fundamental to the simulation.
-
-```
-base: [MaterialId; CHUNK_SIZE²]  // u8, always present
-```
-
-The layer system described below is for *additional* data on top of this base.
-
-## Optional Layers
+Beyond the pixel struct (AoS), games can register separate layers stored as Structure-of-Arrays:
 
 | Layer | Type | Sample Rate | Purpose |
 |-------|------|-------------|---------|
-| Color | u8 | 1 | Palette index |
-| Damage | u8 | 1 | Accumulated damage |
-| Flags | u8 | 1 | Simulation state bits |
-| Temperature | u8 | 1 | Per-pixel temperature |
-| Velocity | (i8, i8) | 1 | Pixel momentum |
-| Heat | u8 | 4 | Thermal diffusion (downsampled) |
-| Pressure | u16 | 8 | Fluid/gas pressure (downsampled) |
+| Temperature | u8 | 1 | Per-pixel temperature (swaps with pixel) |
+| Velocity | (i8, i8) | 1 | Pixel momentum (swaps with pixel) |
+| Heat | u8 | 4 | Thermal diffusion (downsampled, spatial) |
+| Pressure | u16 | 8 | Fluid/gas pressure (downsampled, spatial) |
 
-## Brick Layer (Demo)
+These are defined and registered by the game, not the framework.
 
-A reference implementation for block-based destruction gameplay, included in the demo game. Copy it into your game and adapt as needed.
+## Brick Layer (Demo Game Example)
+
+A reference implementation for block-based destruction gameplay, included in the demo game. Copy and adapt as needed.
 
 ### Concept
 
@@ -182,43 +163,43 @@ The shader combines both: sample `id` to find which brick, sample `damage` to de
 
 ## Simulation Systems
 
-Each simulation declares which layers it requires and writes:
+Simulations are implemented by the game, not the framework.
 
-```
-trait SimulationRule {
-    /// Layers this simulation reads
-    fn required_layers() -> &'static [LayerId];
+The framework provides:
+- Iteration primitives (checkerboard phasing)
+- Chunk dirty tracking
+- Bevy system scheduling infrastructure
 
-    /// Layers this simulation writes
-    fn writes_layers() -> &'static [LayerId];
-
-    /// Compute movement for a single pixel
-    fn compute_swap(...) -> Option<WorldPos>;
-}
-```
-
-### Scheduling
-
-- **Missing layer = system skipped** (configurable: skip silently or panic)
-- **Disjoint write sets = parallel execution** (Bevy scheduler handles this)
-- **Shared write sets = sequential execution** (ordered by registration)
+The game implements:
+- All simulation rules (falling, burning, spreading)
+- Material interactions
+- Heat diffusion
+- Any game-specific behavior
 
 ```mermaid
 flowchart LR
-    subgraph Parallel["Parallel (disjoint writes)"]
-        A["Falling Sand<br/>writes: Flags"]
-        B["Heat Diffusion<br/>writes: Heat"]
+    subgraph Framework["Framework (bevy_pixel_world)"]
+        A["Iteration Primitives"]
+        B["Dirty Tracking"]
     end
-    subgraph Sequential["Sequential (shared writes)"]
-        C["Material Interactions<br/>writes: Material, Damage"]
-        D["Decay Pass<br/>writes: Material, Damage"]
+    subgraph Game["Game Crate"]
+        C["Falling Sand Sim"]
+        D["Heat Diffusion Sim"]
+        E["Material Interactions"]
     end
-    Parallel --> Sequential
+    A --> C
+    A --> D
+    B --> E
 ```
 
 ## Overview
 
-All auxiliary data uses the same layer abstraction. The **sample rate** parameter determines resolution and available features:
+Two storage patterns:
+
+1. **Pixel struct (AoS):** Game-defined struct, swaps atomically
+2. **Separate layers (SoA):** Per-layer arrays, independent lifetime
+
+The **sample rate** parameter determines resolution for separate layers:
 
 | Sample Rate | Resolution | Cells per Chunk (512×512) | Swap-Follow | Use Case |
 |-------------|------------|---------------------------|-------------|----------|
@@ -230,31 +211,27 @@ All auxiliary data uses the same layer abstraction. The **sample rate** paramete
 
 ```mermaid
 flowchart TB
-    subgraph Chunk["Chunk Buffer"]
+    subgraph Chunk["Chunk<GamePixel>"]
         direction TB
-        Base["Base Layer<br/>Material (u8)<br/>always present"]
-        L0["Layer: Color<br/>sample_rate: 1<br/>(opt-in, Default Bundle)"]
-        L1["Layer: Damage<br/>sample_rate: 1<br/>(opt-in, Default Bundle)"]
-        L2["Layer: Flags<br/>sample_rate: 1<br/>(opt-in, Default Bundle)"]
-        L3["Layer: Heat<br/>sample_rate: 4<br/>(opt-in)"]
-        L4["Layer: Pressure<br/>sample_rate: 8<br/>(opt-in)"]
+        Pixels["Pixel Array (AoS)<br/>Game-defined struct<br/>e.g. {material, color, damage, flags}"]
+        L1["Layer: Heat<br/>sample_rate: 4<br/>(game-registered)"]
+        L2["Layer: Pressure<br/>sample_rate: 8<br/>(game-registered)"]
     end
 
     subgraph Render["Render Pipeline"]
         direction LR
-        R1["GPU Upload<br/>(per-layer schedule)"]
-        R2["Backend<br/>(per-layer)"]
+        R1["GPU Upload<br/>(game provides color_fn)"]
+        R2["Backend"]
     end
 
-    L0 --> R1
-    L3 --> R1
-    L4 --> R1
+    Pixels --> R1
+    L1 --> R1
     R1 --> R2
 ```
 
-## Layer Definition
+## Separate Layer Definition
 
-Each layer declares its properties at registration:
+For SoA layers registered separately from the pixel struct:
 
 ```
 trait Layer {
@@ -287,27 +264,30 @@ layer_x = pixel_x / sample_rate
 layer_y = pixel_y / sample_rate
 ```
 
-## Base Layer
+## Pixel Struct (Game-Defined)
 
-The base layer contains only the Material ID with `sample_rate: 1`:
+The game defines its pixel struct. Framework doesn't know or care what's in it.
 
-| Field | Type | Purpose |
-|-------|------|---------|
-| Material | u8 | Type identifier, indexes into material registry |
+```rust
+// Game crate defines this
+#[repr(C)]
+pub struct GamePixel {
+    pub material: u8,  // game concept
+    pub color: u8,     // game concept
+    pub damage: u8,    // game concept
+    pub flags: u8,     // game concept
+}
 
-**Total: 1 byte per pixel (minimum)**
+// Framework just needs these bounds
+impl Copy for GamePixel {}
+impl Default for GamePixel { ... }
+```
 
-Additional fields (Color, Damage, Flags) are opt-in layers included in the Default Bundle.
-
-See [Pixel Format](../foundational/pixel-format.md) for the base layer specification and flag bitmask reference.
-
-### Stability Guarantee
-
-The base layer (Material only) will not change within a major version. The Default Bundle layers (Color, Damage, Flags) are stable for backward compatibility.
+See the demo game for a reference implementation.
 
 ## Swap-Follow
 
-Layers with `sample_rate: 1` can opt into synchronized swapping with the base layer.
+Separate layers with `sample_rate: 1` can opt into synchronized swapping with the pixel array.
 
 ### Behavior
 
@@ -316,12 +296,12 @@ When enabled (default for `sample_rate: 1`):
 ```mermaid
 sequenceDiagram
     participant Sim as Simulation
-    participant Base as Base Layer
+    participant Pixels as Pixel Array
     participant Temp as Temperature (swap_follow: true)
     participant Vel as Velocity (swap_follow: true)
 
-    Sim->>Base: swap(pos_a, pos_b)
-    Base-->>Sim: pixels swapped
+    Sim->>Pixels: swap(pos_a, pos_b)
+    Pixels-->>Sim: pixels swapped
     Sim->>Temp: swap(pos_a, pos_b)
     Sim->>Vel: swap(pos_a, pos_b)
 ```
@@ -330,7 +310,7 @@ sequenceDiagram
 
 ```
 struct LayerConfig {
-    /// Follow base layer swaps (only valid when sample_rate = 1)
+    /// Follow pixel swaps (only valid when sample_rate = 1)
     swap_follow: bool,  // default: true
 
     /// Save to disk or resimulate on load
@@ -430,7 +410,7 @@ flowchart LR
     end
 
     subgraph Upload["Upload Schedules"]
-        U1["Base Layer Upload"]
+        U1["Pixel Upload"]
         U2["Heat Layer Upload"]
         U3["Custom Layer Upload"]
     end
@@ -478,7 +458,7 @@ trait UploadSchedule {
 
 | Preset | `tick_divisor` | Check | Use Case |
 |--------|----------------|-------|----------|
-| `OnChange` | 1 | Dirty flag | Base pixels - immediate visual feedback |
+| `OnChange` | 1 | Dirty flag | Pixels - immediate visual feedback |
 | `Periodic(n)` | n | Always true | Heat - interpolation hides latency |
 | `OnChangeThrottled(n)` | n | Dirty flag | Large layers - reduce upload frequency |
 | `Never` | - | Always false | Velocity - simulation-only, not rendered |
@@ -487,7 +467,7 @@ trait UploadSchedule {
 
 | Layer | Schedule | Behavior |
 |-------|----------|----------|
-| Base pixels | `OnChange` | Upload every tick if any pixel changed |
+| Pixels | `OnChange` | Upload every tick if any pixel changed |
 | Heat | `Periodic(4)` | Upload every 4th tick unconditionally |
 | Moisture | `OnChangeThrottled(2)` | Upload every 2nd tick if dirty |
 | Velocity | `Never` | No GPU upload, CPU-only |
@@ -520,7 +500,7 @@ Layers are either **persistent** (saved to disk) or **transient** (resimulated o
 
 ### Persistent Layers
 
-Saved alongside base pixel data in chunk files:
+Saved alongside pixel data in chunk files:
 
 | Property | Behavior |
 |----------|----------|
@@ -529,7 +509,7 @@ Saved alongside base pixel data in chunk files:
 | Use case | Source-of-truth data that can't be derived |
 
 **Examples:**
-- Base pixel layer (always persistent)
+- Pixel array (always persistent)
 - Player-placed markers or ownership data
 - Light/visibility (fog of war - explored areas stay revealed)
 - Accumulated damage that affects gameplay
@@ -572,7 +552,7 @@ Persistent layers append to chunk save format:
 ```
 ChunkFile:
   header: ChunkHeader
-  base_pixels: [Pixel; CHUNK_SIZE²]
+  pixels: [GamePixel; CHUNK_SIZE²]
   layer_ownership: [u8; CHUNK_SIZE²]    // if registered + persistent
   layer_custom: [T; cells]              // if registered + persistent
 ```
@@ -581,49 +561,47 @@ See [Chunk Persistence](../persistence/chunk-persistence.md) for save format det
 
 ## Memory Layout
 
-All layers use SoA (Structure of Arrays) for cache efficiency:
+**Pixel struct (AoS):** Game-defined, stored contiguously:
 
 ```
-Material:     [M0, M1, M2, M3, M4, ...]     // 1 byte each,  262k cells (always)
-Color:        [C0, C1, C2, C3, C4, ...]     // 1 byte each,  262k cells (Default Bundle)
-Damage:       [D0, D1, D2, D3, D4, ...]     // 1 byte each,  262k cells (Default Bundle)
-Flags:        [F0, F1, F2, F3, F4, ...]     // 1 byte each,  262k cells (Default Bundle)
-Heat:         [H0, H1, H2, H3, ...]         // 1 byte each,  16k cells  (opt-in)
-Pressure:     [R0, R1, R2, ...]             // 2 bytes each, 4k cells   (opt-in)
+Pixels: [P0, P1, P2, P3, ...]  // sizeof(GamePixel) each, 262k pixels
+```
+
+**Separate layers (SoA):** Registered by game, stored independently:
+
+```
+Heat:     [H0, H1, H2, H3, ...]  // 1 byte each, 16k cells (sample_rate: 4)
+Pressure: [R0, R1, R2, ...]      // 2 bytes each, 4k cells (sample_rate: 8)
 ```
 
 ### Memory Examples
 
-For a 512×512 chunk with different configurations:
+For a 512×512 chunk:
 
-**Minimal Bundle (Material only):**
+**4-byte pixel (demo game style):**
 
-| Layer | Sample Rate | Cells | Per-Cell | Total |
-|-------|-------------|-------|----------|-------|
-| Material | 1 | 262,144 | 1 byte | 256 KB |
-| **Total** | | | | **256 KB** |
+| Storage | Cells | Per-Cell | Total |
+|---------|-------|----------|-------|
+| GamePixel array | 262,144 | 4 bytes | 1 MB |
+| **Total** | | | **1 MB** |
 
-**Default Bundle (backward compatible):**
+**4-byte pixel + heat + pressure:**
 
-| Layer | Sample Rate | Cells | Per-Cell | Total |
-|-------|-------------|-------|----------|-------|
-| Material | 1 | 262,144 | 1 byte | 256 KB |
-| Color | 1 | 262,144 | 1 byte | 256 KB |
-| Damage | 1 | 262,144 | 1 byte | 256 KB |
-| Flags | 1 | 262,144 | 1 byte | 256 KB |
-| **Total** | | | | **1 MB** |
+| Storage | Cells | Per-Cell | Total |
+|---------|-------|----------|-------|
+| GamePixel array | 262,144 | 4 bytes | 1 MB |
+| Heat layer | 16,384 | 1 byte | 16 KB |
+| Pressure layer | 4,096 | 2 bytes | 8 KB |
+| **Total** | | | **~1 MB** |
 
-**Default Bundle + Heat + Pressure:**
+**2-byte pixel (minimal):**
 
-| Layer | Sample Rate | Cells | Per-Cell | Total |
-|-------|-------------|-------|----------|-------|
-| Material | 1 | 262,144 | 1 byte | 256 KB |
-| Color | 1 | 262,144 | 1 byte | 256 KB |
-| Damage | 1 | 262,144 | 1 byte | 256 KB |
-| Flags | 1 | 262,144 | 1 byte | 256 KB |
-| Heat | 4 | 16,384 | 1 byte | 16 KB |
-| Pressure | 8 | 4,096 | 2 bytes | 8 KB |
-| **Total** | | | | **~1 MB** |
+| Storage | Cells | Per-Cell | Total |
+|---------|-------|----------|-------|
+| MinimalPixel array | 262,144 | 2 bytes | 512 KB |
+| **Total** | | | **512 KB** |
+
+Games choose pixel size based on their needs. Smaller pixels = more chunks in memory.
 
 ## Registration
 
@@ -648,25 +626,27 @@ world.register_layer::<HeatLayer>(LayerConfig::default());  // transient, resimu
 
 ## Design Exploration: Bitpacked Pixel Macro
 
-The framework provides tools; the game defines the pixel.
+The `pixel_macro` crate provides tools for game developers to define their pixel structs.
 
 ### Philosophy
 
 **Framework provides:**
-- `define_pixel!` macro
-- `PixelBase` trait (minimal required interface)
-- Simulation infrastructure generic over `P: PixelBase`
+- Generic storage: `Chunk<T>`, `Canvas<T>`, `PixelWorld<T>`
+- Iteration primitives
+- Rendering infrastructure (game provides color extraction)
+- Constraint: `T: Copy + Default + 'static`
 
 **Game defines:**
-- Actual pixel struct with game-specific fields
+- Pixel struct with whatever fields it needs
 - Field names, bit widths, packing order
-- Which optional features to include
+- All simulation logic
+- Material system (if any)
 
-The framework doesn't know what "burning" or "damage" means—those are game concepts. The framework only needs `dirty`, `solid`, `falling`, and `material` to run the simulation.
+The framework doesn't know what "burning" or "damage" or even "material" means. These are all game concepts.
 
 ### Goals
 
-1. **Game owns the pixel** — Framework provides foundation, not prescription
+1. **Game owns everything** — Framework is just spatial infrastructure
 2. **Semantic names** — `pixel.burning()` not `pixel.flags & 0x08`
 3. **Optimal packing** — Sub-byte fields, no wasted bits
 4. **Swap atomicity** — Entire pixel struct swaps as one unit
@@ -677,23 +657,22 @@ The framework doesn't know what "burning" or "damage" means—those are game con
 ```rust
 // In game crate — game defines its pixel
 define_pixel! {
-    // Required by framework (PixelBase trait)
-    material: u8,           // 8 bits - indexes material registry
-    dirty: bool,            // 1 bit - needs simulation this tick
-    solid: bool,            // 1 bit - collision cache
-    falling: bool,          // 1 bit - has downward momentum
-
-    // Game-specific (framework doesn't know about these)
+    material: u8,           // 8 bits - game's material system
     color: u8,              // 8 bits - palette index
     damage: u4,             // 4 bits - 0-15 damage levels
-    burning: bool,          // 1 bit
-    wet: bool,              // 1 bit
-    pixel_body: bool,       // 1 bit
-    variant: u2,            // 2 bits - 0-3 visual variants
+    variant: u4,            // 4 bits - 0-15 visual variants
+    flags: flags8 {
+        dirty,              // game uses for scheduling
+        solid,              // game uses for collision
+        falling,            // game uses for physics
+        burning,
+        wet,
+        pixel_body,
+    },
 }
 ```
 
-**Total: 8 + 1 + 1 + 1 + 8 + 4 + 1 + 1 + 1 + 2 = 28 bits → 4 bytes**
+**Total: 8 + 8 + 4 + 4 + 8 = 32 bits = 4 bytes**
 
 ### Generated Code
 
@@ -784,14 +763,14 @@ define_pixel! {
     color: u8,          // byte 1
     damage_variant: u8, // byte 2 (game splits internally: high nibble damage, low nibble variant)
     flags: flags8 {     // byte 3 (8 flags in one byte)
-        dirty,          // bit 0 - required by framework
-        solid,          // bit 1 - required by framework
-        falling,        // bit 2 - required by framework
-        burning,        // bit 3 - game-defined
-        wet,            // bit 4 - game-defined
-        pixel_body,     // bit 5 - game-defined
-        _reserved6,     // bit 6 - unused
-        _reserved7,     // bit 7 - unused
+        dirty,
+        solid,
+        falling,
+        burning,
+        wet,
+        pixel_body,
+        _reserved6,
+        _reserved7,
     }
 }
 ```
@@ -808,10 +787,6 @@ define_pixel! {
 **WGSL shader access:**
 
 ```wgsl
-struct Pixel {
-    material: u32,  // actually u8, but WGSL reads as u32
-}
-
 // Reading from texture or buffer
 let pixel_data: u32 = textureLoad(pixel_texture, coord, 0).r;
 let material = pixel_data & 0xFFu;
@@ -834,14 +809,14 @@ define_pixel! {
     material: u8,
     color: u8,
 
-    // First flag block (framework + game flags)
+    // First flag block
     core_flags: flags8 {
-        dirty, solid, falling,  // framework needs these
+        dirty, solid, falling,
         burning, wet, pixel_body,
         _r6, _r7,
     },
 
-    // Second flag block (game-only, if needed)
+    // Second flag block (if needed)
     game_flags: flags8 {
         electrified, frozen, radioactive, pressurized,
         _r4, _r5, _r6, _r7,
@@ -851,42 +826,33 @@ define_pixel! {
 
 Games with fewer flags use one block. Games with many flags add more blocks. Each block is one byte, cleanly addressable in shaders.
 
-### Framework Trait
+### Framework Integration
 
-Framework provides a minimal trait. Game's pixel must implement it:
+The framework is generic over any `T: Copy + Default + 'static`:
 
 ```rust
-// In bevy_pixel_world (framework)
-pub trait PixelBase: Copy + Default + 'static {
-    fn is_void(&self) -> bool;
-    fn material(&self) -> MaterialId;
-    fn set_material(&mut self, v: MaterialId);
-    fn dirty(&self) -> bool;
-    fn set_dirty(&mut self, v: bool);
-    fn solid(&self) -> bool;
-    fn set_solid(&mut self, v: bool);
-    fn falling(&self) -> bool;
-    fn set_falling(&mut self, v: bool);
+// Framework storage is generic
+pub struct Chunk<T: Copy + Default + 'static> {
+    pixels: Surface<T>,
+    // ...
+}
+
+pub struct PixelWorld<T: Copy + Default + 'static> {
+    canvas: Canvas<T>,
+    // ...
 }
 ```
 
-The `define_pixel!` macro auto-implements `PixelBase` when required fields are present. Framework systems are generic:
-
-```rust
-// Framework simulation is generic over any pixel type
-pub fn simulate_tick<P: PixelBase>(world: &mut PixelWorld<P>, tick: u64) {
-    // Framework only touches dirty/solid/falling/material
-    // Game-specific fields (burning, damage) are invisible here
-}
-```
-
-The game crate instantiates with its concrete type:
+The game instantiates with its concrete type:
 
 ```rust
 // In game crate
 fn main() {
     App::new()
-        .add_plugins(PixelWorldPlugin::<MyPixel>::default())
+        .add_plugins(PixelWorldPlugin::<GamePixel>::new(
+            config,
+            |pixel| palette.lookup(pixel.color()),  // color extraction
+        ))
         // ...
 }
 ```
@@ -898,24 +864,12 @@ The macro performs compile-time validation:
 ```rust
 define_pixel! {
     material: u8,
-    dirty: bool,
-    solid: bool,
-    falling: bool,
     damage: u4,
     oops: u9,  // ERROR: u9 not supported, max is u8
 }
 ```
 
-```rust
-define_pixel! {
-    // ERROR: missing required fields for PixelBase
-    // (material, dirty, solid, falling)
-    color: u8,
-    damage: u4,
-}
-```
-
-The trait bound `PixelBase` ensures the simulation can run. Beyond that, the game has full control.
+No "required fields" — the game decides what it needs.
 
 ### Separate SoA Layers
 
@@ -928,11 +882,9 @@ Not all data belongs in the packed pixel. Declare separate layers for:
 // Game crate: packed pixel (AoS, swaps atomically)
 define_pixel! {
     material: u8,
-    dirty: bool,
-    solid: bool,
-    falling: bool,
     color: u8,
-    damage: u4,
+    damage_variant: nibbles { damage, variant },
+    flags: flags8 { dirty, solid, falling, burning, wet, pixel_body },
 }
 
 // Game crate: separate layers (SoA, independent lifetime)
@@ -958,22 +910,23 @@ Games define exactly what they need. Byte-alignment ensures shader compatibility
 
 ### Implementation Notes
 
-**Proc macro crate:** `bevy_pixel_world_macros`
+**Crate:** `pixel_macro` (POC exists with 26 tests)
 
-**Key challenges:**
-1. Compute bit offsets at compile time
-2. Generate correct bit manipulation for cross-byte fields
-3. Enforce `PixelBase` trait requirements
-4. Support `#[derive(Debug)]` with readable output
+**Implemented:**
+- `flags8!` — 8 named boolean flags in 1 byte
+- `nibbles!` — 2 nibbles in 1 byte
+- `define_pixel!` — compose into `#[repr(C)]` struct
 
-**Prototype path:**
-1. Hand-write the generated code for one configuration
-2. Extract patterns into proc macro
-3. Add validation and error messages
+**Remaining work:**
+1. Integrate with framework as generic parameter
+2. Add `define_layer!` for SoA layers
+3. Wire up color extraction callback for rendering
 
 ### Status
 
-**Not implemented.** Current code uses:
+**POC complete.** The `pixel_macro` crate demonstrates the approach. Integration with framework pending.
+
+Current framework code still uses hardcoded:
 ```rust
 pub struct Pixel {
     pub material: MaterialId,
@@ -982,6 +935,8 @@ pub struct Pixel {
     pub flags: PixelFlags,  // bitflags! macro, hardcoded names
 }
 ```
+
+This will move to the game crate as part of the modularity refactor.
 
 ## Related Documentation
 

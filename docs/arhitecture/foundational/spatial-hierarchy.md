@@ -111,11 +111,11 @@ needs evaluation. Tile dirty rects define the spatial bounds for simulation sche
 
 The fundamental unit of the cellular automata simulation.
 
-- **Pixel (always):** Material + Flags (2 bytes) — framework's sole innate type
-- **Bundles:** Game-defined compositions (e.g., Pixel + Color + Damage = 4 bytes)
+- **Game-defined struct:** Games define pixel layout via `define_pixel!` macro
+- **Framework is generic:** Stores `T: Copy + Default + 'static`, knows nothing about internals
+- **Demo game example:** 4 bytes (material + color + damage/variant + flags)
 - Stores state needed for simulation and rendering
-- See [Pixel Format](pixel-format.md) for layer specifications
-- See [Pixel Layers](../modularity/pixel-layers.md) for bundle configurations
+- See [Pixel Layers](../modularity/pixel-layers.md) for design details
 
 ## Coordinate Systems
 
