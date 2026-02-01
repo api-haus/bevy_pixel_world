@@ -9,12 +9,9 @@ The **iterator type** in a simulation's function signature determines the schedu
 | Iterator | Mechanism | Safety | Performance |
 |----------|-----------|--------|-------------|
 | `PhasedIter<L>` | Checkerboard 4-phase | Safe for local ops | High (parallel within phases) |
-| `ParallelIter<L>` | All pixels at once | **Unsafe** | Maximum |
 | (regular loop) | Ordered iteration | Always safe | Low (single-threaded) |
 
 **PhasedIter** is the default for CA physics—it uses checkerboard tile phasing (described below) to guarantee thread safety for operations that read neighbors and write to self.
-
-**ParallelIter** processes all pixels simultaneously with no synchronization. Consumer must handle data races (useful for intentionally noisy effects).
 
 **Sequential** (no special iterator) is for simulations with complex dependencies or global state.
 

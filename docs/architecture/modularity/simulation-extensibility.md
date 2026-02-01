@@ -65,7 +65,6 @@ The iterator type determines the schedule mode:
 | Iterator | Mechanism | Safety | Use Case |
 |----------|-----------|--------|----------|
 | `PhasedIter<L>` | Checkerboard 4-phase | Safe for local ops | Standard CA physics |
-| `ParallelIter<L>` | All pixels at once | **Unsafe** | Intentionally racy effects |
 | (regular loop) | Sequential iteration | Always safe | Global state, complex deps |
 
 ### PhasedIter
@@ -73,10 +72,6 @@ The iterator type determines the schedule mode:
 System runs 4 times per tick. Each run, the iterator yields only tiles of one phase. Barrier between phases ensures spatial isolation.
 
 See [Scheduling](../simulation/scheduling.md) for checkerboard mechanics.
-
-### ParallelIter
-
-All pixels yielded simultaneously across threads. No synchronization. Consumer must handle data races (or embrace them for visual noise effects).
 
 ### Sequential
 
@@ -100,9 +95,6 @@ impl<L: Layer> PhasedIter<'_, L> {
     where
         F: Fn(WorldFragment) + Send + Sync;
 }
-
-/// All pixels at once (unsafe - consumer handles races)
-struct ParallelIter<'w, L: Layer> { ... }
 
 // Sequential: just use layer.iter_all(), no special iterator needed
 ```
@@ -194,24 +186,6 @@ fn falling_sand_sim(
 2. Dirty rect tracking skips dormant tiles (~90% under typical load)
 3. Barrier
 4. Phase B, C, D...
-
-### ParallelIter (unsafe parallel)
-
-```rust
-fn chaos_shuffle_sim(
-    iter: ParallelIter<Pixel>,
-    mut pixels: LayerMut<Pixel>,
-) {
-    iter.for_each(|frag| {
-        // All pixels yielded simultaneously across threads
-        // Races are intentional for this effect
-        let target = random_neighbor(frag.pos());
-        pixels.swap_unchecked(frag.pos(), target);
-    });
-}
-```
-
-No synchronization. Use for intentionally racy effects.
 
 ### Sequential (no special iterator)
 
@@ -307,17 +281,6 @@ PixelWorldPlugin::builder()
         explosion_sim,       // sequential, writes Pixel
     ).chain())
 
-    .build()
-```
-
-### Example: Chaos Mode (unsafe parallel)
-
-```rust
-PixelWorldPlugin::builder()
-    .with_bundle(MinimalGameBundle)  // Game's minimal bundle
-    .with_simulations((
-        chaos_shuffle_sim,  // ParallelIter<Pixel> (intentionally racy)
-    ))
     .build()
 ```
 
