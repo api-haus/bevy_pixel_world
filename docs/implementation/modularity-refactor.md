@@ -39,10 +39,10 @@ The demo game is not an afterthought — it's the reference implementation showi
 - Cannot define custom pixel layouts
 - Cannot customize material system
 
-**POC (`pixel_macro`):**
-- Proof-of-concept for bitpacking (not shipped with framework)
+**Bitpacking:**
 - Games bring their own: `bitflags!`, manual bit ops, etc.
 - Demo game shows one approach
+- No framework-provided macros
 
 ---
 
@@ -216,20 +216,34 @@ Move `Pixel` struct from framework to game.
 
 ```rust
 // game/src/pixel.rs
-use pixel_macro::{define_pixel, flags8, nibbles};
+use bitflags::bitflags;
 
-flags8!(PixelFlags {
-    dirty, solid, falling, burning, wet, pixel_body
-});
+bitflags! {
+    #[derive(Clone, Copy, Default)]
+    pub struct PixelFlags: u8 {
+        const DIRTY      = 0x01;
+        const SOLID      = 0x02;
+        const FALLING    = 0x04;
+        const BURNING    = 0x08;
+        const WET        = 0x10;
+        const PIXEL_BODY = 0x20;
+    }
+}
 
-nibbles!(DamageVariant { damage, variant });
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct Pixel {
+    pub material: u8,
+    pub color: u8,
+    pub damage: u8,
+    pub flags: PixelFlags,
+}
 
-define_pixel!(GamePixel {
-    material: u8,
-    color: u8,
-    damage_variant: DamageVariant,
-    flags: PixelFlags,
-});
+impl PixelData for Pixel {
+    fn is_solid(&self) -> bool { self.flags.contains(PixelFlags::SOLID) }
+    fn is_dirty(&self) -> bool { self.flags.contains(PixelFlags::DIRTY) }
+    fn set_dirty(&mut self, v: bool) { self.flags.set(PixelFlags::DIRTY, v); }
+}
 ```
 
 ### Framework Cleanup

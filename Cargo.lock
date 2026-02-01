@@ -4518,13 +4518,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pixel_macro"
-version = "0.1.0"
-dependencies = [
- "paste",
-]
-
-[[package]]
 name = "pkg-config"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
