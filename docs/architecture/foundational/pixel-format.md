@@ -1,5 +1,9 @@
 # Pixel Format
 
+> **Status: Current Implementation / Demo Reference**
+>
+> This describes the current hardcoded format. With planned radical modularity, games will define their own pixel structures. This format becomes one possible example, not a requirement.
+
 The base layer and common opt-in layers for per-pixel data.
 
 ## Overview
@@ -61,8 +65,10 @@ See [Materials](../simulation/materials.md) for `damage_threshold` and `destruct
 
 ## Flags Layer (Bitmask)
 
+> **Note:** With planned radical modularity, games define their own flags. The framework uses optional traits (`PixelCollision`, `PixelDirty`) rather than mandating specific bits. Games implement these traits however they choose.
+
 ```
-Bit layout (u8):
+Bit layout (u8) - Demo/Current Format:
 ┌───────┬───────┬───────┬───────┬───────┬───────┬───────┬───────┐
 │   7   │   6   │   5   │   4   │   3   │   2   │   1   │   0   │
 ├───────┴───────┼───────┼───────┼───────┼───────┼───────┼───────┤
@@ -70,12 +76,17 @@ Bit layout (u8):
 └───────────────┴───────┴───────┴───────┴───────┴───────┴───────┘
 ```
 
-### Simulation Flags
+### Framework-Relevant Flags (Used by Optional Traits)
+
+| Flag      | Bit | Trait | Description |
+|-----------|-----|-------|-------------|
+| `dirty`   | 0   | `PixelDirty` | Pixel needs simulation this tick. Used for scheduling optimization. |
+| `solid`   | 1   | `PixelCollision` | Pixel is solid for collision purposes. Used for mesh generation. |
+
+### Game-Defined Flags (Demo Format)
 
 | Flag      | Bit | Description                                                                                                                                                                                                                                                                        |
 |-----------|-----|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `dirty`   | 0   | Pixel is active and needs simulation this tick. Stable pixels have `dirty=0` and are skipped until a neighbor change wakes them. Major performance optimization - most pixels are stable at any given time. **Note:** This flag tracks *simulation activity* only, not rendering.  |
-| `solid`   | 1   | Caches whether pixel's material is not liquid or gas (i.e., `state: solid` or `state: powder`). Set when pixel is placed, used by collision system to avoid material registry lookup. Collision mesh includes pixels where `solid=1 AND falling=0`. See [Collision](../physics/collision.md). |
 | `falling` | 2   | Pixel has downward momentum. Cheaper than storing a velocity vector. Cleared when pixel comes to rest, set when displaced. Used by collision system: only stable pixels (`falling=0`) are included in collision mesh.                                                              |
 
 ### State Modifier Flags
