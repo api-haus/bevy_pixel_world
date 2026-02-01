@@ -407,7 +407,7 @@ Chunk serialization with LZ4 compression and streaming integration.
 - `pixel_world/src/persistence/format.rs` - File format (header, page table, data region)
 - `pixel_world/src/persistence/compression.rs` - LZ4 and delta compression
 - `pixel_world/tests/persistence_e2e.rs` - End-to-end tests
-- `docs/arhitecture/chunk-persistence.md` - Full specification
+- `docs/architecture/chunk-persistence.md` - Full specification
 
 ### 5.0.1 Three-State Dirty Tracking
 

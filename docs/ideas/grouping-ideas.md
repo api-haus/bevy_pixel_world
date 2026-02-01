@@ -176,7 +176,7 @@ When accumulated damage at position exceeds threshold:
 
 ## Layer Hierarchy
 
-> **Note:** This shows the old model with framework-provided Pixel. With radical modularity, games define the entire pixel struct. See [pixel-layers.md](../arhitecture/modularity/pixel-layers.md).
+> **Note:** This shows the old model with framework-provided Pixel. With radical modularity, games define the entire pixel struct. See [pixel-layers.md](../architecture/modularity/pixel-layers.md).
 
 ```
 GamePixel (game-defined, 4 bytes)

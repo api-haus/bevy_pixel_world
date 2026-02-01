@@ -15,7 +15,7 @@ If no argument provided, prompt for a crate or module path.
 
 ## Process
 
-1. **Read architectural docs** - Review `docs/arhitecture/` for design concepts
+1. **Read architectural docs** - Review `docs/architecture/` for design concepts
 2. **Read implementation plans** - Check `docs/implementation/` for context
 3. **Run static analysis** - Execute `debtmap analyze <target> --threshold-complexity 10` for complexity metrics
 4. **Run clippy** - Execute `cargo clippy -p <crate> -- -W clippy::cognitive_complexity` for lint warnings

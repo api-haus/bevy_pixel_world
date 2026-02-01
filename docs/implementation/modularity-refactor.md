@@ -3,7 +3,7 @@
 Refactor `bevy_pixel_world` from monolithic pixel simulation to generic spatial infrastructure.
 
 See [layer-storage.md](layer-storage.md) for storage details.
-See [pixel-layers architecture](../arhitecture/modularity/pixel-layers.md) for design rationale.
+See [pixel-layers architecture](../architecture/modularity/pixel-layers.md) for design rationale.
 
 ---
 
@@ -530,6 +530,6 @@ graph LR
 ## Related Documentation
 
 - [Layer Storage Architecture](layer-storage.md) - Storage design details
-- [Pixel Layers](../arhitecture/modularity/pixel-layers.md) - Layer system overview
-- [Simulation Extensibility](../arhitecture/modularity/simulation-extensibility.md) - Simulation API
+- [Pixel Layers](../architecture/modularity/pixel-layers.md) - Layer system overview
+- [Simulation Extensibility](../architecture/modularity/simulation-extensibility.md) - Simulation API
 - [Implementation Methodology](methodology.md) - Testing principles

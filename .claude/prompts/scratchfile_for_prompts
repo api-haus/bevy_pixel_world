@@ -2,7 +2,7 @@
 
 /refactor find unused code in bevy pixel world including dead and semi-dead - something that looks like a remnant of a long manual debugging sessions, - useless scaffold, etc.
 
-/refactor please look at @docs/arhitecture/systems-flow.md and find a high-level opportunity for a streamlined refactoring of the codebase for bevy pixel world
+/refactor please look at @docs/architecture/systems-flow.md and find a high-level opportunity for a streamlined refactoring of the codebase for bevy pixel world
 
 let's make material toml configuration system for the bevy pixel world, we'll separate the configuration serialization so that end consumer games can do pixelWorld(materialsFrom('file.yaml')) - in our painting example we'll use current default state of materials that is currently hardcoded and also store it in a file
 

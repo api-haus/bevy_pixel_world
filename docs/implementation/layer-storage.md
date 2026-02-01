@@ -309,4 +309,4 @@ Game chooses pixel size based on needs. Framework just stores `T`.
 ## Related Documentation
 
 - [Modularity Refactor](modularity-refactor.md) - Implementation phases
-- [Pixel Layers](../arhitecture/modularity/pixel-layers.md) - Layer system design
+- [Pixel Layers](../architecture/modularity/pixel-layers.md) - Layer system design
