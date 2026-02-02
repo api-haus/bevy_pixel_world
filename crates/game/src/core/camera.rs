@@ -1,7 +1,7 @@
 use bevy::{camera::ScalingMode, prelude::*};
-use bevy_pixel_world::{PixelCamera, StreamingCamera};
 
 use crate::config::ConfigLoaded;
+use crate::pixel_world::{PixelCamera, StreamingCamera};
 use crate::player::components::{Player, VisualPosition};
 
 /// Marker component for the game camera

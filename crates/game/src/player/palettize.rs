@@ -3,9 +3,9 @@
 use std::collections::HashSet;
 
 use bevy::prelude::*;
-use bevy_pixel_world::{GlobalPalette, palettize_image_in_place};
 
 use super::components::PlayerVisual;
+use crate::pixel_world::{GlobalPalette, palettize_image_in_place};
 
 /// Tracks which image handles have been palettized to avoid re-processing.
 #[derive(Default)]

@@ -1,6 +1,7 @@
 //! E2E test for CRT config live reload.
 //!
-//! Verifies that changing CrtConfig resource updates DeconvergenceMaterial params.
+//! Verifies that changing CrtConfig resource updates DeconvergenceMaterial
+//! params.
 //!
 //! Run: cargo test -p game --test crt_config_reload_e2e
 
@@ -209,8 +210,9 @@ fn create_mock_deconvergence_material() -> DeconvergenceMaterial {
   }
 }
 
-/// Test version of update_crt_params that uses Assets::insert() to trigger changes.
-/// This is the same logic as in bevy_crt::plugin but extracted for testing.
+/// Test version of update_crt_params that uses Assets::insert() to trigger
+/// changes. This is the same logic as in bevy_crt::plugin but extracted for
+/// testing.
 fn update_crt_params_test_system(
   crt_config: Res<CrtConfig>,
   mut decon_materials: ResMut<Assets<DeconvergenceMaterial>>,

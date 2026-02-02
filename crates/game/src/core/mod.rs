@@ -3,8 +3,9 @@ mod physics;
 
 use bevy::prelude::*;
 use bevy_crt::Crt2dPlugin;
-use bevy_pixel_world::{PixelCameraPlugin, PixelCameraSet};
 pub use physics::GravityConfig;
+
+use crate::pixel_world::{PixelCameraPlugin, PixelCameraSet};
 
 pub struct CorePlugin;
 

@@ -5,6 +5,7 @@ mod core;
 #[cfg(feature = "editor")]
 mod editor;
 mod input;
+pub mod pixel_world;
 mod platform;
 mod player;
 mod time_of_day;

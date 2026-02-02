@@ -4,11 +4,11 @@ use bevy::{
 };
 use bevy_common_assets::toml::TomlAssetPlugin;
 use bevy_crt::CrtConfig;
-use bevy_pixel_world::pixel_camera::PixelSceneCamera;
 
 use super::{ConfigLoaded, GameConfig};
-use crate::core::camera::GameCamera;
 use crate::core::GravityConfig;
+use crate::core::camera::GameCamera;
+use crate::pixel_world::pixel_camera::PixelSceneCamera;
 use crate::platform::{EmbeddedAssets, PlatformConfig};
 
 pub struct ConfigPlugin;

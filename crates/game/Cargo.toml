@@ -2,8 +2,7 @@
 name = "game"
 version = "0.1.0"
 edition = "2024"
-
-[workspace]
+build = "build.rs"
 
 [[bin]]
 name = "sim2d"
@@ -20,44 +19,122 @@ toml = "0.8"
 bevy_common_assets = { version = "0.14", features = ["toml"] }
 log = { version = "*", features = ["max_level_debug", "release_max_level_warn"] }
 rayon = "1.11.0"
-bevy_pixel_world = { path = "../bevy_pixel_world", features = ["rapier2d"] }
 bevy_crt = { path = "../../vendor/bevy_crt" }
 bevy_console = "0.16"
 clap = { version = "4.5", features = ["derive"] }
 bevy-yoleck = { version = "0.29", optional = true, features = ["vpeol_2d"] }
 
+# pixel_world dependencies (merged from bevy_pixel_world)
+ab_glyph = "0.2"
+spade = "2"
+lz4_flex = "0.11"
+web-time = "1.1"
+palette = { version = "0.7", default-features = false, features = ["std"] }
+paste = "1.0"
+bitflags = "2"
+tracing = { version = "0.1", optional = true }
+tracing-tracy = { version = "0.11", optional = true, default-features = false, features = ["flush-on-exit"] }
+tracing-subscriber = { version = "0.3", optional = true, default-features = false, features = ["registry"] }
+
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 dirs = "6"
 noise_ipc = { path = "../noise_ipc" }
+fastnoise2 = "0.4"
+async-channel = "2.3"
 
 [target.'cfg(target_family = "wasm")'.dependencies]
 console_error_panic_hook = "0.1"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = [
+    "DedicatedWorkerGlobalScope",
+    "ErrorEvent",
+    "FileSystemDirectoryHandle",
+    "FileSystemFileHandle",
+    "FileSystemGetDirectoryOptions",
+    "FileSystemGetFileOptions",
+    "FileSystemReadWriteOptions",
+    "FileSystemRemoveOptions",
+    "FileSystemSyncAccessHandle",
+    "MessageEvent",
+    "Navigator",
+    "StorageManager",
+    "Window",
+    "Worker",
+    "WorkerOptions",
+    "WorkerType",
+] }
+
+[dev-dependencies]
+tempfile = "3"
+
+# Tests from pixel_world
+[[test]]
+name = "body_stability_e2e"
+path = "tests/pixel_world/body_stability_e2e.rs"
+
+[[test]]
+name = "persistence_bevy_e2e"
+path = "tests/pixel_world/persistence_bevy_e2e.rs"
+
+[[test]]
+name = "body_reload_stress"
+path = "tests/pixel_world/body_reload_stress.rs"
+
+[[test]]
+name = "named_saves_e2e"
+path = "tests/pixel_world/named_saves_e2e.rs"
+
+[[test]]
+name = "spawn_pixel_body_e2e"
+path = "tests/pixel_world/spawn_pixel_body_e2e.rs"
+
+[[test]]
+name = "body_persistence_e2e"
+path = "tests/pixel_world/body_persistence_e2e.rs"
+
+[[test]]
+name = "body_rapier2d_e2e"
+path = "tests/pixel_world/body_rapier2d_e2e.rs"
+
+[[test]]
+name = "gremlins_stress"
+path = "tests/pixel_world/gremlins_stress.rs"
+
+[[test]]
+name = "submergence_e2e"
+path = "tests/pixel_world/submergence_e2e.rs"
+
+[[test]]
+name = "material_config_roundtrip"
+path = "tests/pixel_world/material_config_roundtrip.rs"
+
+[[test]]
+name = "persistence_e2e"
+path = "tests/pixel_world/persistence_e2e.rs"
+
+[[test]]
+name = "triangulate"
+path = "tests/pixel_world/triangulate.rs"
+
+[[test]]
+name = "editor_mode_persistence_e2e"
+path = "tests/pixel_world/editor_mode_persistence_e2e.rs"
+required-features = ["editor"]
+
+# Original game tests
+[[test]]
+name = "camera_mode_transition_e2e"
+path = "tests/camera_mode_transition_e2e.rs"
+required-features = ["editor"]
+
+[[test]]
+name = "crt_config_reload_e2e"
+path = "tests/crt_config_reload_e2e.rs"
 
 [features]
 default = []
 dev = ["bevy/dynamic_linking", "bevy/file_watcher", "editor"]
 editor = ["dep:bevy-yoleck"]
-
-# Enable a small amount of optimization in the dev profile.
-[profile.dev]
-opt-level = 1
-incremental = true
-lto = "off"
-
-# Enable a large amount of optimization in the dev profile for dependencies.
-[profile.dev.package."*"]
-opt-level = 3
-
-# Optimize bevy_pixel_world
-[profile.dev.package.bevy_pixel_world]
-opt-level = 3
-
-# Enable more optimization in the release profile at the cost of compile time.
-[profile.release]
-codegen-units = 1
-lto = "thin"
-
-# Profiling profile for cargo-samply (optimized with debug symbols)
-[profile.samply]
-inherits = "release"
-debug = true
+tracy = ["dep:tracing", "dep:tracing-tracy", "dep:tracing-subscriber"]

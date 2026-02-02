@@ -15,8 +15,9 @@ struct TestGameCamera;
 #[derive(Component)]
 struct TestSecondaryCamera;
 
-/// Marker for the pixel scene camera (simulates PixelSceneCamera from bevy_pixel_world)
-/// This is added to the GameCamera entity when pixel camera is initialized.
+/// Marker for the pixel scene camera (simulates PixelSceneCamera from
+/// bevy_pixel_world) This is added to the GameCamera entity when pixel camera
+/// is initialized.
 #[derive(Component)]
 struct TestPixelSceneCamera;
 
@@ -129,10 +130,16 @@ fn describe_scaling_mode(projection: &Projection) -> String {
   match projection {
     Projection::Orthographic(ortho) => match &ortho.scaling_mode {
       ScalingMode::Fixed { width, height } => format!("Fixed({}, {})", width, height),
-      ScalingMode::AutoMin { min_width, min_height } => {
+      ScalingMode::AutoMin {
+        min_width,
+        min_height,
+      } => {
         format!("AutoMin({}, {})", min_width, min_height)
       }
-      ScalingMode::AutoMax { max_width, max_height } => {
+      ScalingMode::AutoMax {
+        max_width,
+        max_height,
+      } => {
         format!("AutoMax({}, {})", max_width, max_height)
       }
       other => format!("{:?}", other),
@@ -358,8 +365,9 @@ fn test_mode_transition_config_stability() {
   app.update();
 
   // Simulate "exiting play mode" - this is where the bug manifested
-  // In real game, config.is_changed() might trigger due to resource system behavior
-  // Simulate this by re-inserting the config (which marks it as changed)
+  // In real game, config.is_changed() might trigger due to resource system
+  // behavior Simulate this by re-inserting the config (which marks it as
+  // changed)
   let current_config = app.world().resource::<TestConfig>().clone();
   app.world_mut().insert_resource(current_config);
   app.update();
@@ -404,7 +412,8 @@ fn test_pixel_scene_camera_excluded_from_config_updates() {
   app.add_systems(Update, update_camera_on_config_change_correct);
 
   // Spawn game camera - this simulates the actual game setup
-  // Initially has GameCamera + AutoMin, then pixel camera system adds PixelSceneCamera + Fixed
+  // Initially has GameCamera + AutoMin, then pixel camera system adds
+  // PixelSceneCamera + Fixed
   let game_camera = app
     .world_mut()
     .spawn((
@@ -458,10 +467,12 @@ fn test_partial_fix_still_breaks_pixel_camera() {
   // Insert initial config
   app.insert_resource(TestConfig::default());
 
-  // Add the PARTIAL FIX system (targets GameCamera, doesn't exclude PixelSceneCamera)
+  // Add the PARTIAL FIX system (targets GameCamera, doesn't exclude
+  // PixelSceneCamera)
   app.add_systems(Update, update_camera_on_config_change_partial_fix);
 
-  // Spawn camera with both GameCamera AND PixelSceneCamera (like real pixel camera setup)
+  // Spawn camera with both GameCamera AND PixelSceneCamera (like real pixel
+  // camera setup)
   let game_camera = app
     .world_mut()
     .spawn((
@@ -481,7 +492,8 @@ fn test_partial_fix_still_breaks_pixel_camera() {
   // Initial update - config is changed
   app.update();
 
-  // BUG: The partial fix still matches this camera (has GameCamera) and changes it to AutoMin
+  // BUG: The partial fix still matches this camera (has GameCamera) and changes
+  // it to AutoMin
   let proj = app.world().get::<Projection>(game_camera).unwrap();
   assert!(
     is_auto_min_scaling(proj),

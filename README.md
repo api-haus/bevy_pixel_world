@@ -1,5 +1,5 @@
 <p align="center">
-  <img src=".github/images/warn.png" alt="Warning: Experimental Project" width="400"/>
+  <img src=".github/images/warn.png" alt="Warning: Experimental Project" width="100%"/>
 </p>
 
 # sim2d

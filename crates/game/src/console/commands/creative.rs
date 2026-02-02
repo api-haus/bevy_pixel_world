@@ -2,10 +2,10 @@
 
 use bevy::prelude::*;
 use bevy_console::{ConsoleCommand, reply};
-use bevy_pixel_world::BrushUiVisible;
 use clap::Parser;
 
 use crate::console::{CreativeModePosition, GameMode};
+use crate::pixel_world::BrushUiVisible;
 use crate::player::components::Player;
 
 #[derive(Parser, ConsoleCommand)]

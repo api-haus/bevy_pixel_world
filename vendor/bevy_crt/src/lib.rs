@@ -14,14 +14,14 @@
 //! - Screen curvature
 //! - Deconvergence (RGB channel separation)
 //!
-//! # Usage with PixelCamera (bevy_pixel_world)
+//! # Usage with PixelCamera
 //!
-//! When used with bevy_pixel_world's PixelCamera, the CRT effect is
-//! automatically inserted after the pixel-perfect blit pass:
+//! When used with pixel_world's PixelCamera, the CRT effect is
+//! automatically detected by camera name and integrated:
 //!
 //! ```ignore
 //! use bevy::prelude::*;
-//! use bevy_pixel_world::PixelWorldPlugin;
+//! use game::pixel_world::PixelWorldPlugin;
 //! use bevy_crt::Crt2dPlugin;
 //!
 //! fn main() {
@@ -32,6 +32,9 @@
 //!         .run();
 //! }
 //! ```
+//!
+//! To provide the low-res game resolution to CRT (for proper scanlines),
+//! set `CrtConfig::source_size` to your pixel camera's target resolution.
 //!
 //! # Standalone Usage
 //!
@@ -61,7 +64,6 @@
 //!
 //! GPL-3.0-or-later (inherited from original crt-guest-advanced-hd shaders)
 
-pub mod integration;
 mod materials;
 pub mod plugin;
 

@@ -12,9 +12,6 @@ use bevy::{
   },
   sprite_render::Material2dPlugin,
 };
-use bevy_egui::{EguiContext, PrimaryEguiContext};
-use bevy_pixel_world::pixel_camera::{PixelBlitCamera, PixelFullresCamera};
-use bevy_pixel_world::{PixelCameraConfig, PixelCameraState};
 
 use crate::materials::*;
 
@@ -77,7 +74,6 @@ impl Plugin for Crt2dPlugin {
     // Initialize resources
     app.init_resource::<CrtState>();
     app.init_resource::<CrtConfig>();
-    app.init_resource::<PixelCameraIntegrated>();
 
     // Setup system
     app.add_systems(Update, setup_crt_pipeline.run_if(not(crt_initialized)));
@@ -90,23 +86,7 @@ impl Plugin for Crt2dPlugin {
 
     // Toggle system - runs in Update (before rendering extracts camera data)
     app.add_systems(Update, toggle_crt_pipeline.run_if(crt_initialized));
-
-    // One-shot system to integrate with pixel camera (runs once after CRT init)
-    app.add_systems(
-      PostUpdate,
-      configure_pixel_camera_integration
-        .run_if(crt_initialized)
-        .run_if(not(pixel_camera_integrated)),
-    );
   }
-}
-
-/// Track whether pixel camera integration has run.
-#[derive(Resource, Default)]
-struct PixelCameraIntegrated(bool);
-
-fn pixel_camera_integrated(integrated: Option<Res<PixelCameraIntegrated>>) -> bool {
-  integrated.is_some_and(|i| i.0)
 }
 
 /// Run condition: CRT pipeline is initialized.
@@ -144,6 +124,9 @@ pub struct CrtConfig {
   pub humbar_speed: f32,
   /// Humbar intensity (0.0 = disabled, 0.1 = subtle, negative = reverse).
   pub humbar_intensity: f32,
+  /// Source size override for scanline calculation. If None, uses window size.
+  /// Set this to your low-res game resolution when using PixelCamera.
+  pub source_size: Option<UVec2>,
 }
 
 impl Default for CrtConfig {
@@ -162,6 +145,7 @@ impl Default for CrtConfig {
       corner_size: 0.01,
       humbar_speed: 50.0,
       humbar_intensity: 0.1,
+      source_size: None,
     }
   }
 }
@@ -237,7 +221,7 @@ struct CrtMaterials<'w> {
 
 /// Sets up the CRT post-processing pipeline.
 ///
-/// Automatically detects PixelBlitCamera from bevy_pixel_world (by name)
+/// Automatically detects PixelBlitCamera from pixel_world (by name)
 /// and integrates with it, or falls back to looking for CrtSourceCamera.
 #[allow(clippy::too_many_arguments)]
 fn setup_crt_pipeline(
@@ -250,14 +234,13 @@ fn setup_crt_pipeline(
   source_camera_query: Query<(Entity, &Camera), With<CrtSourceCamera>>,
   pixel_blit_camera_query: Query<(Entity, &Camera, &Name)>,
   windows: Query<&Window>,
-  pixel_camera_state: Option<Res<PixelCameraState>>,
 ) {
   // Skip if already initialized
   if state.initialized {
     return;
   }
 
-  // First, try to find PixelBlitCamera by name (from bevy_pixel_world)
+  // First, try to find PixelBlitCamera by name (from pixel_world)
   let source_camera = pixel_blit_camera_query
     .iter()
     .find(|(_, _, name)| name.as_str() == "PixelBlitCamera")
@@ -345,10 +328,10 @@ fn setup_crt_pipeline(
   // Pad to Vec4 for WebGL 16-byte alignment
   let texture_size = Vec4::new(width as f32, height as f32, 0.0, 0.0);
 
-  // Get source game resolution (low-res pixel dimensions)
-  let source_size = pixel_camera_state
-    .as_ref()
-    .map(|s| Vec4::new(s.target_size.x as f32, s.target_size.y as f32, 0.0, 0.0))
+  // Get source game resolution from config, or default to window size
+  let source_size = crt_config
+    .source_size
+    .map(|s| Vec4::new(s.x as f32, s.y as f32, 0.0, 0.0))
     .unwrap_or(texture_size);
 
   // Pass 1: Afterglow
@@ -649,22 +632,8 @@ fn update_crt_params(
 fn toggle_crt_pipeline(
   crt_config: Res<CrtConfig>,
   mut crt_state: ResMut<CrtState>,
-  mut crt_cameras: Query<
-    &mut Camera,
-    (
-      With<CrtPipelineEntity>,
-      Without<CrtBypassCamera>,
-      Without<PixelBlitCamera>,
-    ),
-  >,
-  mut bypass_camera: Query<
-    &mut Camera,
-    (
-      With<CrtBypassCamera>,
-      Without<CrtPipelineEntity>,
-      Without<PixelBlitCamera>,
-    ),
-  >,
+  mut crt_cameras: Query<&mut Camera, (With<CrtPipelineEntity>, Without<CrtBypassCamera>)>,
+  mut bypass_camera: Query<&mut Camera, (With<CrtBypassCamera>, Without<CrtPipelineEntity>)>,
 ) {
   if !crt_state.initialized || crt_state.enabled == crt_config.enabled {
     return;
@@ -690,44 +659,4 @@ fn toggle_crt_pipeline(
     }
     info!("CRT: Pipeline disabled (bypass mode)");
   }
-}
-
-/// System: Integrates CRT with pixel camera for proper egui rendering.
-///
-/// - Disables pixel camera's egui handling to prevent conflicts
-/// - Updates PixelFullresCamera order to render after CRT final pass
-/// - Moves egui context from PixelBlitCamera to PixelFullresCamera
-///
-/// This ensures egui renders on top of CRT effects at full resolution.
-fn configure_pixel_camera_integration(
-  mut commands: Commands,
-  mut integrated: ResMut<PixelCameraIntegrated>,
-  mut pixel_config: ResMut<PixelCameraConfig>,
-  mut fullres_camera: Query<&mut Camera, (With<PixelFullresCamera>, Without<PixelBlitCamera>)>,
-  blit_camera: Query<Entity, (With<PixelBlitCamera>, With<EguiContext>)>,
-  fullres_entity: Query<Entity, (With<PixelFullresCamera>, Without<EguiContext>)>,
-) {
-  // Disable pixel camera's egui handling - CRT will manage it
-  pixel_config.egui_full_resolution = false;
-
-  // Update PixelFullresCamera order to be after CRT deconvergence pass (order 17)
-  for mut camera in fullres_camera.iter_mut() {
-    camera.order = 20; // After CRT final pass (base_order 10 + 7 = 17)
-  }
-
-  // Move egui from PixelBlitCamera to PixelFullresCamera
-  for entity in blit_camera.iter() {
-    commands
-      .entity(entity)
-      .remove::<EguiContext>()
-      .remove::<PrimaryEguiContext>();
-  }
-  for entity in fullres_entity.iter() {
-    commands
-      .entity(entity)
-      .insert((EguiContext::default(), PrimaryEguiContext));
-  }
-
-  integrated.0 = true;
-  info!("CRT: Integrated with pixel camera - egui on PixelFullresCamera (order 20)");
 }
