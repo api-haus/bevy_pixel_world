@@ -14,7 +14,7 @@ Task tracking for sim2d development. Each file focuses on a specific area.
 
 | File | Status | Priority |
 |------|--------|----------|
-| [modularity.md](modularity.md) | Not started (M0-M6 phases) | Medium |
+| [crate-merge.md](crate-merge.md) | Not started | **High** |
 | [refactoring.md](refactoring.md) | Summary of refactoring tasks | Low |
 | [small-tasks.md](small-tasks.md) | Misc fixes and quality | Low |
 
@@ -23,7 +23,6 @@ Task tracking for sim2d development. Each file focuses on a specific area.
 | File | Risk | Description |
 |------|------|-------------|
 | [clippy-lint-fixes.md](clippy-lint-fixes.md) | None | Mechanical Clippy warning fixes |
-| [module-visibility-cleanup.md](module-visibility-cleanup.md) | Medium | Clean up public API surface |
 | [bomb-complexity-reduction.md](bomb-complexity-reduction.md) | Low | Decompose `compute_bomb_shell()` |
 | [heat-complexity-reduction.md](heat-complexity-reduction.md) | Low | Reduce heat simulation complexity |
 | [blast-complexity-reduction.md](blast-complexity-reduction.md) | Low | Decompose `blast()` function |
@@ -48,9 +47,9 @@ Task tracking for sim2d development. Each file focuses on a specific area.
 ## Quick Reference
 
 **Next actionable tasks:**
-1. Phase 5.4: Player dig/place tools
-2. Phase 5.5: Free-cam toggle
-3. Copy-on-write for named saves (world/control.rs:191)
+1. Merge bevy_pixel_world into game crate
+2. Phase 5.4: Player dig/place tools
+3. Phase 5.5: Free-cam toggle
 
 **Known code TODOs:**
 - `simulation/mod.rs:54` - Dirty rects stability with jitter
