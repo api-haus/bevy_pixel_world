@@ -33,6 +33,13 @@ app.add_systems(Update, (wasm_only_system, always_runs).chain());
 app.add_systems(Update, always_runs);
 ```
 
+### Cargo Features
+This is a game, not a library. Don't add Cargo features. Valid exceptions:
+- Platform splits (`wasm32` vs native)
+- Truly optional heavy dependencies with a concrete use case
+
+Core functionality (rendering, camera, input) compiles unconditionally.
+
 ### API Surface
 Minimal public exposure. Only what callers actually need.
 
