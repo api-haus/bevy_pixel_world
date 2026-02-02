@@ -59,6 +59,7 @@ impl Plugin for Crt2dPlugin {
     bevy::asset::embedded_asset!(app, "shaders/bloom_vertical.wgsl");
     bevy::asset::embedded_asset!(app, "shaders/pass2.wgsl");
     bevy::asset::embedded_asset!(app, "shaders/deconvergence.wgsl");
+    bevy::asset::embedded_asset!(app, "shaders/bypass.wgsl");
 
     // Register materials
     app.add_plugins((
@@ -70,6 +71,7 @@ impl Plugin for Crt2dPlugin {
       Material2dPlugin::<BloomVertical>::default(),
       Material2dPlugin::<PostMaterial2>::default(),
       Material2dPlugin::<DeconvergenceMaterial>::default(),
+      Material2dPlugin::<BypassMaterial>::default(),
     ));
 
     // Initialize resources
@@ -85,6 +87,9 @@ impl Plugin for Crt2dPlugin {
       PostUpdate,
       (update_frame_count, update_crt_params).run_if(crt_initialized),
     );
+
+    // Toggle system - runs in Update (before rendering extracts camera data)
+    app.add_systems(Update, toggle_crt_pipeline.run_if(crt_initialized));
 
     // One-shot system to integrate with pixel camera (runs once after CRT init)
     app.add_systems(
@@ -185,6 +190,8 @@ pub struct CrtState {
   pub source_target: Handle<Image>,
   /// Intermediate render targets.
   pub render_targets: CrtRenderTargets,
+  /// Whether CRT pipeline is currently enabled.
+  pub enabled: bool,
 }
 
 /// Handles to all intermediate render targets.
@@ -204,6 +211,10 @@ pub struct CrtRenderTargets {
 #[derive(Component)]
 pub struct CrtPipelineEntity;
 
+/// Marker for the bypass camera (renders directly to window when CRT disabled).
+#[derive(Component)]
+pub struct CrtBypassCamera;
+
 /// Marker for the source camera that should be CRT-processed.
 ///
 /// Add this to your game camera to enable CRT post-processing.
@@ -221,6 +232,7 @@ struct CrtMaterials<'w> {
   bloom_v: ResMut<'w, Assets<BloomVertical>>,
   post2: ResMut<'w, Assets<PostMaterial2>>,
   decon: ResMut<'w, Assets<DeconvergenceMaterial>>,
+  bypass: ResMut<'w, Assets<BypassMaterial>>,
 }
 
 /// Sets up the CRT post-processing pipeline.
@@ -317,6 +329,8 @@ fn setup_crt_pipeline(
   // For PixelBlitCamera: preserve its order but redirect output
   // For CrtSourceCamera: set order to -10 to render first
   let source_order = if is_pixel_camera { camera.order } else { -10 };
+  state.enabled = true;
+
   commands.entity(camera_entity).insert(Camera {
     target: RenderTarget::Image(source_target.clone().into()),
     order: source_order,
@@ -460,8 +474,52 @@ fn setup_crt_pipeline(
     base_order + 7,
   );
 
+  // Bypass camera: renders directly to window when CRT is disabled
+  // Uses same order as deconvergence but is initially disabled
+  let bypass_mat = mats.bypass.add(BypassMaterial {
+    source_image: source_target.clone(),
+  });
+  let bypass_layer = CRT_PASS_LAYER_BASE + 8;
+  let bypass_render_layer = RenderLayers::layer(bypass_layer);
+
+  // Spawn bypass quad
+  commands.spawn((
+    Name::new("CrtBypassQuad"),
+    Mesh2d(quad.clone()),
+    MeshMaterial2d(bypass_mat),
+    Transform::from_xyz(0.0, 0.0, 0.0),
+    Visibility::default(),
+    bypass_render_layer.clone(),
+  ));
+
+  // Spawn bypass camera (initially disabled)
+  commands.spawn((
+    Name::new("CrtBypassCamera"),
+    CrtBypassCamera,
+    Camera2d,
+    Camera {
+      order: base_order + 7, // Same order as deconvergence
+      target: RenderTarget::Window(bevy::window::WindowRef::Primary),
+      clear_color: ClearColorConfig::None,
+      is_active: false, // Disabled by default
+      ..default()
+    },
+    Projection::Orthographic(OrthographicProjection {
+      near: -1.0,
+      far: 1.0,
+      scale: 1.0,
+      viewport_origin: Vec2::new(0.5, 0.5),
+      scaling_mode: bevy::camera::ScalingMode::Fixed {
+        width: 2.0,
+        height: 2.0,
+      },
+      area: Rect::default(),
+    }),
+    bypass_render_layer,
+  ));
+
   state.initialized = true;
-  info!("CRT: Pipeline initialized with 8 passes");
+  info!("CRT: Pipeline initialized with 8 passes + bypass");
 }
 
 /// Spawns a CRT pass (quad + camera).
@@ -535,12 +593,17 @@ fn create_render_target(size: Extent3d, images: &mut ResMut<Assets<Image>>) -> H
 }
 
 /// Updates frame count in materials that need it (for interlacing, noise,
-/// etc.).
+/// etc.). Skips when CRT is disabled to avoid unnecessary GPU uploads.
 fn update_frame_count(
+  crt_config: Res<CrtConfig>,
   time: Res<Time>,
   mut linearize_materials: ResMut<Assets<LinearizeMaterial>>,
   mut decon_materials: ResMut<Assets<DeconvergenceMaterial>>,
 ) {
+  if !crt_config.enabled {
+    return;
+  }
+
   let frame = (time.elapsed_secs() * 60.0) as u32; // Approximate frame count
   let frame_uvec4 = UVec4::new(frame, 0, 0, 0);
 
@@ -571,6 +634,61 @@ fn update_crt_params(
     for (_, material) in decon_materials.iter_mut() {
       material.params = params;
     }
+  }
+}
+
+/// Toggles CRT pipeline on/off based on CrtConfig.enabled.
+///
+/// When disabled:
+/// - Deactivates all CRT pass cameras
+/// - Activates the bypass camera (renders source directly to window)
+///
+/// When enabled:
+/// - Activates all CRT pass cameras
+/// - Deactivates the bypass camera
+fn toggle_crt_pipeline(
+  crt_config: Res<CrtConfig>,
+  mut crt_state: ResMut<CrtState>,
+  mut crt_cameras: Query<
+    &mut Camera,
+    (
+      With<CrtPipelineEntity>,
+      Without<CrtBypassCamera>,
+      Without<PixelBlitCamera>,
+    ),
+  >,
+  mut bypass_camera: Query<
+    &mut Camera,
+    (
+      With<CrtBypassCamera>,
+      Without<CrtPipelineEntity>,
+      Without<PixelBlitCamera>,
+    ),
+  >,
+) {
+  if !crt_state.initialized || crt_state.enabled == crt_config.enabled {
+    return;
+  }
+  crt_state.enabled = crt_config.enabled;
+
+  if crt_config.enabled {
+    // Re-enable: activate CRT cameras, deactivate bypass
+    for mut cam in &mut crt_cameras {
+      cam.is_active = true;
+    }
+    if let Ok(mut cam) = bypass_camera.single_mut() {
+      cam.is_active = false;
+    }
+    info!("CRT: Pipeline enabled");
+  } else {
+    // Disable: deactivate CRT cameras, activate bypass
+    for mut cam in &mut crt_cameras {
+      cam.is_active = false;
+    }
+    if let Ok(mut cam) = bypass_camera.single_mut() {
+      cam.is_active = true;
+    }
+    info!("CRT: Pipeline disabled (bypass mode)");
   }
 }
 

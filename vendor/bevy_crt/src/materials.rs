@@ -251,3 +251,18 @@ impl Material2d for DeconvergenceMaterial {
     "embedded://bevy_crt/shaders/deconvergence.wgsl".into()
   }
 }
+
+/// Bypass material - simple pass-through when CRT is disabled.
+#[derive(Asset, TypePath, AsBindGroup, Clone)]
+pub struct BypassMaterial {
+  /// Source image to pass through.
+  #[texture(0)]
+  #[sampler(1)]
+  pub source_image: Handle<Image>,
+}
+
+impl Material2d for BypassMaterial {
+  fn fragment_shader() -> ShaderRef {
+    "embedded://bevy_crt/shaders/bypass.wgsl".into()
+  }
+}

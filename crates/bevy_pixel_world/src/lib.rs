@@ -55,8 +55,8 @@ pub use debug_controller::{BrushState, PixelDebugControllerPlugin, UiPointerStat
 pub use debug_controller_ui::{BrushUiPlugin, BrushUiVisible, brush_controls_ui};
 pub use material::{Material, Materials, MaterialsConfig, PhysicsState, ids as material_ids};
 pub use palette::{
-  DistanceFunction, DitherMode, GlobalPalette, LutConfig, PaletteConfig, PalettePlugin,
-  PaletteSource, PalettizeOnLoad, palettize_image, palettize_image_in_place,
+  DistanceFunction, DitherMode, GlobalPalette, LutCacheAsset, LutConfig, PaletteConfig,
+  PalettePlugin, PaletteSource, PalettizeOnLoad, palettize_image, palettize_image_in_place,
 };
 pub use persistence::{PixelBodyRecord, WorldSave};
 pub use pixel::{Pixel, PixelFlags, PixelSurface};
