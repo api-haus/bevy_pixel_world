@@ -1,9 +1,8 @@
 # Implementation Plan: Pixel Sandbox
 
-A demo-first approach delivering visual results at each phase.
+Incremental development delivering visual results at each phase.
 
 See [methodology.md](methodology.md) for testing and API design principles.
-See [plan_history.md](plan_history.md) for archived phases.
 
 ---
 
@@ -17,7 +16,7 @@ See [plan_history.md](plan_history.md) for archived phases.
 - Cellular automata simulation (powder falls, liquid flows)
 - Debug overlays (chunk boundaries, dirty rects, tile phases)
 
-**Demo:** `cargo run -p bevy_pixel_world --example painting`
+**Demo:** `cargo run --example painting`
 
 ---
 
@@ -25,14 +24,14 @@ See [plan_history.md](plan_history.md) for archived phases.
 
 | Phase | Focus | Status |
 |-------|-------|--------|
-| 0 | Foundational Primitives | *Completed - see plan_history.md* |
-| 1 | Rolling Chunk Grid | *Completed - see plan_history.md* |
-| 2 | Material System | *Completed - see plan_history.md* |
-| 3 | Interaction | *Completed - see plan_history.md* |
-| 4 | Simulation | *Completed - see plan_history.md* |
-| 5.0 | Persistence | *Completed - see plan_history.md* |
-| 5.1 | Pixel Bodies | *Completed - see plan_history.md* |
-| 5.2 | Editor Integration | *Completed - see plan_history.md* |
+| 0 | Foundational Primitives | Complete |
+| 1 | Rolling Chunk Grid | Complete |
+| 2 | Material System | Complete |
+| 3 | Interaction | Complete |
+| 4 | Simulation | Complete |
+| 5.0 | Persistence | Complete |
+| 5.1 | Pixel Bodies | Complete |
+| 5.2 | Editor Integration | Complete |
 | 5.3 | Player-World Collision | In Progress |
 | 5.4 | Player Tools (Dig/Place) | Not started |
 

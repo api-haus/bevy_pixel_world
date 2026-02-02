@@ -17,7 +17,7 @@ Recovery persistence provides automatic backup saves that persist across crashes
 - [ ] Add recovery save file management (write to `.recovery.save.tmp`, atomic rename)
 - [ ] Implement clean exit detection (delete recovery file on normal shutdown)
 - [ ] Add crash detection on startup (check for existing recovery file)
-- [ ] Add recovery detection API (framework provides, game consumes)
+- [ ] Add recovery detection API
 - [ ] Implement recovery prompt UI (game responsibility)
 - [ ] Handle recovery save corruption (fallback to primary)
 
@@ -57,7 +57,7 @@ sequenceDiagram
 - Recovery saves use the same format as primary saves (complete snapshots)
 - Use atomic rename pattern: write to `.recovery.save.tmp`, then rename to `recovery.save`
 - Recovery file location: alongside primary save in saves directory
-- UI for recovery selection is game responsibility (framework provides detection API)
+- UI for recovery selection uses detection API from persistence module
 
 ## References
 

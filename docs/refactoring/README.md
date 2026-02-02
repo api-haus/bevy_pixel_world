@@ -1,6 +1,6 @@
 # Refactoring Opportunities
 
-Self-contained refactoring documents for `bevy_pixel_world`. Each can be tackled independently.
+Self-contained refactoring documents for `game`. Each can be tackled independently.
 
 ## Documents
 
@@ -26,13 +26,13 @@ Self-contained refactoring documents for `bevy_pixel_world`. Each can be tackled
 After each refactoring:
 
 ```bash
-cargo clippy -p bevy_pixel_world -- -D warnings
-cargo build -p bevy_pixel_world
-cargo test -p bevy_pixel_world
+cargo clippy -p game -- -D warnings
+cargo build -p game
+cargo test -p game
 ```
 
 For complexity measurement:
 
 ```bash
-debtmap analyze crates/bevy_pixel_world --threshold-complexity 10
+debtmap analyze crates/game --threshold-complexity 10
 ```

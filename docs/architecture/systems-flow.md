@@ -1,6 +1,6 @@
 # Systems Flow
 
-Complete frame update loop mapping for `bevy_pixel_world`, documenting system execution order, cross-subsystem data flow, and design rationale.
+Complete frame update loop mapping for the pixel sandbox, documenting system execution order, cross-subsystem data flow, and design rationale.
 
 ## Overview and Purpose
 
@@ -568,11 +568,11 @@ flowchart TB
 | `visual_debug` | `draw_collision_gizmos` | `PostUpdate` | `CollisionCache`, `Gizmos` |
 | `diagnostics` | Metrics collection in simulation | Inline with core systems | `SimulationMetrics`, `CollisionMetrics` |
 
-### Plugin-Based Integration
+### Feature Integration
 
-Each feature follows the plugin pattern:
-- Systems are added conditionally via `#[cfg(feature = "...")]`
-- Resources are initialized via plugin setup
+Each feature follows Bevy's plugin pattern:
+- Systems added conditionally via `#[cfg(feature = "...")]`
+- Resources initialized at startup
 - Run conditions gate execution (e.g., `simulation_not_paused`)
 
 ---

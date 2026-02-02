@@ -158,7 +158,7 @@ delta_uv = delta_world / (pixel_world_size * target_size)
 ## Resources
 
 ```rust
-/// Configuration for the pixel camera plugin.
+/// Configuration for pixel camera rendering.
 #[derive(Resource)]
 pub struct PixelCameraConfig {
     /// How pixel size is determined.

@@ -94,9 +94,9 @@ enum GroupState {
    c. Pixels simulate individually (sand/ash/debris)
 ```
 
-## Framework vs Demo
+## API Sketch
 
-### Framework Provides
+### Grouping Infrastructure
 
 | API | Purpose |
 |-----|---------|
@@ -106,10 +106,10 @@ enum GroupState {
 | `groups.split(id, regions)` | Split body into fragments |
 | `groups.release(id)` | Set all pixels to GroupingId = 0 |
 
-### Demo Game Implements
+### Game Logic
 
-| Feature | Responsibility |
-|---------|----------------|
+| Feature | Description |
+|---------|-------------|
 | Crack simulation | Possibly sequential, needs connected region tracking |
 | Damage threshold logic | When to awaken vs destroy |
 | Fracture point detection | Where to split bodies |

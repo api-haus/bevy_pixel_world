@@ -100,9 +100,9 @@ fn calculate_shell_depth(width: u32, height: u32) -> i32 {
 ## Verification
 
 ```bash
-cargo clippy -p bevy_pixel_world -- -D warnings
-cargo build -p bevy_pixel_world
-cargo test -p bevy_pixel_world
+cargo clippy -p game -- -D warnings
+cargo build -p game
+cargo test -p game
 
 # Visual verification
 cargo run --example bombs

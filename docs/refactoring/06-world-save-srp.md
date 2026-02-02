@@ -95,9 +95,9 @@ Before starting:
 ## Verification (When Implemented)
 
 ```bash
-cargo clippy -p bevy_pixel_world -- -D warnings
-cargo build -p bevy_pixel_world
-cargo test -p bevy_pixel_world
+cargo clippy -p game -- -D warnings
+cargo build -p game
+cargo test -p game
 
 # Critical: Verify save/load roundtrip
 cargo run --example persistence_test

@@ -1,31 +1,18 @@
 # Configuration Reference
 
-Parameters for the pixel sandbox plugin. **Architectural constants are compile-time values defined in code, not runtime
-configuration.**
+Pixel sandbox parameters. **Architectural constants are compile-time values defined in code, not runtime configuration.**
 
 > **Note:** The specific values in this document are illustrative examples. Actual compile-time values are defined in
-> `crates/pixel_world/src/coords.rs` and may differ. Consult the source code for authoritative values.
+> `crates/bevy_pixel_sandbox/src/coords.rs` and may differ. Consult the source code for authoritative values.
 
-## Builder Parameters
-
-These values are set at plugin construction time:
+## Runtime Parameters
 
 | Parameter | Default | Options | Description |
 |-----------|---------|---------|-------------|
 | `chunk_size` | 512 | 256, 512, 1024 | Pixels per chunk edge |
 
-```
-// Game crate configures the plugin
-PixelWorldPlugin::builder()
-    .with_chunk_size(512)
-    .with_bundle(FallingSandBundle)  // Game-defined bundle
-    .with_positional::<HeatLayer>()  // Game-defined layers
-    .build()
-```
-
 **Chunk size affects derived values:**
 - Memory per chunk scales quadratically
-- Brick pixel size = `chunk_size / GRID` (see [Pixel Layers](../modularity/pixel-layers.md#brick-layer))
 - Tile count per chunk = `chunk_size / TILE_SIZE`
 
 ## Compile-Time Constants

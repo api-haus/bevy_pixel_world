@@ -135,8 +135,8 @@ Checklist:
 4. Re-export unified type from `mod.rs`
 5. Verify both targets compile:
    ```bash
-   cargo build -p bevy_pixel_world
-   cargo build -p bevy_pixel_world --target wasm32-unknown-unknown
+   cargo build -p game
+   cargo build -p game --target wasm32-unknown-unknown
    ```
 
 ## Current WASM Limitations

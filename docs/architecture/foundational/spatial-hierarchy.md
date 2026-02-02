@@ -111,9 +111,8 @@ needs evaluation. Tile dirty rects define the spatial bounds for simulation sche
 
 The fundamental unit of the cellular automata simulation.
 
-- **Game-defined struct:** Games define pixel layout via `define_pixel!` macro
-- **Framework is generic:** Stores `T: Copy + Default + 'static`, knows nothing about internals
-- **Demo game example:** 4 bytes (material + color + damage/variant + flags)
+- **4 bytes:** material + color + damage/variant + flags
+- **Generic storage:** `T: Copy + Default + 'static`
 - Stores state needed for simulation and rendering
 - See [Pixel Layers](../modularity/pixel-layers.md) for design details
 

@@ -246,7 +246,7 @@ Displacement operates on a single body at a time. Multiple bodies can be process
 ## Verification
 
 ```bash
-cargo run -p bevy_pixel_world --example painting --features avian2d
+cargo run --example painting --features avian2d
 ```
 
 1. Paint a deep pool of water

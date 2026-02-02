@@ -13,7 +13,7 @@ object may split into fragments.
 
 ```
 pixel_body/
-├── mod.rs        # Core data structures, markers, plugin
+├── mod.rs        # Core data structures, markers, systems
 ├── spawn.rs      # Entity spawning commands
 ├── loader.rs     # PNG image loading and pixel conversion
 ├── blit.rs       # Write/clear pixels to canvas

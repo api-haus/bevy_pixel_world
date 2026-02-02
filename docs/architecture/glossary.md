@@ -22,7 +22,7 @@ Terms describing the four-level spatial organization.
 | **World** | Infinite 2D coordinate space providing global addressing. Has no direct memory representation. | [spatial-hierarchy.md](foundational/spatial-hierarchy.md) |
 | **Chunk** | Fixed-size rectangular pixel buffer. Unit of pooling, streaming, persistence, and rendering.   | [spatial-hierarchy.md](foundational/spatial-hierarchy.md) |
 | **Tile**  | Subdivision of a chunk used for checkerboard scheduling and dirty rect tracking.               | [spatial-hierarchy.md](foundational/spatial-hierarchy.md) |
-| **Pixel** | Fundamental simulation unit. Game-defined struct stored in chunks. Framework is generic over pixel type. | [pixel-layers.md](modularity/pixel-layers.md) |
+| **Pixel** | Fundamental simulation unit. 4-byte struct (material, color, damage, flags) stored in chunks. | [pixel-layers.md](modularity/pixel-layers.md) |
 
 ### Coordinate Systems
 
@@ -69,33 +69,27 @@ themselves. See [materials.md](simulation/materials.md) for the full convention.
 
 Two storage patterns for per-pixel data:
 
-1. **Pixel struct (AoS):** Game-defined struct, swaps atomically
+1. **Pixel struct (AoS):** Main struct, swaps atomically
 2. **Separate layers (SoA):** Additional arrays for spatial/downsampled data
-
-The framework provides generic storage (`Chunk<T>`). Games define pixel structure and any separate layers.
 
 ### Core Concepts
 
 | Term           | Definition                                                                                                      | Documentation                          |
 |----------------|-----------------------------------------------------------------------------------------------------------------|----------------------------------------|
-| **Pixel struct** | Game-defined struct (via `define_pixel!` macro) containing all per-pixel fields. Stored in AoS layout.        | [pixel-layers.md](modularity/pixel-layers.md) |
-| **Separate layer** | Optional SoA array for data with different lifetime/resolution than pixel struct. Game-defined.              | [pixel-layers.md](modularity/pixel-layers.md) |
+| **Pixel struct** | 4-byte struct containing all per-pixel fields. Stored in AoS layout.                                          | [pixel-layers.md](modularity/pixel-layers.md) |
+| **Separate layer** | Optional SoA array for data with different lifetime/resolution than pixel struct.                            | [pixel-layers.md](modularity/pixel-layers.md) |
 | **swap_follow** | Layer configuration: whether data moves with pixel swaps (true) or stays at location (false).                  | [pixel-layers.md](modularity/pixel-layers.md) |
 | **sample_rate** | Layer resolution: 1 = per-pixel, 4 = 4×4 regions, etc. Only applies to separate layers.                        | [pixel-layers.md](modularity/pixel-layers.md) |
 
-### Example Pixel Structure (Demo Game)
-
-The demo game defines a 4-byte pixel. Other games can define different structures.
+### Pixel Structure
 
 | Field      | Type | Definition                                                                                           |
 |------------|------|------------------------------------------------------------------------------------------------------|
-| material   | u8   | Type identifier indexing into game's material registry.                                              |
+| material   | u8   | Type identifier indexing into material registry.                                                     |
 | color      | u8   | Palette index for rendering.                                                                         |
 | damage     | u4   | Accumulated damage (0-15).                                                                           |
 | variant    | u4   | Visual variant (0-15).                                                                               |
-| flags      | u8   | 8 boolean flags defined by game (dirty, solid, falling, burning, etc.).                             |
-
-These are game-defined concepts. The framework doesn't require any specific fields.
+| flags      | u8   | Boolean flags (dirty, solid, falling, burning, etc.).                                                |
 
 ---
 

@@ -181,11 +181,7 @@ Mesh generation runs on Bevy's `AsyncComputeTaskPool`:
 
 ## Physics Integration
 
-Collision meshes integrate with physics engines via feature flags:
-
-```toml
-bevy_pixel_world = { features = ["avian2d"] }  # or "rapier2d"
-```
+Collision meshes integrate with physics engines via feature flags (`avian2d` or `rapier2d`).
 
 ### CollisionQueryPoint
 

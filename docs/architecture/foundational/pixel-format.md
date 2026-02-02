@@ -1,20 +1,15 @@
 # Pixel Format
 
-> **Status: Current Implementation / Demo Reference**
->
-> This describes the current hardcoded format. With planned radical modularity, games will define their own pixel structures. This format becomes one possible example, not a requirement.
+> **Status: Current Implementation**
 
-The base layer and common opt-in layers for per-pixel data.
+Per-pixel data format for the simulation.
 
 ## Overview
 
-Each pixel in the simulation is composed of layers. The only mandatory layer is the **Material ID**. Additional layers (Color, Damage, Flags) are opt-in but included in the Default Bundle for backward compatibility.
+Each pixel has four bytes: Material, Color, Damage, and Flags.
 
-The format is designed to be:
-
-- **Modular** - Only pay for layers you use
 - **Cache-friendly** - SoA layout for efficient access patterns
-- **Backward compatible** - Default Bundle matches traditional "4-byte pixel" model
+- **Compact** - 4 bytes per pixel, 1 MB per 512×512 chunk
 
 ## Base Layer (Always Present)
 
@@ -28,9 +23,9 @@ The Material ID is the only data that every pixel must have. It indexes into the
 
 See [Materials](../simulation/materials.md) for property definitions and interaction system.
 
-## Common Layers (Default Bundle)
+## Layers
 
-The Default Bundle includes these layers for standard falling sand behavior:
+Additional layers alongside Material:
 
 | Field    | Type | Purpose                                                                           |
 |----------|------|-----------------------------------------------------------------------------------|
@@ -38,21 +33,19 @@ The Default Bundle includes these layers for standard falling sand behavior:
 | Damage   | u8   | Accumulated damage, increments on interactions, triggers destruction at threshold |
 | Flags    | u8   | Packed boolean states for simulation and rendering                                |
 
-See [Pixel Layers](../modularity/pixel-layers.md) for the full layer system and bundle configurations.
+See [Pixel Layers](../modularity/pixel-layers.md) for the full layer system.
 
 ## Color Layer
 
-Palette-based coloring for rendering (requires Color layer):
+Palette-based coloring for rendering:
 
 - Indexes into a color palette (up to 256 colors)
 - Allows visual variation independent of material type
 - Seeders can apply noise-driven color variation within material constraints
 
-**Note:** Without the Color layer, rendering derives color directly from the material definition.
-
 ## Damage Layer
 
-Accumulated damage tracking (requires Damage layer):
+Accumulated damage tracking:
 
 - Starts at zero (pristine state)
 - Increments from interactions (burning, impact, corrosion)
@@ -61,14 +54,12 @@ Accumulated damage tracking (requires Damage layer):
 
 See [Materials](../simulation/materials.md) for `damage_threshold` and `destruction_product` properties.
 
-**Note:** Without the Damage layer, destruction-based interactions are disabled.
-
 ## Flags Layer (Bitmask)
 
-> **Note:** With planned radical modularity, games define their own flags. The framework uses optional traits (`PixelCollision`, `PixelDirty`) rather than mandating specific bits. Games implement these traits however they choose.
+Optional traits (`PixelCollision`, `PixelDirty`) provide abstraction over specific flag bits for internal systems.
 
 ```
-Bit layout (u8) - Demo/Current Format:
+Bit layout (u8):
 ┌───────┬───────┬───────┬───────┬───────┬───────┬───────┬───────┐
 │   7   │   6   │   5   │   4   │   3   │   2   │   1   │   0   │
 ├───────┴───────┼───────┼───────┼───────┼───────┼───────┼───────┤
@@ -76,14 +67,14 @@ Bit layout (u8) - Demo/Current Format:
 └───────────────┴───────┴───────┴───────┴───────┴───────┴───────┘
 ```
 
-### Framework-Relevant Flags (Used by Optional Traits)
+### System Flags (via Traits)
 
 | Flag      | Bit | Trait | Description |
 |-----------|-----|-------|-------------|
 | `dirty`   | 0   | `PixelDirty` | Pixel needs simulation this tick. Used for scheduling optimization. |
 | `solid`   | 1   | `PixelCollision` | Pixel is solid for collision purposes. Used for mesh generation. |
 
-### Game-Defined Flags (Demo Format)
+### Simulation Flags
 
 | Flag      | Bit | Description                                                                                                                                                                                                                                                                        |
 |-----------|-----|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -110,7 +101,7 @@ Bits 6-7 are reserved for future use:
 
 ## Memory Layout
 
-Memory is dynamic based on registered layers. With Default Bundle (SoA layout):
+SoA layout for cache efficiency:
 
 ```mermaid
 flowchart LR
@@ -125,11 +116,10 @@ flowchart LR
 
 | Configuration | Bytes per Pixel | Chunk Memory (512×512) |
 |---------------|-----------------|------------------------|
-| Minimal Bundle | 1 | 256 KB |
-| Default Bundle | 4 | 1 MB |
-| Default + Heat | 4 + (1/16) | ~1 MB |
+| Current (4 layers) | 4 | 1 MB |
+| With Heat layer | 4 + (1/16) | ~1 MB |
 
-See [Pixel Layers](../modularity/pixel-layers.md) for detailed memory calculations and bundle configurations.
+See [Pixel Layers](../modularity/pixel-layers.md) for layer system details.
 
 ## System Interactions
 
@@ -144,11 +134,11 @@ see [Rendering](../rendering/rendering.md).
 
 ## Related Documentation
 
-- [Pixel Layers](../modularity/pixel-layers.md) - Full layer system, bundles, and builder API
+- [Pixel Layers](../modularity/pixel-layers.md) - Full layer system
 - [Materials](../simulation/materials.md) - Material properties, tags, and interaction system
 - [Spatial Hierarchy](spatial-hierarchy.md) - World, chunk, tile, pixel organization
 - [Simulation](../simulation/simulation.md) - How pixels are processed each tick
-- [Collision](../physics/collision.md) - How solid flag drives collision mesh generation (requires Flags layer)
+- [Collision](../physics/collision.md) - How solid flag drives collision mesh generation
 - [Pixel Bodies](../physics/pixel-bodies.md) - Dynamic objects using the pixel_body flag
 - [Rendering](../rendering/rendering.md) - Texture upload strategy
 - [Chunk Seeding](../chunk-management/chunk-seeding.md) - How pixel data is initialized

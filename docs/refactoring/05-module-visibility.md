@@ -99,20 +99,20 @@ Add module-level documentation distinguishing:
 1. Make changes incrementally, one module at a time
 2. After each change:
    ```bash
-   cargo build -p bevy_pixel_world
+   cargo build -p game
    cargo build --examples
-   cargo doc -p bevy_pixel_world
+   cargo doc -p game
    ```
 3. Fix any breakage before proceeding
 
 ## Verification Commands
 
 ```bash
-cargo clippy -p bevy_pixel_world -- -D warnings
-cargo build -p bevy_pixel_world
+cargo clippy -p game -- -D warnings
+cargo build -p game
 cargo build --examples
-cargo test -p bevy_pixel_world
-cargo doc -p bevy_pixel_world --no-deps
+cargo test -p game
+cargo doc -p game --no-deps
 ```
 
 ## Estimated Impact

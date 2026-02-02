@@ -84,27 +84,27 @@ A complete save = loaded save contents + dirty in-memory chunks
 
 | Method | Description |
 |--------|-------------|
-| `PersistenceConfig::new("app").load("name")` | Load specific save at plugin init |
+| `PersistenceConfig::new("app").load("name")` | Load specific save at startup |
 
-## Consumer Patterns
+## Usage Patterns
 
 ### Single Save
 
 ```mermaid
 sequenceDiagram
     participant Game
-    participant Plugin
+    participant Persistence
     participant Disk
 
-    Game->>Plugin: load("world")
-    Plugin->>Disk: Open world.save
+    Game->>Persistence: load("world")
+    Persistence->>Disk: Open world.save
 
     loop Gameplay
-        Game->>Plugin: modify pixels
+        Game->>Persistence: modify pixels
     end
 
-    Game->>Plugin: save("world")
-    Plugin->>Disk: Flush dirty chunks
+    Game->>Persistence: save("world")
+    Persistence->>Disk: Flush dirty chunks
 ```
 
 ### Multiple Saves (Backup)
@@ -112,15 +112,15 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant Game
-    participant Plugin
+    participant Persistence
     participant Disk
 
-    Game->>Plugin: load("world")
-    Plugin->>Disk: Open world.save
+    Game->>Persistence: load("world")
+    Persistence->>Disk: Open world.save
 
-    Game->>Plugin: save("backup")
-    Plugin->>Disk: Copy world.save → backup.save
-    Plugin->>Disk: Flush dirty to backup.save
+    Game->>Persistence: save("backup")
+    Persistence->>Disk: Copy world.save → backup.save
+    Persistence->>Disk: Flush dirty to backup.save
 
     Note over Disk: backup.save is complete,<br/>world.save unchanged
 ```
@@ -130,19 +130,19 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant Game
-    participant Plugin
+    participant Persistence
     participant Disk
     participant Timer
 
-    Game->>Plugin: load("primary")
+    Game->>Persistence: load("primary")
 
     loop Every 30s (game timer)
-        Timer->>Plugin: save("recovery")
-        Plugin->>Disk: Copy + flush to recovery.save
+        Timer->>Persistence: save("recovery")
+        Persistence->>Disk: Copy + flush to recovery.save
     end
 
     alt Clean Exit
-        Game->>Plugin: delete_save("recovery")
+        Game->>Persistence: delete_save("recovery")
     else Crash
         Note over Disk: recovery.save persists
     end

@@ -2,52 +2,30 @@
 
 > **Status: Planned Architecture**
 >
-> This describes target modularity. Current implementation uses hardcoded `Pixel` struct. The layer system and macros described in sub-documents are not yet implemented.
+> This describes target modularity. Current implementation uses hardcoded `Pixel` struct. The layer system described in sub-documents is not yet implemented.
 
-Extensibility architecture for rendering backends, pixel layers, and simulation rules.
+Internal organization for custom layers and simulation flexibility.
 
-## Overview
+## Goals
 
-The pixel sandbox is designed as an extensible library, not a closed application. Crate consumers can:
-
-- Swap rendering backends (GPU, terminal, headless)
-- Add custom layers at any resolution (per-pixel or downsampled)
-- Implement custom simulations as Bevy systems with configurable schedule modes
+- **Custom layers** at any resolution (per-pixel or downsampled)
+- **Swappable simulation schedules** using Bevy's system model
+- **Reusable iteration primitives** (checkerboard phasing, dirty tracking)
 
 ## Documentation
 
 | Document | Purpose |
 |----------|---------|
-| [Pixel Layers](pixel-layers.md) | Unified layer system with swap-follow, render modularity |
-| [Simulation Extensibility](simulation-extensibility.md) | Pluggable simulation rules and reusable library functions |
-
-## Ownership Boundary
-
-| Responsibility | Owner | Examples |
-|---------------|-------|----------|
-| **Spatial infrastructure** | Framework | `Chunk<T>`, `Canvas<T>`, streaming, collision mesh |
-| **Iteration primitives** | Framework | Checkerboard phasing, dirty tracking |
-| **Scheduling mechanics** | Framework | Tile phases, barriers, Bevy integration |
-| **Pixel struct** | Game | Fields, layout, bitpacking |
-| **Simulation rules** | Game | Falling, burning, melting, interactions |
-| **Material system** | Game | Registry, properties, reactions |
-| **Layer definitions** | Game | Which layers, sample rates, swap-follow |
-
-The framework provides the *how*, games define the *what*.
+| [Pixel Layers](pixel-layers.md) | Unified layer system with swap-follow and render modularity |
+| [Simulation Extensibility](simulation-extensibility.md) | Simulation rules and shared functions |
 
 ## Design Principles
-
-**Stable core, extensible surface:**
-
-- Base pixel format is an immutable contract
-- Extension points have well-defined interfaces
-- Breaking changes require major version bumps
 
 **Composition over inheritance:**
 
 - Traits define extension points
-- Library functions provide reusable primitives
-- Consumers compose custom behavior from provided building blocks
+- Shared functions provide reusable primitives
+- Custom behavior composed from building blocks
 
 **Zero-cost abstractions:**
 
@@ -59,5 +37,5 @@ The framework provides the *how*, games define the *what*.
 
 - [Pixel Format](../foundational/pixel-format.md) - Base pixel data structure
 - [Simulation](../simulation/simulation.md) - Core simulation passes
-- [Rendering](../rendering/rendering.md) - Current GPU rendering pipeline
+- [Rendering](../rendering/rendering.md) - GPU rendering pipeline
 - [Architecture Overview](../README.md)

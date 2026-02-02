@@ -1,6 +1,6 @@
-# Pixel Sandbox Plugin Architecture
+# Pixel Sandbox Architecture
 
-A Bevy plugin for virtual infinite 2D pixel worlds with full cellular automata simulation.
+The foundational layer for 2D pixel worlds with cellular automata simulation. Almost all gameplay systems interact with the pixel sandbox.
 
 ## Key Design Principles
 
@@ -13,7 +13,7 @@ A Bevy plugin for virtual infinite 2D pixel worlds with full cellular automata s
 
 ```mermaid
 flowchart TB
-    subgraph Plugin["Pixel Sandbox Plugin"]
+    subgraph PixelSandbox["Pixel Sandbox"]
         direction TB
         Camera[Camera Position]
         Window[Streaming Window]
@@ -136,13 +136,13 @@ Level editing and runtime control.
 
 ### Modularity
 
-Extensibility architecture for crate consumers.
+Internal organization for maintainability and minimizing refactoring impact.
 
 | Document | Purpose |
 |----------|---------|
 | [Modularity Overview](modularity/README.md) | Extension points and design principles |
 | [Pixel Layers](modularity/pixel-layers.md) | Unified layer system (swap-follow, render) |
-| [Simulation Extensibility](modularity/simulation-extensibility.md) | Pluggable rules and library functions |
+| [Simulation Extensibility](modularity/simulation-extensibility.md) | Simulation rules and shared functions |
 
 ## Data Flow
 
@@ -168,7 +168,7 @@ flowchart LR
 
 ## Bevy Integration
 
-The plugin integrates with Bevy's ECS and scheduling:
+How pixel sandbox uses Bevy's ECS and scheduling:
 
 - **Resources** - Chunk pool, streaming window configuration, seeder registry
 - **Systems** - Camera tracking, chunk lifecycle management, parallel simulation

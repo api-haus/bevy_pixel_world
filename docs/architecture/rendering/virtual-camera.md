@@ -18,7 +18,7 @@ flowchart TB
         VC100["VirtualCamera<br/>priority: 100<br/>(debug controller)"]
     end
 
-    subgraph Selection["VirtualCameraPlugin"]
+    subgraph Selection["Selection"]
         Select["select_active_virtual_camera<br/>picks highest priority"]
         Resource["ActiveVirtualCamera<br/>entity: Option&lt;Entity&gt;"]
         Select --> Resource

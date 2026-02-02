@@ -31,10 +31,10 @@ Summary of refactoring opportunities from docs/refactoring/. See detailed task f
 ## Verification
 
 ```bash
-cargo clippy -p bevy_pixel_world -- -D warnings
-cargo build -p bevy_pixel_world
-cargo test -p bevy_pixel_world
-debtmap analyze crates/bevy_pixel_world --threshold-complexity 10
+cargo clippy -p game -- -D warnings
+cargo build -p game
+cargo test -p game
+debtmap analyze crates/game --threshold-complexity 10
 ```
 
 ## References

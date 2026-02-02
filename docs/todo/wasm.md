@@ -16,4 +16,4 @@ Platform-specific work for WebAssembly builds.
 ## References
 
 - docs/refactoring/07-wasm-patterns.md (reference documentation)
-- crates/bevy_pixel_world/src/world/persistence_systems.rs:408
+- crates/game/src/world/persistence_systems.rs:408

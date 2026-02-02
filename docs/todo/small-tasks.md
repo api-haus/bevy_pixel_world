@@ -4,8 +4,8 @@ Miscellaneous improvements and fixes.
 
 ## Code Quality
 
-- [ ] Run `cargo clippy -p bevy_pixel_world -- -D warnings` and fix all warnings
-- [ ] Run `debtmap analyze crates/bevy_pixel_world --threshold-complexity 10` and address high-complexity functions
+- [ ] Run `cargo clippy -p game -- -D warnings` and fix all warnings
+- [ ] Run `debtmap analyze crates/game --threshold-complexity 10` and address high-complexity functions
 - [ ] Review WASM compatibility patterns (07-wasm-patterns.md)
 
 ## Known TODOs in Code
