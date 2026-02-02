@@ -31,8 +31,11 @@ use super::{
 use crate::coords::CHUNK_SIZE;
 use crate::debug_shim;
 use crate::material::Materials;
+#[cfg(not(target_family = "wasm"))]
+use crate::palette::save_lut_to_bytes;
 use crate::palette::{
-  GlobalPalette, PaletteConfig, PaletteSource, colors_from_hex, colors_from_image,
+  GlobalPalette, LUT_CACHE_PATH, LutCacheAsset, PaletteConfig, PaletteSource, colors_from_hex,
+  colors_from_image, load_lut_from_bytes,
 };
 use crate::persistence::PersistenceTasks;
 use crate::persistence::io_worker::IoDispatcher;
@@ -322,33 +325,131 @@ fn watch_palette_config(
   }
 }
 
+/// Tracks whether we've attempted to load the cached LUT this session.
+#[derive(Default)]
+struct LutCacheState {
+  load_attempted: bool,
+  #[cfg(not(target_family = "wasm"))]
+  save_needed: bool,
+}
+
 /// System: Polls the LUT build task for completion.
 ///
-/// Initial LUT build is always synchronous to avoid starving other async
-/// tasks that need the compute pool (chunk seeding, persistence I/O).
+/// On first run, attempts to load cached LUT from `assets/lut.bin.lz4`.
+/// If cache is valid (hash matches), uses it directly.
+/// If cache is missing/invalid, rebuilds synchronously and saves (native only).
 /// Hot-reload rebuilds use async to keep the old LUT usable during rebuild.
 #[cfg_attr(feature = "tracy", tracing::instrument(skip_all))]
 fn poll_lut_task(
   mut global_palette: Option<ResMut<GlobalPalette>>,
   rendering: Option<Res<RenderingEnabled>>,
   async_behavior: Option<Res<AsyncTaskBehavior>>,
+  asset_server: Option<Res<AssetServer>>,
+  lut_assets: Option<Res<Assets<LutCacheAsset>>>,
+  mut lut_cache_handle: Local<Option<Handle<LutCacheAsset>>>,
+  mut cache_state: Local<LutCacheState>,
 ) {
   let Some(ref mut palette) = global_palette else {
     return;
   };
 
-  // Initial build (no LUT exists yet) - always synchronous
+  // Initial build (no LUT exists yet)
   if !palette.lut_ready() && !palette.lut_building() {
+    let expected_hash = palette.compute_hash();
+
+    // Try loading cached LUT via Bevy asset system
+    if !cache_state.load_attempted {
+      cache_state.load_attempted = true;
+
+      if let Some(ref server) = asset_server {
+        let handle: Handle<LutCacheAsset> = server.load(LUT_CACHE_PATH);
+        *lut_cache_handle = Some(handle);
+        // Don't block here - we'll check on the next frame
+        return;
+      }
+    }
+
+    // Check if cached LUT is loaded and valid
+    if let Some(ref handle) = *lut_cache_handle {
+      if let Some(ref assets) = lut_assets {
+        match asset_server.as_ref().map(|s| s.load_state(handle)) {
+          Some(bevy::asset::LoadState::Loaded) => {
+            if let Some(cache) = assets.get(handle) {
+              if let Some((lut, cached_hash)) = load_lut_from_bytes(&cache.0) {
+                if cached_hash == expected_hash {
+                  palette.set_lut_from_cache(lut, cached_hash);
+                  info!("LUT loaded from cache (hash matched)");
+                  *lut_cache_handle = None;
+                  return;
+                }
+                info!("LUT cache hash mismatch, rebuilding");
+              } else {
+                warn!("LUT cache corrupted, rebuilding");
+              }
+            }
+            *lut_cache_handle = None;
+          }
+          Some(bevy::asset::LoadState::Failed(_)) => {
+            // Cache doesn't exist or failed to load - that's fine, we'll build it
+            debug!("LUT cache not found, building");
+            *lut_cache_handle = None;
+          }
+          Some(bevy::asset::LoadState::Loading) | Some(bevy::asset::LoadState::NotLoaded) => {
+            // Still loading, wait
+            return;
+          }
+          None => {
+            *lut_cache_handle = None;
+          }
+        }
+      }
+    }
+
+    // Cache miss or invalid - rebuild synchronously
     let config = palette.lut_config.clone();
     palette.rebuild_lut(config);
     info!("LUT built synchronously (initial)");
+
+    // Mark for saving on native
+    #[cfg(not(target_family = "wasm"))]
+    {
+      cache_state.save_needed = true;
+    }
+
     return;
+  }
+
+  // Save LUT cache after rebuild (native only)
+  #[cfg(not(target_family = "wasm"))]
+  if cache_state.save_needed && palette.lut_ready() {
+    cache_state.save_needed = false;
+    if let Some(lut_data) = palette.lut_data() {
+      let hash = palette.compute_hash();
+      let bytes = save_lut_to_bytes(lut_data, hash);
+
+      // Save to assets directory
+      let assets_path = std::path::Path::new("assets").join(LUT_CACHE_PATH);
+      match std::fs::write(&assets_path, &bytes) {
+        Ok(()) => info!(
+          "LUT cache saved to {} ({} bytes compressed)",
+          assets_path.display(),
+          bytes.len()
+        ),
+        Err(e) => warn!("Failed to save LUT cache: {}", e),
+      }
+    }
   }
 
   // Poll pending async rebuild (from hot-reload)
   let block = should_block_tasks(rendering, async_behavior);
   if palette.poll_lut(block) {
     info!("LUT async rebuild completed");
+
+    // Save updated cache on native
+    #[cfg(not(target_family = "wasm"))]
+    {
+      cache_state.save_needed = true;
+    }
   }
 }
 

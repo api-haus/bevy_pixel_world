@@ -3,11 +3,14 @@
 //! Provides a global palette that maps ColorIndex (0-255) directly to colors.
 //! Includes a 16MB LUT for fast RGB→palette index mapping at sprite load time.
 
+use std::hash::{Hash, Hasher};
+
 use bevy::asset::{Asset, AssetLoader, RenderAssetUsages, io::Reader};
 use bevy::image::ImageSampler;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::tasks::Task;
+use lz4_flex::{compress_prepend_size, decompress_size_prepended};
 use palette::{IntoColor, Oklab, Srgb};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -130,6 +133,8 @@ pub struct GlobalPalette {
   pub dirty: bool,
   /// Current LUT configuration (for rebuilding on config change).
   pub lut_config: LutConfig,
+  /// Hash of colors + config for the current LUT (for cache validation).
+  lut_hash: Option<u64>,
 }
 
 impl Default for GlobalPalette {
@@ -147,6 +152,7 @@ impl Default for GlobalPalette {
       config_handle: None,
       dirty: true,
       lut_config: LutConfig::default(),
+      lut_hash: None,
     }
   }
 }
@@ -164,6 +170,7 @@ impl GlobalPalette {
       config_handle: None,
       dirty: true,
       lut_config,
+      lut_hash: None,
     }
   }
 
@@ -198,6 +205,7 @@ impl GlobalPalette {
       config_handle: None,
       dirty: true,
       lut_config,
+      lut_hash: None,
     }
   }
 
@@ -296,15 +304,98 @@ impl GlobalPalette {
   ///
   /// Prefer `start_lut_build()` + `poll_lut()` for non-blocking builds.
   pub fn rebuild_lut(&mut self, lut_config: LutConfig) {
-    self.lut_config = lut_config;
+    self.lut_config = lut_config.clone();
     self.lut = Some(build_lut(
       &self.colors,
       self.lut_config.distance,
       self.lut_config.mode,
     ));
+    self.lut_hash = Some(palette_hash(&self.colors, &lut_config));
     self.pending_lut = None;
     self.dirty = true;
   }
+
+  /// Computes the expected hash for the current palette and config.
+  pub fn compute_hash(&self) -> u64 {
+    palette_hash(&self.colors, &self.lut_config)
+  }
+
+  /// Sets the LUT directly from cached data.
+  ///
+  /// Used when loading from `assets/lut.bin.lz4`.
+  pub fn set_lut_from_cache(&mut self, lut: Box<[u8; 16_777_216]>, hash: u64) {
+    self.lut = Some(lut);
+    self.lut_hash = Some(hash);
+    self.pending_lut = None;
+    self.dirty = true;
+  }
+
+  /// Returns the LUT data for caching (native builds only).
+  pub fn lut_data(&self) -> Option<&[u8; 16_777_216]> {
+    self.lut.as_ref().map(|b| b.as_ref())
+  }
+}
+
+/// Computes a hash of palette colors and LUT configuration.
+///
+/// Used to detect when the cached LUT needs rebuilding.
+pub fn palette_hash(colors: &[Rgba; 256], config: &LutConfig) -> u64 {
+  use std::collections::hash_map::DefaultHasher;
+  let mut hasher = DefaultHasher::new();
+  for c in colors {
+    c.red.hash(&mut hasher);
+    c.green.hash(&mut hasher);
+    c.blue.hash(&mut hasher);
+    c.alpha.hash(&mut hasher);
+  }
+  std::mem::discriminant(&config.distance).hash(&mut hasher);
+  std::mem::discriminant(&config.mode).hash(&mut hasher);
+  hasher.finish()
+}
+
+/// Compresses a 16MB LUT using LZ4.
+pub fn compress_lut(lut: &[u8; 16_777_216]) -> Vec<u8> {
+  compress_prepend_size(lut)
+}
+
+/// Decompresses LUT data.
+///
+/// Returns `None` if decompression fails or size doesn't match.
+pub fn decompress_lut(data: &[u8]) -> Option<Box<[u8; 16_777_216]>> {
+  let decompressed = decompress_size_prepended(data).ok()?;
+  if decompressed.len() != 16_777_216 {
+    return None;
+  }
+  let ptr = Box::into_raw(decompressed.into_boxed_slice()) as *mut [u8; 16_777_216];
+  Some(unsafe { Box::from_raw(ptr) })
+}
+
+/// LUT cache file path (relative to assets directory).
+pub const LUT_CACHE_PATH: &str = "lut.bin.lz4";
+
+/// Loads a cached LUT from bytes (e.g., from Bevy asset system).
+///
+/// Format: `[8 bytes: hash][compressed LUT data]`
+///
+/// Returns `(lut, hash)` if successful.
+pub fn load_lut_from_bytes(data: &[u8]) -> Option<(Box<[u8; 16_777_216]>, u64)> {
+  if data.len() < 8 {
+    return None;
+  }
+  let hash = u64::from_le_bytes(data[0..8].try_into().ok()?);
+  let lut = decompress_lut(&data[8..])?;
+  Some((lut, hash))
+}
+
+/// Saves a LUT to bytes for caching.
+///
+/// Format: `[8 bytes: hash][compressed LUT data]`
+pub fn save_lut_to_bytes(lut: &[u8; 16_777_216], hash: u64) -> Vec<u8> {
+  let compressed = compress_lut(lut);
+  let mut result = Vec::with_capacity(8 + compressed.len());
+  result.extend_from_slice(&hash.to_le_bytes());
+  result.extend_from_slice(&compressed);
+  result
 }
 
 /// Builds the 16MB RGB→palette LUT.
@@ -787,5 +878,114 @@ impl Plugin for PalettePlugin {
   fn build(&self, app: &mut App) {
     app.init_asset::<PaletteConfig>();
     app.init_asset_loader::<PaletteConfigLoader>();
+    app.init_asset::<LutCacheAsset>();
+    app.init_asset_loader::<LutCacheAssetLoader>();
+  }
+}
+
+/// Raw bytes of a cached LUT file (`assets/lut.bin.lz4`).
+#[derive(Asset, TypePath)]
+pub struct LutCacheAsset(pub Vec<u8>);
+
+/// Asset loader for LUT cache files.
+#[derive(Default)]
+pub struct LutCacheAssetLoader;
+
+impl AssetLoader for LutCacheAssetLoader {
+  type Asset = LutCacheAsset;
+  type Settings = ();
+  type Error = std::io::Error;
+
+  async fn load(
+    &self,
+    reader: &mut dyn Reader,
+    _settings: &Self::Settings,
+    _load_context: &mut bevy::asset::LoadContext<'_>,
+  ) -> Result<Self::Asset, Self::Error> {
+    let mut bytes = Vec::new();
+    reader.read_to_end(&mut bytes).await?;
+    Ok(LutCacheAsset(bytes))
+  }
+
+  fn extensions(&self) -> &[&str] {
+    &["bin.lz4"]
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn lut_compression_roundtrip() {
+    // Create a simple LUT pattern
+    let mut lut = vec![0u8; 16_777_216].into_boxed_slice();
+    for (i, v) in lut.iter_mut().enumerate() {
+      *v = (i % 256) as u8;
+    }
+    let ptr = Box::into_raw(lut) as *mut [u8; 16_777_216];
+    let lut: Box<[u8; 16_777_216]> = unsafe { Box::from_raw(ptr) };
+
+    // Compress
+    let compressed = compress_lut(&lut);
+    assert!(
+      compressed.len() < 16_777_216,
+      "Compression should reduce size"
+    );
+
+    // Decompress
+    let decompressed = decompress_lut(&compressed).expect("Decompression should succeed");
+
+    // Verify roundtrip
+    assert_eq!(lut.as_ref(), decompressed.as_ref());
+  }
+
+  #[test]
+  fn lut_save_load_roundtrip() {
+    // Create test data
+    let mut lut = vec![0u8; 16_777_216].into_boxed_slice();
+    for (i, v) in lut.iter_mut().enumerate() {
+      *v = ((i * 7) % 256) as u8;
+    }
+    let ptr = Box::into_raw(lut) as *mut [u8; 16_777_216];
+    let lut: Box<[u8; 16_777_216]> = unsafe { Box::from_raw(ptr) };
+    let test_hash = 0x1234567890abcdef_u64;
+
+    // Save to bytes
+    let bytes = save_lut_to_bytes(&lut, test_hash);
+
+    // Load from bytes
+    let (loaded_lut, loaded_hash) = load_lut_from_bytes(&bytes).expect("Load should succeed");
+
+    // Verify
+    assert_eq!(loaded_hash, test_hash);
+    assert_eq!(lut.as_ref(), loaded_lut.as_ref());
+  }
+
+  #[test]
+  fn palette_hash_consistency() {
+    let colors = [Rgba::new(1, 2, 3, 255); 256];
+    let config = LutConfig::default();
+
+    let hash1 = palette_hash(&colors, &config);
+    let hash2 = palette_hash(&colors, &config);
+
+    assert_eq!(hash1, hash2, "Same input should produce same hash");
+  }
+
+  #[test]
+  fn palette_hash_changes_with_color() {
+    let colors1 = [Rgba::new(1, 2, 3, 255); 256];
+    let mut colors2 = colors1;
+    colors2[0] = Rgba::new(4, 5, 6, 255);
+    let config = LutConfig::default();
+
+    let hash1 = palette_hash(&colors1, &config);
+    let hash2 = palette_hash(&colors2, &config);
+
+    assert_ne!(
+      hash1, hash2,
+      "Different colors should produce different hash"
+    );
   }
 }
