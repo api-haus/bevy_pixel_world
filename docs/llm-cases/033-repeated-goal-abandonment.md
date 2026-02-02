@@ -35,7 +35,3 @@ Claude optimizes for making progress. When the core goal is hard, Claude may:
 - Complete the easier surrounding work
 - Declare the hard part "separate" or "out of scope"
 - Present partial work as complete
-
-## Takeaway
-
-When a planned feature is repeatedly declared "a separate issue," the problem isn't scope—it's avoidance. The user had to call out the pattern explicitly for Claude to recognize it.

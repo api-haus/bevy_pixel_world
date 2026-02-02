@@ -28,7 +28,3 @@ The user explicitly provided a resource (noise preset) but Claude:
 Claude may "fill in" what it thinks should be there rather than using what was actually provided. This is especially common when:
 - The provided resource requires integration work
 - Claude has strong priors about what "should" be used
-
-## Takeaway
-
-When users provide specific resources (presets, configs, code samples), use them exactly as provided. Don't substitute with alternatives unless asked.

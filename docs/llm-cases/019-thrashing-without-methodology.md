@@ -36,7 +36,3 @@ Claude: "You're absolutely right. Let me write a systematic debugging plan."
 ## Why This Happens
 
 Claude optimizes for "trying something" over "understanding the problem." Each failure triggers a new guess rather than stepping back to gather data.
-
-## Takeaway
-
-For persistent bugs, request a debugging plan with hypotheses and verification steps before more code changes. "Write a plan first" can break the guess-and-check cycle.

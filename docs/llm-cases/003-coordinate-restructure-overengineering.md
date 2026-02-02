@@ -21,7 +21,3 @@ Add addressing helpers that transform between coordinate systems without touchin
 *"We do not do row by row upload. That's nonsensical. Ugh ok let's go planning. Instead of fucking with underlying structure wouldn't it be simpler to just develop addressing?"*
 
 Claude: "You're right - that was overengineering."
-
-## Takeaway
-
-When asked to change how something is *presented* or *interpreted*, Claude tends to propose changes to underlying *storage* or *structure*. The simpler solution is usually a thin translation layer.

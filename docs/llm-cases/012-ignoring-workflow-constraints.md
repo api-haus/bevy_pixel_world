@@ -34,7 +34,3 @@ User: *"Please for the love of god fix the git worktrees workflow description in
 
 CLAUDE.md was updated with stronger language:
 > **Worktrees are opt-in.** Only create or enter a worktree when the user explicitly asks at the beginning of the conversation.
-
-## Takeaway
-
-Workflow constraints in documentation are easily ignored. Even explicit rules get overridden by Claude's default behaviors. Users may need to enforce constraints at the start of each session, not rely on documented rules.

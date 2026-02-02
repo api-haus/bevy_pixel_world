@@ -25,7 +25,3 @@ The viewport was sized incorrectly—it was a "tiny centered viewport instead of
 User pointed out: *"what you did is you changed gray color to black color. So now it's the same silly cropped zoomed in rectangle view, just ending in black instead of grey."*
 
 Claude then acknowledged: "I see the problem - the `PixelViewport` is creating a tiny centered viewport instead of filling the window."
-
-## Takeaway
-
-When asked to fix a visual problem, Claude may fix the most superficial symptom (color) rather than understanding what's actually wrong (sizing). Screenshots help force recognition of the real issue.

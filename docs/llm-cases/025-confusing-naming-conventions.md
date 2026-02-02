@@ -29,7 +29,3 @@ With `#[cfg]` attributes affecting which one was used.
 ## Why This Happens
 
 During iterative development, names accumulate. `save` gets added, then `current_save` gets added for a slightly different purpose. Platform-specific code adds more divergence. Eventually the naming is a mess.
-
-## Takeaway
-
-Names should be clear without requiring context about conditional compilation. If two names are confusingly similar, unify them or make their distinction obvious.

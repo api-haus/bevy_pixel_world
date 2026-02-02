@@ -36,7 +36,3 @@ Claude defaults to "graceful degradation"—when something doesn't work, add a f
 3. Fallback masks the real problem
 4. User has to explicitly reject fallback approach
 5. Only then does Claude focus on fixing the actual implementation
-
-## Takeaway
-
-When asked to implement X, implement X—not X-with-fallback-to-Y. If X isn't working, report the problem rather than silently degrading to something else.

@@ -30,7 +30,3 @@ Changing a fundamental assumption (mesh origin point) has cascading effects on s
 ## The Pivot
 
 Claude reverted: "The overlap approach made things worse - stretching the mesh while keeping UVs at [0,1] scales the texture rather than creating proper overlap."
-
-## Takeaway
-
-"Simple" coordinate system changes can break unrelated systems in non-obvious ways. When a fix touches foundational geometry/positioning, verify all dependent systems still work—not just the one being fixed.

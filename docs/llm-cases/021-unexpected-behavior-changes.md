@@ -28,7 +28,3 @@ The same change set also introduced:
 - *"3. cursor position is broken"*
 
 Three unrelated regressions from a single feature implementation.
-
-## Takeaway
-
-Feature implementations should be tested for regressions beyond the feature itself. "Does the game still start the same way?" is a valid test case even when working on camera code.

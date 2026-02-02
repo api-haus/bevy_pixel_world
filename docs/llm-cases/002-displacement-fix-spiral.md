@@ -31,7 +31,3 @@ Stop after 2-3 failed fix attempts. The cascading issues indicate the approach i
 ## The Pivot
 
 Screenshot of obvious visual bug (carved trail through water). Claude finally acknowledged: "The algorithm isn't working correctly. Let me start fresh."
-
-## Takeaway
-
-When fix attempts keep uncovering "another issue," the problem is usually at the design level, not the code level. Each "let me fix" that immediately leads to "I see another issue" is a signal to stop and reconsider the approach.

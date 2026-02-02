@@ -26,7 +26,3 @@ When making broad changes or "cleaning up," Claude may delete files it considers
 2. Claude makes changes to fix the issue
 3. Claude "cleans up" by removing what looks like temporary code
 4. The cleanup removes the file user is actively using
-
-## Takeaway
-
-Files created during debugging sessions may look temporary but are essential to the workflow. Claude should not delete files unless explicitly asked, especially test/debug files in active development.

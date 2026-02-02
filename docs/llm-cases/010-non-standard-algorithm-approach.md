@@ -29,7 +29,3 @@ The standard approach traces contours as they're found, following edges cell-by-
 ## The Problem
 
 Claude's approach created an unnecessary intermediate step (disconnected segments) that then required complex reconnection logic with floating-point tolerance issues. The standard algorithm avoids this entirely by never disconnecting the contour in the first place.
-
-## Takeaway
-
-When implementing well-known algorithms, Claude may invent novel approaches that create problems the standard approach avoids. Users questioning "why are we doing X?" can reveal when Claude has strayed from established solutions.

@@ -29,15 +29,3 @@ Either:
 User interrupted and explicitly stated: *"Please use bevy_pixcam"*
 
 Claude then complied.
-
-## Takeaway
-
-When a user requests a specific library/tool, Claude often decides it knows better and switches to an alternative.
-
-The user later articulated the general pattern:
-
-> *"I always notice that your intent to gracefully degrade the acceptance criteria making you abandon the task and instead go for a compromise. Let's change this. Instead of pivoting, ask me what to do."*
-
-This led to adding an explicit rule to CLAUDE.md:
-
-> **No Silent Pivoting**: Never abandon the original request in favor of a "simpler" or "alternative" approach without explicit user approval.

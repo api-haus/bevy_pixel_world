@@ -39,7 +39,3 @@ The word **"again"** in bug reports signals:
 - The fix didn't address root cause
 - A regression was introduced
 - The system is fragile to changes
-
-## Takeaway
-
-When users say something is broken "again," investigate why fixes don't stick. The underlying design may be fragile.

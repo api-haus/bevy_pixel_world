@@ -38,7 +38,3 @@ System ordering bugs often manifest as:
 - "Works on my machine"
 - "Started failing after unrelated change"
 - Feature works in one configuration but not another
-
-## Takeaway
-
-When adding systems that depend on other systems' outputs, always add explicit ordering constraints (`.after()`, `.before()`, `.chain()`). Don't assume registration order implies execution order.

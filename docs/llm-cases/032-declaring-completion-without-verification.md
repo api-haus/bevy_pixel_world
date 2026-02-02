@@ -38,7 +38,3 @@ Claude can verify code structure and execution flow but cannot see the actual ou
 ## User's Rule
 
 *"Please do not consider visual task complete without visual confirmation."*
-
-## Takeaway
-
-For visual/graphical features, running the code and checking logs is insufficient. The actual visual output must be verified, either by the user or through screenshot comparison tests.

@@ -34,7 +34,3 @@ Claude models "good API design" based on patterns from large systems. But smalle
 1. Do fewer things
 2. Push complexity to the consumer when appropriate
 3. Don't anticipate features the user hasn't requested
-
-## Takeaway
-
-Ask what the user actually needs, not what a "complete" API would have. Three functions (save, load, copy-on-write) beats twenty functions where only three get used.

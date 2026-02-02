@@ -29,7 +29,3 @@ The identified cause was plausible but incorrect. The real issue was system orde
 ## Why This Happens
 
 Claude forms hypotheses based on code reading but may miss timing/ordering issues that only manifest at runtime. Static analysis can't always reveal dynamic behavior.
-
-## Takeaway
-
-When a "root cause fix" doesn't work, the root cause identification was likely wrong. Re-investigate from scratch rather than patching the fix.

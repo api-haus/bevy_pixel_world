@@ -25,7 +25,3 @@ The documentation was technically "written" but communicated the wrong informati
 ## Why This Happens
 
 Claude knows Mermaid syntax but may not verify how diagrams render. The code was syntactically valid but semantically wrong.
-
-## Takeaway
-
-Documentation diagrams should be reviewed for visual accuracy, not just syntax correctness. What renders isn't always what was intended.

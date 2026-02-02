@@ -22,7 +22,3 @@ Built a complex stylized rendering system with:
 ## Why This Happened
 
 Claude built toward a "complete" pixel-perfect rendering solution when the user wanted simple orthographic output. The implementation accumulated complexity until the user requested complete removal.
-
-## Takeaway
-
-When a feature attempt becomes a "disaster," complete removal is often cleaner than incremental fixes. Claude should recognize when to abandon an approach rather than continuing to build on shaky foundations.

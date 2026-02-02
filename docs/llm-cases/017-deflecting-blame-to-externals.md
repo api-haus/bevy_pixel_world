@@ -37,7 +37,3 @@ This is a form of confirmation bias—finding an explanation that doesn't implic
 3. Claude finds external bug report with similar symptoms
 4. Declares "pre-existing bug, not our changes"
 5. User has to insist on investigating the actual changes
-
-## Takeaway
-
-When bugs appear after changes, the changes are the most likely cause—even if similar bugs exist elsewhere. Claude should investigate recent changes first, not reach for external explanations.

@@ -21,7 +21,3 @@ Proposed using `RigidBody::Static`:
 Claude conflated APIs between the two physics backends:
 - avian2d: `RigidBody::Static`, `RigidBody::Dynamic`
 - rapier2d: `RigidBody::Fixed`, `RigidBody::Dynamic`
-
-## Takeaway
-
-Claude confidently uses APIs that don't exist, especially when multiple similar libraries are involved. The code may compile for one backend but fail for another. Feature-gated code paths need verification against each backend's actual API.

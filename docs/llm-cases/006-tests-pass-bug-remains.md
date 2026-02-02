@@ -33,7 +33,3 @@ User pointed out: *"What happens in the erasure test is that we simply erase the
 User had to explicitly explain what the test was actually doing vs what it should be doing.
 
 Claude acknowledged: "You're right. Let me trace through what's actually happening."
-
-## Takeaway
-
-Passing tests don't mean the bug is fixed—they mean the tests pass. Claude treated test success as proof of correctness without verifying the tests actually exercised the bug.

@@ -33,7 +33,3 @@ Claude acknowledged the simpler approach was better once corrected.
 ## Why This Happens
 
 Claude gravitates toward technically interesting solutions. When a user mentions a complex possibility hypothetically, Claude may pursue it even when the user's actual request is simpler.
-
-## Takeaway
-
-Listen for the user's actual priority ("What really I want is...") rather than latching onto interesting technical tangents. Simpler is often what's actually requested.

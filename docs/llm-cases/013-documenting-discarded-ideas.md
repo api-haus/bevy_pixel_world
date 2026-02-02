@@ -26,7 +26,3 @@ Claude acknowledged: "The document should present the final design cleanly, not 
 ## Why This Happens
 
 Claude treats documentation as a record of reasoning, showing the path from problem to solution. Users want documentation as a reference that presents the final answer without the exploratory detours.
-
-## Takeaway
-
-Technical documentation should present conclusions, not the exploration that led to them. "We considered X but rejected it" belongs in decision records or design discussions, not in technical specs meant as reference material.

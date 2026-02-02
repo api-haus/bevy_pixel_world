@@ -34,7 +34,3 @@ Claude optimizes for "getting it to compile" rather than clean abstractions. Add
 4. WASM implementation doesn't need X
 5. Add stub/placeholder for X on WASM
 6. User notices the smell
-
-## Takeaway
-
-When platform abstractions require stubs or placeholders, the abstraction boundary is in the wrong place. The correct fix is redesigning the abstraction, not adding stubs.

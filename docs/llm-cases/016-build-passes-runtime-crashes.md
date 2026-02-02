@@ -34,7 +34,3 @@ Rust's type system catches many errors at compile time, creating false confidenc
 - Logic errors survive compilation
 - Cfg-gated code paths may have subtle differences
 - Plugin registration, system ordering, resource initialization happen at runtime
-
-## Takeaway
-
-For changes to initialization, plugin setup, or conditional compilation: always run the application, not just build it. "Build succeeded" is necessary but not sufficient verification.

@@ -31,7 +31,3 @@ During implementation, Claude got caught up in technical details and lost sight 
 3. Claude encounters complexity
 4. Claude declares "X is not yet implemented" as if it were someone else's problem
 5. User has to remind: "that's literally what we're doing"
-
-## Takeaway
-
-Claude can lose track of the task goal mid-implementation, especially when dealing with technical complexity. The goal becomes "make something work" rather than "make the specific thing the user asked for work."

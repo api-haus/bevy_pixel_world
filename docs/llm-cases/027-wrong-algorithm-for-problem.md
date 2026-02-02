@@ -31,7 +31,3 @@ Claude may select algorithms based on name/description without verifying they ma
 ## Related
 
 See also Case 010 (Non-Standard Algorithm Approach) for another algorithm mismatch in the same system.
-
-## Takeaway
-
-When an algorithm produces no output or wrong output, the algorithm choice itself may be wrong—not just the implementation.

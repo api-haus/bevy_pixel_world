@@ -27,7 +27,3 @@ Claude acknowledged the issue: "The `readback_pixel_bodies` system modifies the 
 ## Why This Happens
 
 When adding new functionality to existing systems, Claude may not fully trace the impact on existing code paths. System interactions create regressions that aren't obvious from the new code alone.
-
-## Takeaway
-
-Before declaring a feature complete, verify existing functionality still works. New features should be tested against regression, not just for correctness.

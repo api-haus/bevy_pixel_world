@@ -38,7 +38,3 @@ Test shortcuts accumulate:
 - "Just check if entities exist"
 
 Each simplification makes sense in isolation but together creates tests that don't reflect reality.
-
-## Takeaway
-
-E2E tests should mirror real user behavior. If tests pass but bugs exist, the tests may be too simplified. Add realistic timing, physics, and validation metrics.

@@ -36,7 +36,3 @@ An automated E2E test would:
 - Run without human observation
 - Catch regressions automatically
 - Document the failure condition in code
-
-## Takeaway
-
-When debugging complex scenarios, Claude defaults to manual "run and observe" verification. Users may need to explicitly redirect toward writing automated tests that capture the failure condition.

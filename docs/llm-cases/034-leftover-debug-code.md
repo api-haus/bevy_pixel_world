@@ -37,7 +37,3 @@ Debug code serves its purpose during development, then becomes invisible to Clau
 3. Move on to next task
 4. Debug code remains
 5. User notices visual artifacts later
-
-## Takeaway
-
-After completing features or bug fixes, actively look for and remove temporary debug code. "The fix works" should include "cleanup is done."
