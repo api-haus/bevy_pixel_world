@@ -13,6 +13,7 @@ use super::mesh::{PolygonMesh, TileCollisionMesh};
 use super::simplify::simplify_polylines;
 use super::triangulate::triangulate_polygon;
 use crate::pixel_world::coords::{TILE_SIZE, TILES_PER_CHUNK, TilePos};
+use crate::pixel_world::diagnostics::profile;
 use crate::pixel_world::material::{Materials, PhysicsState};
 use crate::pixel_world::pixel::PixelFlags;
 use crate::pixel_world::world::PixelWorld;
@@ -160,6 +161,8 @@ pub fn dispatch_collision_tasks(
   config: Res<CollisionConfig>,
   materials: Option<Res<Materials>>,
 ) {
+  let _span = profile("collision_dispatch");
+
   let Some(materials) = materials else {
     return;
   };

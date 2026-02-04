@@ -7,7 +7,8 @@ use bevy::prelude::*;
 use web_time::Instant;
 
 use super::super::{PixelWorld, SlotIndex};
-use crate::pixel_world::render::{ChunkMaterial, upload_heat, upload_pixels};
+use crate::pixel_world::diagnostics::profile;
+use crate::pixel_world::render::{ChunkMaterial, upload_pixels};
 
 /// Returns indices of dirty, seeded slots that need GPU upload.
 fn dirty_slot_indices(world: &PixelWorld) -> impl Iterator<Item = SlotIndex> + '_ {
@@ -35,12 +36,6 @@ fn upload_slot_to_gpu(
     upload_pixels(&slot.chunk.pixels, image);
   }
 
-  if let Some(heat_handle) = slot.heat_texture.as_ref()
-    && let Some(image) = images.get_mut(heat_handle)
-  {
-    upload_heat(&slot.chunk.heat, image);
-  }
-
   // Touch material to force bind group refresh (Bevy workaround)
   let _ = materials.get_mut(material_handle);
 
@@ -57,6 +52,7 @@ pub(crate) fn upload_dirty_chunks(
   mut materials: ResMut<Assets<ChunkMaterial>>,
   mut sim_metrics: ResMut<crate::pixel_world::diagnostics::SimulationMetrics>,
 ) {
+  let _span = profile("upload_chunks");
   let start = Instant::now();
 
   for mut world in worlds.iter_mut() {

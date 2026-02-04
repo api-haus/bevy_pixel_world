@@ -1,12 +1,18 @@
 //! Burning propagation and ash transformation.
 //!
 //! Burning pixels spread fire to adjacent flammable pixels and
-//! probabilistically transform into ash.
+//! probabilistically transform into ash. Uses checkerboard scheduling
+//! and dirty rects for efficient parallel processing.
+//!
+//! All probability calculations use tick-rate-independent parameters
+//! (rates per second, durations) converted to per-tick probabilities.
 
-use crate::pixel_world::coords::{CHUNK_SIZE, ChunkPos, ColorIndex, WorldPos};
+use std::collections::HashSet;
+
+use crate::pixel_world::coords::{ChunkPos, ColorIndex, LocalPos, TILE_SIZE, TilePos, WorldPos};
 use crate::pixel_world::material::{Materials, PixelEffect};
 use crate::pixel_world::pixel::{Pixel, PixelFlags};
-use crate::pixel_world::primitives::Chunk;
+use crate::pixel_world::primitives::HEAT_CELL_SIZE;
 use crate::pixel_world::scheduling::blitter::Canvas;
 use crate::pixel_world::simulation::SimContext;
 use crate::pixel_world::simulation::hash::hash41uu64;
@@ -14,19 +20,26 @@ use crate::pixel_world::simulation::hash::hash41uu64;
 /// Cardinal neighbor offsets.
 const CARDINAL: [(i64, i64); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
 
-/// Applies a burn effect to a pixel, returning true if the pixel was consumed.
+/// Applies a burn effect to a pixel.
 fn apply_burn_effect(
-  chunk: &mut Chunk,
-  lx: u32,
-  ly: u32,
+  canvas: &Canvas<'_>,
+  pos: WorldPos,
   effect: PixelEffect,
   ctx: SimContext,
-  world_x: i64,
-  world_y: i64,
+  dirty_chunks: &mut HashSet<ChunkPos>,
+  dirty_pixels: &mut Vec<(ChunkPos, LocalPos)>,
 ) {
+  let (chunk_pos, local) = pos.to_chunk_and_local();
+  let lx = local.x as u32;
+  let ly = local.y as u32;
+
+  let Some(chunk) = canvas.get_mut(chunk_pos) else {
+    return;
+  };
+
   match effect {
     PixelEffect::Transform(target) => {
-      let color_hash = hash41uu64(ctx.seed, world_x as u64, world_y as u64, 0xA5A5);
+      let color_hash = hash41uu64(ctx.seed, pos.x as u64, pos.y as u64, 0xA5A5);
       let color_idx = (color_hash % 256) as u8;
       chunk.pixels[(lx, ly)] = Pixel {
         material: target,
@@ -38,29 +51,34 @@ fn apply_burn_effect(
     PixelEffect::Destroy => {
       chunk.pixels[(lx, ly)] = Pixel::VOID;
     }
-    PixelEffect::Resist => {}
+    PixelEffect::Resist => return,
   }
+
   chunk.mark_pixel_dirty(lx, ly);
+  dirty_chunks.insert(chunk_pos);
+  dirty_pixels.push((chunk_pos, local));
 }
 
 /// Attempts to spread fire from a burning pixel to its cardinal neighbors.
 fn try_spread_fire(
   canvas: &Canvas<'_>,
-  world_x: i64,
-  world_y: i64,
+  pos: WorldPos,
   ctx: SimContext,
   materials: &Materials,
-  ignite_spread_chance: f32,
+  spread_chance: f32,
+  dirty_chunks: &mut HashSet<ChunkPos>,
+  dirty_pixels: &mut Vec<(ChunkPos, LocalPos)>,
 ) {
   const CH_SPREAD: u64 = 0xdead_beef_cafe_babe;
 
   for &(dx, dy) in &CARDINAL {
-    let nx = world_x + dx;
-    let ny = world_y + dy;
+    let nx = pos.x + dx;
+    let ny = pos.y + dy;
 
+    // Roll against tick-rate-independent spread probability
     let spread_hash = hash41uu64(ctx.seed ^ CH_SPREAD, ctx.tick, nx as u64, ny as u64);
     let spread_roll = (spread_hash & 0xFFFF) as f32 / 65535.0;
-    if spread_roll >= ignite_spread_chance {
+    if spread_roll >= spread_chance {
       continue;
     }
 
@@ -87,66 +105,115 @@ fn try_spread_fire(
       let p = &mut tc.pixels[(tlx, tly)];
       p.flags.insert(PixelFlags::BURNING | PixelFlags::DIRTY);
       tc.mark_pixel_dirty(tlx, tly);
+      dirty_chunks.insert(target_chunk_pos);
+      dirty_pixels.push((target_chunk_pos, target_local));
+
+      // Mark heat tile dirty for the newly burning pixel
+      let hx = tlx / HEAT_CELL_SIZE;
+      let hy = tly / HEAT_CELL_SIZE;
+      tc.heat_dirty.mark_dirty(hx, hy);
     }
   }
 }
 
-/// Runs burning propagation and ash transformation for a single chunk.
-///
-/// For each burning pixel:
-/// 1. Try to spread fire to cardinal neighbors (probabilistic).
-/// 2. Try to transform to ash (probabilistic).
-///
-/// This function should be called per-chunk. It reads neighbor chunks via
-/// the Canvas for cross-boundary fire spread.
-pub fn process_burning(
+/// Processes a single burning pixel: spread fire and apply burn effects.
+fn process_burning_pixel(
   canvas: &Canvas<'_>,
-  chunk_pos: ChunkPos,
-  materials: &Materials,
-  ctx: SimContext,
-  ignite_spread_chance: f32,
+  pos: WorldPos,
+  burning_ctx: &BurningContext<'_>,
+  dirty_chunks: &mut HashSet<ChunkPos>,
+  dirty_pixels: &mut Vec<(ChunkPos, LocalPos)>,
 ) {
-  let chunk_size = CHUNK_SIZE as i64;
-  let base_x = chunk_pos.x as i64 * chunk_size;
-  let base_y = chunk_pos.y as i64 * chunk_size;
+  let (chunk_pos, local) = pos.to_chunk_and_local();
+  let lx = local.x as u32;
+  let ly = local.y as u32;
 
   let Some(chunk) = canvas.get(chunk_pos) else {
     return;
   };
 
+  let pixel = chunk.pixels[(lx, ly)];
+  if !pixel.flags.contains(PixelFlags::BURNING) {
+    return;
+  }
+
+  let mat = burning_ctx.materials.get(pixel.material);
+
+  // Check for burn effect (transform to ash, destroy, etc.)
+  // Uses tick-rate-independent ash_chance derived from burn_duration_secs
   const CH_ASH: u64 = 0x1234_5678_9abc_def0;
-
-  for ly in 0..CHUNK_SIZE {
-    for lx in 0..CHUNK_SIZE {
-      let pixel = chunk.pixels[(lx, ly)];
-      if !pixel.flags.contains(PixelFlags::BURNING) {
-        continue;
-      }
-
-      let world_x = base_x + lx as i64;
-      let world_y = base_y + ly as i64;
-      let mat = materials.get(pixel.material);
-
-      // Check for burn effect (transform to ash, destroy, etc.)
-      if let Some((effect, chance)) = mat.effects.on_burn {
-        let ash_hash = hash41uu64(ctx.seed ^ CH_ASH, ctx.tick, world_x as u64, world_y as u64);
-        let ash_roll = (ash_hash & 0xFFFF) as f32 / 65535.0;
-        if ash_roll < chance {
-          if let Some(c) = canvas.get_mut(chunk_pos) {
-            apply_burn_effect(c, lx, ly, effect, ctx, world_x, world_y);
-          }
-          continue;
-        }
-      }
-
-      try_spread_fire(
+  if let Some((effect, _material_chance)) = mat.effects.on_burn {
+    let ash_hash = hash41uu64(
+      burning_ctx.ctx.seed ^ CH_ASH,
+      burning_ctx.ctx.tick,
+      pos.x as u64,
+      pos.y as u64,
+    );
+    let ash_roll = (ash_hash & 0xFFFF) as f32 / 65535.0;
+    // Use global ash_chance for tick-rate independence
+    if ash_roll < burning_ctx.ash_chance {
+      apply_burn_effect(
         canvas,
-        world_x,
-        world_y,
-        ctx,
-        materials,
-        ignite_spread_chance,
+        pos,
+        effect,
+        burning_ctx.ctx,
+        dirty_chunks,
+        dirty_pixels,
       );
+      return;
+    }
+  }
+
+  // Try to spread fire to neighbors
+  try_spread_fire(
+    canvas,
+    pos,
+    burning_ctx.ctx,
+    burning_ctx.materials,
+    burning_ctx.spread_chance,
+    dirty_chunks,
+    dirty_pixels,
+  );
+}
+
+/// Context for burning simulation within a tile.
+///
+/// Contains pre-computed per-tick probabilities derived from
+/// tick-rate-independent configuration values.
+pub struct BurningContext<'a> {
+  pub materials: &'a Materials,
+  pub ctx: SimContext,
+  /// Per-tick probability of spreading fire to a single neighbor.
+  /// Derived from spread_rate / (num_neighbors * burning_tps).
+  pub spread_chance: f32,
+  /// Per-tick probability of ash transformation.
+  /// Derived from 1 / (burn_duration_secs * burning_tps).
+  pub ash_chance: f32,
+}
+
+/// Processes burning propagation for a single tile using dirty bounds.
+///
+/// Only processes pixels within the tile's dirty rect, respecting
+/// checkerboard scheduling for thread safety.
+pub fn process_tile_burning(
+  canvas: &Canvas<'_>,
+  tile: TilePos,
+  bounds: (u8, u8, u8, u8),
+  jitter: (i64, i64),
+  burning_ctx: &BurningContext<'_>,
+  dirty_chunks: &mut HashSet<ChunkPos>,
+  dirty_pixels: &mut Vec<(ChunkPos, LocalPos)>,
+) {
+  let tile_size = TILE_SIZE as i64;
+  let base_x = tile.x * tile_size + jitter.0;
+  let base_y = tile.y * tile_size + jitter.1;
+
+  let (min_x, min_y, max_x, max_y) = bounds;
+
+  for local_y in (min_y as i64)..=(max_y as i64) {
+    for local_x in (min_x as i64)..=(max_x as i64) {
+      let pos = WorldPos::new(base_x + local_x, base_y + local_y);
+      process_burning_pixel(canvas, pos, burning_ctx, dirty_chunks, dirty_pixels);
     }
   }
 }

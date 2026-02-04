@@ -58,8 +58,6 @@ pub struct ChunkSlot {
   pub texture: Option<Handle<Image>>,
   /// Material handle (for bind group refresh workaround).
   pub material: Option<Handle<ChunkMaterial>>,
-  /// Heat texture handle for GPU upload.
-  pub heat_texture: Option<Handle<Image>>,
 }
 
 impl ChunkSlot {
@@ -75,7 +73,6 @@ impl ChunkSlot {
       entity: None,
       texture: None,
       material: None,
-      heat_texture: None,
     }
   }
 

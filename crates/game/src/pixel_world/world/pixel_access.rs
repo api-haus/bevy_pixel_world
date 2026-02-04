@@ -146,6 +146,7 @@ impl PixelWorld {
   /// Sets the heat value at the given world position's heat cell.
   ///
   /// Returns true if the heat was set, false if the chunk is not loaded.
+  /// Also marks the heat tile dirty so propagation will process it.
   pub fn set_heat_at(&mut self, pos: WorldPos, heat: u8) -> bool {
     let (chunk_pos, local_pos) = pos.to_chunk_and_local();
     let Some(idx) = self.pool.index_for(chunk_pos) else {
@@ -158,6 +159,12 @@ impl PixelWorld {
     let hx = local_pos.x as u32 / HEAT_CELL_SIZE;
     let hy = local_pos.y as u32 / HEAT_CELL_SIZE;
     *slot.chunk.heat_cell_mut(hx, hy) = heat;
+
+    // Mark heat tile dirty so propagation will process it
+    if heat > 0 {
+      slot.chunk.heat_dirty.mark_dirty(hx, hy);
+    }
+
     true
   }
 

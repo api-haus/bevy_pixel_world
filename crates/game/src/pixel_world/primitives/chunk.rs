@@ -11,13 +11,24 @@ use crate::pixel_world::pixel::PixelSurface;
 
 /// Pixels per heat cell edge.
 pub const HEAT_CELL_SIZE: u32 = 4;
-/// Number of heat cells per chunk edge.
+/// Number of heat cells per chunk edge (128 for 512px chunk / 4px cell).
 pub const HEAT_GRID_SIZE: u32 = CHUNK_SIZE / HEAT_CELL_SIZE;
 /// Total heat cells per chunk.
 const HEAT_CELL_COUNT: usize = (HEAT_GRID_SIZE * HEAT_GRID_SIZE) as usize;
 
+// Heat layer tile grid (independent of pixel layer tiles)
+/// Number of heat tiles per chunk edge.
+pub const HEAT_TILES_PER_CHUNK: u32 = 16;
+/// Number of heat cells per heat tile edge (8 cells = 32 pixels).
+pub const HEAT_CELLS_PER_TILE: u32 = HEAT_GRID_SIZE / HEAT_TILES_PER_CHUNK;
+/// Total heat tiles per chunk.
+const HEAT_TILE_COUNT: usize = (HEAT_TILES_PER_CHUNK * HEAT_TILES_PER_CHUNK) as usize;
+
 /// Number of tiles per chunk (16x16 = 256).
 const TILE_COUNT: usize = (TILES_PER_CHUNK * TILES_PER_CHUNK) as usize;
+
+/// Frames a heat tile stays active after last heat activity.
+const HEAT_TILE_COOLDOWN: u8 = 4;
 
 /// Tile-local bounding box.
 ///
@@ -131,6 +142,130 @@ impl TileDirtyRect {
   }
 }
 
+/// Dirty tile tracker for the heat layer.
+///
+/// Tracks 16×16 tiles per chunk, each covering 8×8 heat cells.
+/// Only active tiles are processed during heat propagation.
+#[derive(Clone)]
+pub struct HeatDirtyTracker {
+  /// Bitmask of tiles active this frame (256 bits = 4 × u64).
+  /// Bit index = ty * 16 + tx.
+  active: [u64; 4],
+  /// Per-tile cooldown (frames until sleep).
+  cooldown: [u8; HEAT_TILE_COUNT],
+}
+
+impl Default for HeatDirtyTracker {
+  fn default() -> Self {
+    Self {
+      active: [0; 4],
+      cooldown: [0; HEAT_TILE_COUNT],
+    }
+  }
+}
+
+impl HeatDirtyTracker {
+  /// Creates a tracker with all tiles active (for newly seeded chunks).
+  pub fn all_active() -> Self {
+    Self {
+      active: [u64::MAX; 4],
+      cooldown: [HEAT_TILE_COOLDOWN; HEAT_TILE_COUNT],
+    }
+  }
+
+  /// Returns the bit index for a tile.
+  #[inline]
+  fn tile_index(tx: u32, ty: u32) -> usize {
+    (ty * HEAT_TILES_PER_CHUNK + tx) as usize
+  }
+
+  /// Marks a heat cell's tile as dirty, resetting cooldown.
+  /// Also marks cardinal neighbor tiles to support diffusion.
+  pub fn mark_dirty(&mut self, hx: u32, hy: u32) {
+    let tx = hx / HEAT_CELLS_PER_TILE;
+    let ty = hy / HEAT_CELLS_PER_TILE;
+    self.mark_tile_dirty(tx, ty);
+
+    // Mark neighbor tiles if cell is at tile boundary
+    let local_hx = hx % HEAT_CELLS_PER_TILE;
+    let local_hy = hy % HEAT_CELLS_PER_TILE;
+
+    if local_hx == 0 && tx > 0 {
+      self.mark_tile_dirty(tx - 1, ty);
+    }
+    if local_hx == HEAT_CELLS_PER_TILE - 1 && tx + 1 < HEAT_TILES_PER_CHUNK {
+      self.mark_tile_dirty(tx + 1, ty);
+    }
+    if local_hy == 0 && ty > 0 {
+      self.mark_tile_dirty(tx, ty - 1);
+    }
+    if local_hy == HEAT_CELLS_PER_TILE - 1 && ty + 1 < HEAT_TILES_PER_CHUNK {
+      self.mark_tile_dirty(tx, ty + 1);
+    }
+  }
+
+  /// Marks a specific tile as dirty.
+  #[inline]
+  fn mark_tile_dirty(&mut self, tx: u32, ty: u32) {
+    let idx = Self::tile_index(tx, ty);
+    let word = idx / 64;
+    let bit = idx % 64;
+    self.active[word] |= 1u64 << bit;
+    self.cooldown[idx] = HEAT_TILE_COOLDOWN;
+  }
+
+  /// Checks if a tile is active.
+  #[inline]
+  pub fn is_tile_active(&self, tx: u32, ty: u32) -> bool {
+    let idx = Self::tile_index(tx, ty);
+    let word = idx / 64;
+    let bit = idx % 64;
+    (self.active[word] & (1u64 << bit)) != 0
+  }
+
+  /// Advances the cooldown state machine.
+  /// Decrements cooldown for all tiles; tiles reaching 0 become inactive.
+  pub fn tick(&mut self) {
+    for (idx, cooldown) in self.cooldown.iter_mut().enumerate() {
+      if *cooldown > 0 {
+        *cooldown -= 1;
+        if *cooldown == 0 {
+          // Deactivate tile
+          let word = idx / 64;
+          let bit = idx % 64;
+          self.active[word] &= !(1u64 << bit);
+        }
+      }
+    }
+  }
+
+  /// Returns an iterator over active tile coordinates (tx, ty).
+  pub fn active_tiles(&self) -> impl Iterator<Item = (u32, u32)> + '_ {
+    (0..HEAT_TILE_COUNT).filter_map(|idx| {
+      let word = idx / 64;
+      let bit = idx % 64;
+      if (self.active[word] & (1u64 << bit)) != 0 {
+        let tx = (idx as u32) % HEAT_TILES_PER_CHUNK;
+        let ty = (idx as u32) / HEAT_TILES_PER_CHUNK;
+        Some((tx, ty))
+      } else {
+        None
+      }
+    })
+  }
+
+  /// Returns the count of active tiles.
+  pub fn active_count(&self) -> usize {
+    self.active.iter().map(|w| w.count_ones() as usize).sum()
+  }
+
+  /// Resets all tiles to inactive.
+  pub fn reset(&mut self) {
+    self.active = [0; 4];
+    self.cooldown = [0; HEAT_TILE_COUNT];
+  }
+}
+
 /// A chunk of the world containing pixel data.
 pub struct Chunk {
   /// Simulation data (material, color, damage, flags).
@@ -148,6 +283,8 @@ pub struct Chunk {
   pub from_persistence: bool,
   /// Downsampled heat layer (128×128, ephemeral, not persisted).
   pub heat: Box<[u8]>,
+  /// Dirty tile tracker for heat propagation optimization.
+  pub heat_dirty: HeatDirtyTracker,
 }
 
 impl Chunk {
@@ -160,6 +297,7 @@ impl Chunk {
       tile_collision_dirty: vec![true; TILE_COUNT].into_boxed_slice(),
       from_persistence: false,
       heat: vec![0u8; HEAT_CELL_COUNT].into_boxed_slice(),
+      heat_dirty: HeatDirtyTracker::default(),
     }
   }
 
@@ -274,9 +412,16 @@ impl Chunk {
     &mut self.heat[(hy * HEAT_GRID_SIZE + hx) as usize]
   }
 
-  /// Zeros all heat cells (called when chunk returns to pool).
+  /// Zeros all heat cells and resets dirty tracker (called when chunk returns
+  /// to pool).
   pub fn reset_heat(&mut self) {
     self.heat.fill(0);
+    self.heat_dirty.reset();
+  }
+
+  /// Marks all heat tiles as active (for newly seeded chunks).
+  pub fn activate_all_heat_tiles(&mut self) {
+    self.heat_dirty = HeatDirtyTracker::all_active();
   }
 
   /// Returns an iterator over (tx, ty) pairs for tiles with dirty collision.

@@ -249,6 +249,7 @@ pub(crate) fn poll_seeding_tasks(
       // blitted before seeding completed.
       merge_seeded_pixels(&mut slot.chunk.pixels, &seeded_chunk.pixels);
       slot.chunk.set_all_dirty_rects_full();
+      slot.chunk.activate_all_heat_tiles();
       slot.lifecycle = ChunkLifecycle::Active;
       slot.dirty = true;
 

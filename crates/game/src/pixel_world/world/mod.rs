@@ -428,12 +428,10 @@ impl PixelWorld {
     entity: Entity,
     texture: Option<Handle<Image>>,
     material: Option<Handle<ChunkMaterial>>,
-    heat_texture: Option<Handle<Image>>,
   ) {
     let slot = self.pool.get_mut(index);
     slot.entity = Some(entity);
     slot.texture = texture;
     slot.material = material;
-    slot.heat_texture = heat_texture;
   }
 }

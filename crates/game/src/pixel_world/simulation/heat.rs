@@ -7,22 +7,39 @@
 use crate::pixel_world::coords::ChunkPos;
 use crate::pixel_world::material::Materials;
 use crate::pixel_world::pixel::PixelFlags;
-use crate::pixel_world::primitives::{Chunk, HEAT_CELL_SIZE, HEAT_GRID_SIZE};
+use crate::pixel_world::primitives::{Chunk, HEAT_CELL_SIZE, HEAT_CELLS_PER_TILE, HEAT_GRID_SIZE};
 use crate::pixel_world::scheduling::blitter::Canvas;
 
-/// Configuration for heat simulation.
+/// Base tick rate for the simulation (ticks per second).
+pub const BASE_TPS: f32 = 60.0;
+
+/// Configuration for heat and burning simulation.
+///
+/// All rate/duration parameters are tick-rate independent - they express
+/// behavior in real-world time units (seconds) and are converted to per-tick
+/// probabilities at runtime.
 #[derive(bevy::prelude::Resource)]
 pub struct HeatConfig {
+  // === Heat propagation ===
   /// Multiplier applied during diffusion (default 0.95).
   pub cooling_factor: f32,
   /// Heat emitted per burning pixel into its heat cell (default 50).
   pub burning_heat: u8,
-  /// Number of CA ticks between heat propagation steps (default 6, ~10 TPS at
-  /// 60 TPS).
+  /// Number of base ticks between heat propagation steps (default 6, ~10 TPS).
   pub heat_tick_interval: u32,
-  /// Per-neighbor per-tick chance of fire spreading from a burning pixel
-  /// (default 0.3).
-  pub ignite_spread_chance: f32,
+
+  // === Burning propagation ===
+  /// Number of base ticks between burning propagation steps (default 3, ~20
+  /// TPS).
+  pub burning_tick_interval: u32,
+  /// Fire spread rate: expected ignitions per second per burning pixel.
+  /// Spread attempts are made to each cardinal neighbor independently.
+  /// (default 2.0 = ~2 neighbors ignite per second)
+  pub spread_rate: f32,
+  /// Average time a burning pixel takes to turn to ash (seconds).
+  /// This affects the per-tick probability of burn effects triggering.
+  /// (default 5.0 = ~5 seconds average burn duration)
+  pub burn_duration_secs: f32,
 }
 
 impl Default for HeatConfig {
@@ -31,22 +48,51 @@ impl Default for HeatConfig {
       cooling_factor: 0.95,
       burning_heat: 50,
       heat_tick_interval: 6,
-      ignite_spread_chance: 0.3,
+      burning_tick_interval: 3,
+      spread_rate: 2.0,
+      burn_duration_secs: 5.0,
     }
   }
 }
 
+impl HeatConfig {
+  /// Returns the effective TPS for burning simulation.
+  pub fn burning_tps(&self) -> f32 {
+    BASE_TPS / self.burning_tick_interval as f32
+  }
+
+  /// Converts spread_rate to per-tick probability for a single neighbor.
+  ///
+  /// Given N cardinal neighbors, each gets: spread_rate / (N * burning_tps)
+  pub fn spread_chance_per_tick(&self) -> f32 {
+    const NUM_NEIGHBORS: f32 = 4.0; // Cardinal directions
+    let tps = self.burning_tps();
+    (self.spread_rate / (NUM_NEIGHBORS * tps)).min(1.0)
+  }
+
+  /// Converts burn_duration_secs to per-tick probability of ash transformation.
+  ///
+  /// Uses Poisson process: p = 1 / (duration * tps)
+  pub fn ash_chance_per_tick(&self) -> f32 {
+    let tps = self.burning_tps();
+    (1.0 / (self.burn_duration_secs * tps)).min(1.0)
+  }
+}
+
 /// Accumulates heat from pixel sources within a single heat cell's 4x4 region.
+/// Returns (source_heat, solid_count) where solid_count is the number of
+/// non-void pixels.
 fn accumulate_cell_heat_sources(
   chunk: &Chunk,
   hx: u32,
   hy: u32,
   materials: &Materials,
   burning_heat: u8,
-) -> u32 {
+) -> (u32, u32) {
   let px_base_x = hx * HEAT_CELL_SIZE;
   let px_base_y = hy * HEAT_CELL_SIZE;
   let mut source: u32 = 0;
+  let mut solid_count: u32 = 0;
 
   for dy in 0..HEAT_CELL_SIZE {
     for dx in 0..HEAT_CELL_SIZE {
@@ -54,6 +100,7 @@ fn accumulate_cell_heat_sources(
       if pixel.is_void() {
         continue;
       }
+      solid_count += 1;
       let mat = materials.get(pixel.material);
       source += mat.base_temperature as u32;
       if pixel.flags.contains(PixelFlags::BURNING) {
@@ -62,7 +109,7 @@ fn accumulate_cell_heat_sources(
     }
   }
 
-  source
+  (source, solid_count)
 }
 
 /// Cardinal offsets for heat neighbor sampling: (dx, dy).
@@ -128,6 +175,8 @@ fn sample_heat_neighbors(
 /// For each heat cell: accumulate source heat from pixels, diffuse with
 /// cardinal neighbors, apply cooling. Uses a scratch buffer per chunk to
 /// avoid read-write conflicts.
+///
+/// Only processes active heat tiles (those marked dirty or in cooldown).
 pub fn propagate_heat(
   canvas: &Canvas<'_>,
   chunk_positions: &[ChunkPos],
@@ -139,43 +188,95 @@ pub fn propagate_heat(
   let mut scratch = vec![0u8; cell_count];
 
   for &chunk_pos in chunk_positions {
+    // Borrow immutably first to collect active tiles
     let Some(chunk) = canvas.get(chunk_pos) else {
       continue;
     };
 
-    for hy in 0..HEAT_GRID_SIZE {
-      for hx in 0..HEAT_GRID_SIZE {
-        let source = accumulate_cell_heat_sources(chunk, hx, hy, materials, config.burning_heat);
+    // Collect active tiles BEFORE tick (so we process tiles about to expire)
+    let active_tiles: Vec<(u32, u32)> = chunk.heat_dirty.active_tiles().collect();
 
-        let self_heat = chunk.heat_cell(hx, hy) as u32;
-        let (neighbor_sum, neighbor_count) =
-          sample_heat_neighbors(hx, hy, chunk, canvas, chunk_pos);
+    if active_tiles.is_empty() {
+      continue;
+    }
 
-        let neighbor_avg = if neighbor_count > 0 {
-          neighbor_sum / neighbor_count
-        } else {
-          0
-        };
+    // Process active tiles
+    for &(tx, ty) in &active_tiles {
+      let hx_start = tx * HEAT_CELLS_PER_TILE;
+      let hy_start = ty * HEAT_CELLS_PER_TILE;
 
-        let diffused = ((self_heat + neighbor_avg) as f32 / 2.0 * config.cooling_factor) as u32;
-        let new_temp = source.max(diffused).min(255) as u8;
+      for hy in hy_start..hy_start + HEAT_CELLS_PER_TILE {
+        for hx in hx_start..hx_start + HEAT_CELLS_PER_TILE {
+          let (source, solid_count) =
+            accumulate_cell_heat_sources(chunk, hx, hy, materials, config.burning_heat);
 
-        scratch[(hy * HEAT_GRID_SIZE + hx) as usize] = new_temp;
+          let self_heat = chunk.heat_cell(hx, hy) as u32;
+          let (neighbor_sum, neighbor_count) =
+            sample_heat_neighbors(hx, hy, chunk, canvas, chunk_pos);
+
+          let neighbor_avg = if neighbor_count > 0 {
+            neighbor_sum / neighbor_count
+          } else {
+            0
+          };
+
+          // Heat in air (no solid pixels) dissipates 10x faster
+          let effective_cooling = if solid_count == 0 {
+            config.cooling_factor.powi(10)
+          } else {
+            config.cooling_factor
+          };
+
+          let diffused = ((self_heat + neighbor_avg) as f32 / 2.0 * effective_cooling) as u32;
+          let new_temp = source.max(diffused).min(255) as u8;
+
+          scratch[(hy * HEAT_GRID_SIZE + hx) as usize] = new_temp;
+        }
       }
     }
 
-    // Write scratch back via Canvas interior mutability
+    // Write scratch back, mark dirty tiles, and tick cooldowns
     if let Some(chunk) = canvas.get_mut(chunk_pos) {
-      chunk.heat[..cell_count].copy_from_slice(&scratch);
+      // Write scratch values for tiles we processed
+      for &(tx, ty) in &active_tiles {
+        let hx_start = tx * HEAT_CELLS_PER_TILE;
+        let hy_start = ty * HEAT_CELLS_PER_TILE;
+
+        for hy in hy_start..hy_start + HEAT_CELLS_PER_TILE {
+          for hx in hx_start..hx_start + HEAT_CELLS_PER_TILE {
+            let idx = (hy * HEAT_GRID_SIZE + hx) as usize;
+            let new_temp = scratch[idx];
+            chunk.heat[idx] = new_temp;
+
+            // Keep tile active if heat remains, also wake neighbors for diffusion
+            if new_temp > 0 {
+              chunk.heat_dirty.mark_dirty(hx, hy);
+            }
+          }
+        }
+      }
+
+      // Tick cooldowns AFTER processing
+      chunk.heat_dirty.tick();
     }
+
+    // Reset scratch for next chunk
+    scratch.fill(0);
   }
 }
 
 /// Ignites flammable pixels within a single heat cell that exceed their
-/// threshold.
-fn ignite_cell_pixels(chunk: &mut Chunk, hx: u32, hy: u32, heat: u8, materials: &Materials) {
+/// threshold. Returns true if any pixel was ignited.
+fn ignite_cell_pixels(
+  chunk: &mut Chunk,
+  hx: u32,
+  hy: u32,
+  heat: u8,
+  materials: &Materials,
+) -> bool {
   let px_base_x = hx * HEAT_CELL_SIZE;
   let px_base_y = hy * HEAT_CELL_SIZE;
+  let mut ignited = false;
 
   for dy in 0..HEAT_CELL_SIZE {
     for dx in 0..HEAT_CELL_SIZE {
@@ -196,23 +297,44 @@ fn ignite_cell_pixels(chunk: &mut Chunk, hx: u32, hy: u32, heat: u8, materials: 
         let p = &mut chunk.pixels[(px, py)];
         p.flags.insert(PixelFlags::BURNING | PixelFlags::DIRTY);
         chunk.mark_pixel_dirty(px, py);
+        ignited = true;
       }
     }
   }
+
+  ignited
 }
 
 /// Checks heat cells and ignites flammable pixels that exceed their threshold.
+///
+/// Only processes active heat tiles for efficiency.
 pub fn ignite_from_heat(canvas: &Canvas<'_>, chunk_positions: &[ChunkPos], materials: &Materials) {
   for &chunk_pos in chunk_positions {
+    let Some(chunk) = canvas.get(chunk_pos) else {
+      continue;
+    };
+
+    // Collect active tiles
+    let active_tiles: Vec<(u32, u32)> = chunk.heat_dirty.active_tiles().collect();
+
     let Some(chunk) = canvas.get_mut(chunk_pos) else {
       continue;
     };
 
-    for hy in 0..HEAT_GRID_SIZE {
-      for hx in 0..HEAT_GRID_SIZE {
-        let heat = chunk.heat_cell(hx, hy);
-        if heat > 0 {
-          ignite_cell_pixels(chunk, hx, hy, heat, materials);
+    for (tx, ty) in active_tiles {
+      let hx_start = tx * HEAT_CELLS_PER_TILE;
+      let hy_start = ty * HEAT_CELLS_PER_TILE;
+
+      for hy in hy_start..hy_start + HEAT_CELLS_PER_TILE {
+        for hx in hx_start..hx_start + HEAT_CELLS_PER_TILE {
+          let heat = chunk.heat_cell(hx, hy);
+          if heat > 0 {
+            let ignited = ignite_cell_pixels(chunk, hx, hy, heat, materials);
+            if ignited {
+              // Keep heat tile active when pixels ignite
+              chunk.heat_dirty.mark_dirty(hx, hy);
+            }
+          }
         }
       }
     }

@@ -1,9 +1,11 @@
 mod graph;
+mod profiler;
 mod time_series;
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
 pub use graph::{TimeSeriesGraphConfig, time_series_graph};
+pub use profiler::{ProfilerMetrics, profile};
 pub use time_series::TimeSeries;
 
 const SAMPLE_CAPACITY: usize = 300;
@@ -72,7 +74,11 @@ impl Plugin for DiagnosticsPlugin {
       .init_resource::<FrameTimeMetrics>()
       .init_resource::<SimulationMetrics>()
       .init_resource::<CollisionMetrics>()
-      .add_systems(First, collect_frame_metrics)
+      .init_resource::<ProfilerMetrics>()
+      .add_systems(
+        First,
+        (profiler::aggregate_profiler_samples, collect_frame_metrics).chain(),
+      )
       .add_systems(EguiPrimaryContextPass, render_diagnostics_ui);
   }
 }
@@ -95,6 +101,7 @@ fn render_diagnostics_ui(
   mut metrics: ResMut<FrameTimeMetrics>,
   mut sim_metrics: ResMut<SimulationMetrics>,
   mut collision_metrics: ResMut<CollisionMetrics>,
+  profiler_metrics: Res<ProfilerMetrics>,
 ) {
   let Ok(ctx) = contexts.ctx_mut() else {
     return;
@@ -170,5 +177,30 @@ fn render_diagnostics_ui(
           ..Default::default()
         },
       );
+
+      // Slowest samples widget
+      let slowest = profiler_metrics.slowest();
+      if !slowest.is_empty() {
+        ui.add_space(8.0);
+
+        ui.label(
+          egui::RichText::new("Slowest This Frame")
+            .color(egui::Color32::from_rgb(180, 180, 180))
+            .monospace()
+            .size(10.0),
+        );
+
+        ui.add_space(2.0);
+
+        for sample in slowest {
+          let text = format!("{:>6.2}ms  {}", sample.time_ms, sample.tag);
+          ui.label(
+            egui::RichText::new(text)
+              .color(egui::Color32::from_rgb(255, 255, 180))
+              .monospace()
+              .size(9.0),
+          );
+        }
+      }
     });
 }

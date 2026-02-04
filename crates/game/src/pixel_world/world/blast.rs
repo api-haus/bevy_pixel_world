@@ -263,6 +263,7 @@ fn merge_heat_maps(
 /// Apply heat values to chunks in parallel.
 ///
 /// For overlapping heat cells, takes the maximum value.
+/// Also marks affected heat tiles as dirty for propagation.
 fn apply_heat_parallel(canvas: &Canvas<'_>, heat_by_chunk: HashMap<ChunkPos, Vec<(LocalPos, u8)>>) {
   heat_by_chunk.par_iter().for_each(|(chunk_pos, heats)| {
     if let Some(chunk) = canvas.get_mut(*chunk_pos) {
@@ -272,6 +273,11 @@ fn apply_heat_parallel(canvas: &Canvas<'_>, heat_by_chunk: HashMap<ChunkPos, Vec
         let hy = local.y as u32 / crate::pixel_world::primitives::HEAT_CELL_SIZE;
         let cell = chunk.heat_cell_mut(hx, hy);
         *cell = (*cell).max(heat);
+
+        // Mark heat tile dirty so propagation will process it
+        if heat > 0 {
+          chunk.heat_dirty.mark_dirty(hx, hy);
+        }
       }
     }
   });

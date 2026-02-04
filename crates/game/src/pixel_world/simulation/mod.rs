@@ -1,8 +1,19 @@
 //! Cellular automata simulation.
 //!
-//! Implements falling sand physics using checkerboard scheduling.
+//! Implements falling sand physics, burning propagation, and heat diffusion
+//! using checkerboard scheduling for parallel processing.
+//!
+//! # Simulation Passes
+//!
+//! Three independent simulation systems run at different tick rates:
+//!
+//! | System | Tick Rate | Scheduling | Description |
+//! |--------|-----------|------------|-------------|
+//! | Physics | 60 TPS | Checkerboard | Pixel swaps, falling sand |
+//! | Burning | 20 TPS | Checkerboard | Fire spread, ash transformation |
+//! | Heat | 10 TPS | Sequential | Heat diffusion on downsampled grid |
 
-mod burning;
+pub(crate) mod burning;
 pub(crate) mod hash;
 mod heat;
 pub(crate) mod physics;
@@ -10,6 +21,7 @@ pub(crate) mod physics;
 use std::collections::HashSet;
 use std::sync::Mutex;
 
+use burning::BurningContext;
 use hash::hash21uu64;
 pub use heat::HeatConfig;
 
@@ -17,8 +29,9 @@ use crate::pixel_world::coords::{
   ChunkPos, Phase, TILE_SIZE, TILES_PER_CHUNK, TilePos, WINDOW_HEIGHT, WINDOW_WIDTH, WorldRect,
 };
 use crate::pixel_world::debug_shim::DebugGizmos;
+use crate::pixel_world::diagnostics::profile;
 use crate::pixel_world::material::Materials;
-use crate::pixel_world::scheduling::blitter::{Canvas, parallel_simulate};
+use crate::pixel_world::scheduling::blitter::{Canvas, parallel_burning, parallel_simulate};
 use crate::pixel_world::world::PixelWorld;
 
 /// Context passed to simulation rules for deterministic randomness.
@@ -36,9 +49,10 @@ pub struct SimContext {
 
 /// Runs one simulation tick on the world using parallel tile processing.
 ///
-/// Processes all four phases sequentially. Each phase processes all tiles
-/// of that phase in parallel, which are never adjacent, ensuring thread-safe
-/// access.
+/// Orchestrates three simulation passes at different tick rates:
+/// - Physics (every tick): Pixel swaps using dirty rects
+/// - Burning (every Nth tick): Fire spread using dirty rects
+/// - Heat (every Mth tick): Heat diffusion on downsampled grid
 #[cfg_attr(feature = "tracy", tracing::instrument(skip_all, fields(tick = world.tick())))]
 pub fn simulate_tick(
   world: &mut PixelWorld,
@@ -46,12 +60,13 @@ pub fn simulate_tick(
   debug_gizmos: DebugGizmos<'_>,
   heat_config: &HeatConfig,
 ) {
+  let _span = profile("simulate_tick");
+
   // Get context before borrowing chunks
   let center = world.center();
   let tick = world.tick();
 
   // Generate per-tick jitter for tile grid offset
-  // TODO: Dirty rects stability still needs improvement with jitter enabled.
   let max_jitter = (TILE_SIZE as f32 * world.config().jitter_factor) as u64;
   let (jitter_x, jitter_y) = if max_jitter > 0 {
     (
@@ -69,13 +84,19 @@ pub fn simulate_tick(
     jitter_y,
   };
   let simulation_bounds = world.simulation_bounds();
-  let tiles_by_phase = collect_tiles_by_phase(center, simulation_bounds);
+  let tiles_by_phase = {
+    let _span = profile("collect_tiles");
+    collect_tiles_by_phase(center, simulation_bounds)
+  };
 
   // Increment tick for next frame
   world.increment_tick();
 
   // Collect seeded chunks for parallel access
-  let chunks_map = world.collect_seeded_chunks();
+  let chunks_map = {
+    let _span = profile("collect_chunks");
+    world.collect_seeded_chunks()
+  };
   if chunks_map.is_empty() {
     return;
   }
@@ -83,38 +104,46 @@ pub fn simulate_tick(
   let chunk_access = Canvas::new(chunks_map);
   let dirty = Mutex::new(HashSet::new());
 
-  parallel_simulate(
-    &chunk_access,
-    tiles_by_phase,
-    |pos, chunks| physics::compute_swap(pos, chunks, materials, ctx),
-    &dirty,
-    debug_gizmos,
-    ctx.tick,
-    (jitter_x, jitter_y),
-  );
-
-  // Burning propagation + ash transformation (every tick)
-  let chunk_positions: Vec<ChunkPos> = chunk_access.positions().collect();
-  for &cpos in &chunk_positions {
-    burning::process_burning(
+  // === Pass 1: Physics simulation (every tick, ~60 TPS) ===
+  {
+    let _span = profile("physics");
+    parallel_simulate(
       &chunk_access,
-      cpos,
-      materials,
-      ctx,
-      heat_config.ignite_spread_chance,
+      tiles_by_phase.clone(),
+      |pos, chunks| physics::compute_swap(pos, chunks, materials, ctx),
+      &dirty,
+      debug_gizmos,
+      ctx.tick,
+      (jitter_x, jitter_y),
     );
   }
 
-  // Heat propagation + ignition (every Nth tick)
-  if tick.is_multiple_of(heat_config.heat_tick_interval as u64) {
-    heat::propagate_heat(&chunk_access, &chunk_positions, materials, heat_config);
-    heat::ignite_from_heat(&chunk_access, &chunk_positions, materials);
+  // === Pass 2: Burning propagation (every Nth tick, ~20 TPS) ===
+  if tick.is_multiple_of(heat_config.burning_tick_interval as u64) {
+    let _span = profile("burning");
+    let burning_ctx = BurningContext {
+      materials,
+      ctx,
+      // Convert tick-rate-independent config to per-tick probabilities
+      spread_chance: heat_config.spread_chance_per_tick(),
+      ash_chance: heat_config.ash_chance_per_tick(),
+    };
+    parallel_burning(
+      &chunk_access,
+      tiles_by_phase,
+      &burning_ctx,
+      &dirty,
+      (jitter_x, jitter_y),
+    );
   }
 
-  // Collect all dirty chunks (burning/heat mark all touched chunks dirty)
-  {
-    let mut d = dirty.lock().unwrap();
-    d.extend(chunk_positions.iter().copied());
+  // === Pass 3: Heat propagation (every Mth tick, ~10 TPS) ===
+  // Operates on downsampled heat grid, no checkerboard needed
+  let chunk_positions: Vec<ChunkPos> = chunk_access.positions().collect();
+  if tick.is_multiple_of(heat_config.heat_tick_interval as u64) {
+    let _span = profile("heat");
+    heat::propagate_heat(&chunk_access, &chunk_positions, materials, heat_config);
+    heat::ignite_from_heat(&chunk_access, &chunk_positions, materials);
   }
 
   // Drop canvas before using world again

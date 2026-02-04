@@ -97,36 +97,6 @@ pub fn upload_pixels(pixels: &PixelSurface, image: &mut Image) {
   }
 }
 
-/// Creates a heat texture (R8Unorm) with linear sampling for bilinear
-/// interpolation.
-pub fn create_heat_texture(images: &mut Assets<Image>, width: u32, height: u32) -> Handle<Image> {
-  let size = Extent3d {
-    width,
-    height,
-    depth_or_array_layers: 1,
-  };
-
-  let mut image = Image::new_fill(
-    size,
-    TextureDimension::D2,
-    &[0],
-    TextureFormat::R8Unorm,
-    RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
-  );
-
-  // Linear sampling for bilinear interpolation of heat values
-  image.sampler = ImageSampler::linear();
-
-  images.add(image)
-}
-
-/// Uploads heat layer data to a heat texture.
-pub fn upload_heat(heat: &[u8], image: &mut Image) {
-  if let Some(ref mut data) = image.data {
-    data.copy_from_slice(heat);
-  }
-}
-
 /// Creates a quad mesh with Y+ up UV coordinates and origin at bottom-left.
 ///
 /// Unlike Bevy's default Rectangle which is centered, this quad has its
@@ -188,12 +158,9 @@ pub fn spawn_static_chunk(
 
   // Create mesh with Y+ up UVs
   let mesh_handle = meshes.add(create_chunk_quad(display_size.x, display_size.y));
-  // Create a 1x1 zero heat texture (no heat overlay for static chunks)
-  let heat_texture = create_heat_texture(images, 1, 1);
   let material_handle = materials.add(ChunkMaterial {
     pixel_texture: Some(pixel_texture),
     palette_texture: Some(palette_texture),
-    heat_texture: Some(heat_texture),
   });
 
   // Spawn entity

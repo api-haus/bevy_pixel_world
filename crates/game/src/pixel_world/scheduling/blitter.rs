@@ -58,6 +58,7 @@ use crate::pixel_world::coords::{
 use crate::pixel_world::debug_shim::{self, DebugGizmos};
 use crate::pixel_world::pixel::Pixel;
 use crate::pixel_world::primitives::Chunk;
+use crate::pixel_world::simulation::burning::{self, BurningContext};
 use crate::pixel_world::simulation::hash::hash21uu64;
 
 /// Context for tile-based blit operations.
@@ -212,6 +213,67 @@ pub fn parallel_simulate<F>(
     #[cfg(feature = "tracy")]
     {
       _phase_idx += 1;
+    }
+  }
+}
+
+/// Executes burning propagation across tiles in parallel using 2x2 checkerboard
+/// scheduling.
+///
+/// For each pixel in dirty bounds, checks if it's burning and processes
+/// fire spread and burn effects. Uses the same tile/phase infrastructure
+/// as physics simulation for thread safety.
+pub fn parallel_burning(
+  chunks: &Canvas<'_>,
+  tiles_by_phase: [Vec<TilePos>; 4],
+  burning_ctx: &BurningContext<'_>,
+  dirty_chunks: &Mutex<HashSet<ChunkPos>>,
+  jitter: (i64, i64),
+) {
+  #[cfg(feature = "tracy")]
+  let _span = tracing::info_span!("parallel_burning").entered();
+
+  for phase_tiles in &tiles_by_phase {
+    phase_tiles.par_iter().for_each(|&tile| {
+      burn_tile(chunks, tile, burning_ctx, dirty_chunks, jitter);
+    });
+  }
+}
+
+/// Process a single tile for burning propagation.
+///
+/// Only processes pixels within the tile's dirty rect bounds.
+fn burn_tile(
+  chunks: &Canvas<'_>,
+  tile: TilePos,
+  burning_ctx: &BurningContext<'_>,
+  dirty_chunks: &Mutex<HashSet<ChunkPos>>,
+  jitter: (i64, i64),
+) {
+  let Some(bounds) = union_dirty_bounds(chunks, tile, jitter) else {
+    return;
+  };
+
+  let mut local_dirty_chunks = HashSet::new();
+  let mut dirty_pixels = Vec::new();
+
+  burning::process_tile_burning(
+    chunks,
+    tile,
+    bounds,
+    jitter,
+    burning_ctx,
+    &mut local_dirty_chunks,
+    &mut dirty_pixels,
+  );
+
+  // Mark affected pixels dirty for next physics pass
+  mark_pixels_dirty(chunks, &dirty_pixels);
+
+  // Flush to global dirty set
+  if !local_dirty_chunks.is_empty() {
+    if let Ok(mut global) = dirty_chunks.lock() {
+      global.extend(local_dirty_chunks);
     }
   }
 }

@@ -19,6 +19,7 @@ pub mod debug_controller;
 pub mod debug_controller_ui;
 pub mod debug_shim;
 pub mod diagnostics;
+pub use diagnostics::profile;
 pub mod material;
 pub mod palette;
 pub mod persistence;
