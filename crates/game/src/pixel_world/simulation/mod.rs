@@ -9,11 +9,12 @@
 //!
 //! | System | Tick Rate | Scheduling | Description |
 //! |--------|-----------|------------|-------------|
-//! | Physics | 60 TPS | Checkerboard | Pixel swaps, falling sand |
-//! | Burning | 20 TPS | Checkerboard | Fire spread, ash transformation |
-//! | Heat | 10 TPS | Sequential | Heat diffusion on downsampled grid |
+//! | Physics | every tick | Checkerboard | Pixel swaps, falling sand |
+//! | Burning | every Nth tick | Checkerboard | Fire spread, ash transformation |
+//! | Heat | every Mth tick | Sequential | Heat diffusion on downsampled grid |
 
 pub(crate) mod burning;
+mod config;
 pub(crate) mod hash;
 mod heat;
 pub(crate) mod physics;
@@ -22,6 +23,7 @@ use std::collections::HashSet;
 use std::sync::Mutex;
 
 use burning::BurningContext;
+pub use config::SimulationConfig;
 use hash::hash21uu64;
 pub use heat::HeatConfig;
 
@@ -58,6 +60,7 @@ pub fn simulate_tick(
   world: &mut PixelWorld,
   materials: &Materials,
   debug_gizmos: DebugGizmos<'_>,
+  sim_config: &SimulationConfig,
   heat_config: &HeatConfig,
 ) {
   let _span = profile("simulate_tick");
@@ -118,15 +121,19 @@ pub fn simulate_tick(
     );
   }
 
+  // Compute tick intervals from TPS ratios
+  let burning_interval = (sim_config.physics_tps / sim_config.burning_tps).round() as u64;
+  let heat_interval = (sim_config.physics_tps / sim_config.heat_tps).round() as u64;
+
   // === Pass 2: Burning propagation (every Nth tick, ~20 TPS) ===
-  if tick.is_multiple_of(heat_config.burning_tick_interval as u64) {
+  if tick.is_multiple_of(burning_interval) {
     let _span = profile("burning");
     let burning_ctx = BurningContext {
       materials,
       ctx,
       // Convert tick-rate-independent config to per-tick probabilities
-      spread_chance: heat_config.spread_chance_per_tick(),
-      ash_chance: heat_config.ash_chance_per_tick(),
+      spread_chance: heat_config.spread_chance_per_tick(sim_config.burning_tps),
+      ash_chance: heat_config.ash_chance_per_tick(sim_config.burning_tps),
     };
     parallel_burning(
       &chunk_access,
@@ -137,12 +144,18 @@ pub fn simulate_tick(
     );
   }
 
-  // === Pass 3: Heat propagation (every Mth tick, ~10 TPS) ===
+  // === Pass 3: Heat propagation (every Mth tick) ===
   // Operates on downsampled heat grid, no checkerboard needed
   let chunk_positions: Vec<ChunkPos> = chunk_access.positions().collect();
-  if tick.is_multiple_of(heat_config.heat_tick_interval as u64) {
+  if tick.is_multiple_of(heat_interval) {
     let _span = profile("heat");
-    heat::propagate_heat(&chunk_access, &chunk_positions, materials, heat_config);
+    heat::propagate_heat(
+      &chunk_access,
+      &chunk_positions,
+      materials,
+      heat_config,
+      debug_gizmos,
+    );
     heat::ignite_from_heat(&chunk_access, &chunk_positions, materials);
   }
 

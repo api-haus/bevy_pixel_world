@@ -5,33 +5,23 @@
 //! diffuses to neighbors with a cooling factor.
 
 use crate::pixel_world::coords::ChunkPos;
+use crate::pixel_world::debug_shim::{DebugGizmos, emit_heat_dirty_tile};
 use crate::pixel_world::material::Materials;
 use crate::pixel_world::pixel::PixelFlags;
 use crate::pixel_world::primitives::{Chunk, HEAT_CELL_SIZE, HEAT_CELLS_PER_TILE, HEAT_GRID_SIZE};
 use crate::pixel_world::scheduling::blitter::Canvas;
 
-/// Base tick rate for the simulation (ticks per second).
-pub const BASE_TPS: f32 = 60.0;
-
-/// Configuration for heat and burning simulation.
+/// Configuration for heat simulation.
 ///
-/// All rate/duration parameters are tick-rate independent - they express
-/// behavior in real-world time units (seconds) and are converted to per-tick
-/// probabilities at runtime.
+/// Rate/duration parameters are tick-rate independent - they express behavior
+/// in real-world time units (seconds) and are converted to per-tick
+/// probabilities at runtime using the burning TPS from SimulationConfig.
 #[derive(bevy::prelude::Resource)]
 pub struct HeatConfig {
-  // === Heat propagation ===
   /// Multiplier applied during diffusion (default 0.95).
   pub cooling_factor: f32,
   /// Heat emitted per burning pixel into its heat cell (default 50).
   pub burning_heat: u8,
-  /// Number of base ticks between heat propagation steps (default 6, ~10 TPS).
-  pub heat_tick_interval: u32,
-
-  // === Burning propagation ===
-  /// Number of base ticks between burning propagation steps (default 3, ~20
-  /// TPS).
-  pub burning_tick_interval: u32,
   /// Fire spread rate: expected ignitions per second per burning pixel.
   /// Spread attempts are made to each cardinal neighbor independently.
   /// (default 2.0 = ~2 neighbors ignite per second)
@@ -47,8 +37,6 @@ impl Default for HeatConfig {
     Self {
       cooling_factor: 0.95,
       burning_heat: 50,
-      heat_tick_interval: 6,
-      burning_tick_interval: 3,
       spread_rate: 2.0,
       burn_duration_secs: 5.0,
     }
@@ -56,26 +44,19 @@ impl Default for HeatConfig {
 }
 
 impl HeatConfig {
-  /// Returns the effective TPS for burning simulation.
-  pub fn burning_tps(&self) -> f32 {
-    BASE_TPS / self.burning_tick_interval as f32
-  }
-
   /// Converts spread_rate to per-tick probability for a single neighbor.
   ///
   /// Given N cardinal neighbors, each gets: spread_rate / (N * burning_tps)
-  pub fn spread_chance_per_tick(&self) -> f32 {
+  pub fn spread_chance_per_tick(&self, burning_tps: f32) -> f32 {
     const NUM_NEIGHBORS: f32 = 4.0; // Cardinal directions
-    let tps = self.burning_tps();
-    (self.spread_rate / (NUM_NEIGHBORS * tps)).min(1.0)
+    (self.spread_rate / (NUM_NEIGHBORS * burning_tps)).min(1.0)
   }
 
   /// Converts burn_duration_secs to per-tick probability of ash transformation.
   ///
   /// Uses Poisson process: p = 1 / (duration * tps)
-  pub fn ash_chance_per_tick(&self) -> f32 {
-    let tps = self.burning_tps();
-    (1.0 / (self.burn_duration_secs * tps)).min(1.0)
+  pub fn ash_chance_per_tick(&self, burning_tps: f32) -> f32 {
+    (1.0 / (self.burn_duration_secs * burning_tps)).min(1.0)
   }
 }
 
@@ -182,6 +163,7 @@ pub fn propagate_heat(
   chunk_positions: &[ChunkPos],
   materials: &Materials,
   config: &HeatConfig,
+  debug_gizmos: DebugGizmos<'_>,
 ) {
   let grid_size = HEAT_GRID_SIZE as usize;
   let cell_count = grid_size * grid_size;
@@ -202,6 +184,7 @@ pub fn propagate_heat(
 
     // Process active tiles
     for &(tx, ty) in &active_tiles {
+      emit_heat_dirty_tile(debug_gizmos, chunk_pos, tx, ty);
       let hx_start = tx * HEAT_CELLS_PER_TILE;
       let hy_start = ty * HEAT_CELLS_PER_TILE;
 

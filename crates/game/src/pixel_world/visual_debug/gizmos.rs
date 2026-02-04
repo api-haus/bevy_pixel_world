@@ -6,6 +6,7 @@ use bevy::prelude::*;
 
 use super::colors;
 use crate::pixel_world::coords::{CHUNK_SIZE, ChunkPos, TILE_SIZE, TilePos, WorldRect};
+use crate::pixel_world::primitives::{HEAT_CELL_SIZE, HEAT_CELLS_PER_TILE};
 
 /// Kind of debug gizmo with associated duration.
 #[derive(Clone, Copy, Debug)]
@@ -16,8 +17,10 @@ pub enum GizmoKind {
   Tile,
   /// Blit rect (coral, 0.02s).
   BlitRect,
-  /// Dirty rect (mint, 1/60s - synced to simulation tick rate).
+  /// Cell simulation dirty rect (mint/green, 1/60s).
   DirtyRect,
+  /// Heat layer dirty tile (salmon/red, 1/60s).
+  HeatDirtyTile,
 }
 
 impl GizmoKind {
@@ -26,7 +29,7 @@ impl GizmoKind {
     match self {
       GizmoKind::Chunk | GizmoKind::Tile => 0.1,
       GizmoKind::BlitRect => 0.02,
-      GizmoKind::DirtyRect => 1.0 / 60.0,
+      GizmoKind::DirtyRect | GizmoKind::HeatDirtyTile => 1.0 / 60.0,
     }
   }
 
@@ -37,6 +40,7 @@ impl GizmoKind {
       GizmoKind::Tile => colors::PURPLE,
       GizmoKind::BlitRect => colors::CORAL,
       GizmoKind::DirtyRect => colors::MINT,
+      GizmoKind::HeatDirtyTile => colors::SALMON,
     }
   }
 }
@@ -93,6 +97,23 @@ impl PendingGizmo {
     Self {
       kind: GizmoKind::DirtyRect,
       rect: WorldRect::new(x, y, width, height),
+    }
+  }
+
+  /// Creates a gizmo for a heat layer dirty tile.
+  ///
+  /// Takes the chunk position and heat tile coordinates (tx, ty) within the
+  /// chunk.
+  pub fn heat_dirty_tile(chunk_pos: ChunkPos, tx: u32, ty: u32) -> Self {
+    // Heat tile size in pixels = cells_per_tile * cell_size
+    let heat_tile_px = (HEAT_CELLS_PER_TILE * HEAT_CELL_SIZE) as i64;
+    let chunk_world = chunk_pos.to_world();
+    let x = chunk_world.x + (tx as i64 * heat_tile_px);
+    let y = chunk_world.y + (ty as i64 * heat_tile_px);
+
+    Self {
+      kind: GizmoKind::HeatDirtyTile,
+      rect: WorldRect::new(x, y, heat_tile_px as u32, heat_tile_px as u32),
     }
   }
 }

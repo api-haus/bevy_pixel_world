@@ -13,3 +13,6 @@ pub const GOLD: Color = Color::srgb(1.0, 0.843, 0.0);
 
 /// Mint #B8E0D2
 pub const MINT: Color = Color::srgb(0.722, 0.878, 0.824);
+
+/// Salmon #FA8072
+pub const SALMON: Color = Color::srgb(0.980, 0.502, 0.447);

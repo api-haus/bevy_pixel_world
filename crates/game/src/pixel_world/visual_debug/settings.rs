@@ -32,7 +32,7 @@ impl VisualDebugSettings {
       GizmoKind::Chunk => self.show_chunk_boundaries,
       GizmoKind::Tile => self.show_tile_boundaries,
       GizmoKind::BlitRect => self.show_blit_rects,
-      GizmoKind::DirtyRect => self.show_dirty_rects,
+      GizmoKind::DirtyRect | GizmoKind::HeatDirtyTile => self.show_dirty_rects,
     }
   }
 }

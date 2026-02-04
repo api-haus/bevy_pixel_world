@@ -43,7 +43,7 @@ use crate::pixel_world::persistence::tasks::{LoadingChunks, SavingChunks};
 use crate::pixel_world::render::create_chunk_quad;
 use crate::pixel_world::schedule::{PixelWorldSet, SimulationPhase};
 use crate::pixel_world::simulation;
-use crate::pixel_world::simulation::HeatConfig;
+use crate::pixel_world::simulation::{HeatConfig, SimulationConfig};
 
 /// Marker resource indicating rendering infrastructure is available.
 /// Inserted by PixelWorldPlugin when RenderPlugin is detected.
@@ -97,6 +97,7 @@ impl Plugin for PixelWorldStreamingPlugin {
       .init_resource::<SeededChunks>()
       .init_resource::<SimulationState>()
       .init_resource::<crate::pixel_world::diagnostics::SimulationMetrics>()
+      .init_resource::<SimulationConfig>()
       .init_resource::<HeatConfig>()
       // World initialization state tracking
       .init_resource::<WorldInitState>()
@@ -458,6 +459,7 @@ fn poll_lut_task(
 fn run_simulation(
   mut worlds: Query<&mut PixelWorld>,
   mat_registry: Option<Res<Materials>>,
+  sim_config: Res<SimulationConfig>,
   heat_config: Res<HeatConfig>,
   gizmos: debug_shim::GizmosParam,
   mut sim_metrics: ResMut<crate::pixel_world::diagnostics::SimulationMetrics>,
@@ -471,7 +473,13 @@ fn run_simulation(
   let start = Instant::now();
 
   for mut world in worlds.iter_mut() {
-    simulation::simulate_tick(&mut world, &materials, debug_gizmos, &heat_config);
+    simulation::simulate_tick(
+      &mut world,
+      &materials,
+      debug_gizmos,
+      &sim_config,
+      &heat_config,
+    );
   }
 
   let elapsed_ms = start.elapsed().as_secs_f32() * 1000.0;

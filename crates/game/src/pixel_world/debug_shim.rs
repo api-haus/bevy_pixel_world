@@ -6,6 +6,7 @@ use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 
 use crate::pixel_world::coords::{ChunkPos, TilePos, WorldRect};
+use crate::pixel_world::visual_debug::PendingGizmo;
 
 /// Debug gizmos handle for passing to emit functions.
 ///
@@ -73,8 +74,14 @@ pub fn emit_blit_rect(gizmos: DebugGizmos<'_>, rect: WorldRect) {
 #[inline]
 pub fn emit_dirty_rect(gizmos: DebugGizmos<'_>, tile: TilePos, bounds: (u8, u8, u8, u8)) {
   if let Some(g) = gizmos.0 {
-    g.push(crate::pixel_world::visual_debug::PendingGizmo::dirty_rect(
-      tile, bounds,
-    ));
+    g.push(PendingGizmo::dirty_rect(tile, bounds));
+  }
+}
+
+/// Emit a heat layer dirty tile gizmo.
+#[inline]
+pub fn emit_heat_dirty_tile(gizmos: DebugGizmos<'_>, chunk_pos: ChunkPos, tx: u32, ty: u32) {
+  if let Some(g) = gizmos.0 {
+    g.push(PendingGizmo::heat_dirty_tile(chunk_pos, tx, ty));
   }
 }
