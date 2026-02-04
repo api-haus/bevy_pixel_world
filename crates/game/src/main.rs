@@ -5,7 +5,6 @@ mod core;
 #[cfg(feature = "editor")]
 mod editor;
 mod input;
-pub mod pixel_world;
 mod platform;
 mod player;
 mod time_of_day;
@@ -13,6 +12,7 @@ mod visual_debug;
 mod world;
 
 use bevy::{asset::AssetMetaCheck, prelude::*, window::WindowResolution};
+use game::pixel_world;
 
 fn main() {
   let (platform_config, embedded_assets) = platform::init();

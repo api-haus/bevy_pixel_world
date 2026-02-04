@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2024"
 build = "build.rs"
 
+[lib]
+name = "game"
+path = "src/lib.rs"
+
 [[bin]]
 name = "sim2d"
 path = "src/main.rs"
@@ -19,7 +23,6 @@ toml = "0.8"
 bevy_common_assets = { version = "0.14", features = ["toml"] }
 log = { version = "*", features = ["max_level_debug", "release_max_level_warn"] }
 rayon = "1.11.0"
-bevy_crt = { path = "../../vendor/bevy_crt" }
 bevy_console = "0.16"
 clap = { version = "4.5", features = ["derive"] }
 bevy-yoleck = { version = "0.29", optional = true, features = ["vpeol_2d"] }
@@ -128,10 +131,6 @@ required-features = ["editor"]
 name = "camera_mode_transition_e2e"
 path = "tests/camera_mode_transition_e2e.rs"
 required-features = ["editor"]
-
-[[test]]
-name = "crt_config_reload_e2e"
-path = "tests/crt_config_reload_e2e.rs"
 
 [features]
 default = []
