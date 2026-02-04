@@ -2,10 +2,11 @@
 //! and creative mode.
 
 pub mod commands;
+mod history;
 mod toggle;
 
 use bevy::prelude::*;
-use bevy_console::{AddConsoleCommand, ConsoleConfiguration, ConsolePlugin};
+use bevy_console::{AddConsoleCommand, ConsoleConfiguration, ConsolePlugin, ConsoleSet};
 use bevy_egui::EguiPrimaryContextPass;
 use commands::{
   CreativeCommand, SaveCommand, SpawnCommand, TeleportCommand, TimeCommand, VisualCommand,
@@ -47,6 +48,18 @@ impl Plugin for ConsolePlugins {
       .add_console_command::<VisualCommand, _>(visual_command)
       .add_systems(Update, notify_save_complete)
       .add_systems(Update, toggle::handle_console_toggle)
-      .add_systems(EguiPrimaryContextPass, toggle::maintain_console_focus);
+      .add_systems(Update, toggle::handle_backspace_workaround)
+      .add_systems(EguiPrimaryContextPass, toggle::maintain_console_focus)
+      // History persistence: load after ConsolePlugin startup, then track and save
+      .add_systems(
+        Startup,
+        (history::load_history, history::init_persistence)
+          .chain()
+          .after(ConsoleSet::Startup),
+      )
+      .add_systems(
+        Update,
+        (history::track_history_changes, history::save_history).chain(),
+      );
   }
 }

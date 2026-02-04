@@ -707,14 +707,13 @@ dependencies = [
 [[package]]
 name = "bevy_console"
 version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07501b2c65a8e9a6ad1b9e397e5ff76d679ea5862e243795739c8cdb97547d40"
 dependencies = [
  "ansi-parser",
  "bevy",
  "bevy_console_derive",
  "bevy_egui",
  "clap",
+ "color-print",
  "shlex",
  "strip-ansi-escapes",
  "trie-rs",
@@ -2085,6 +2084,27 @@ dependencies = [
  "serde",
  "termcolor",
  "unicode-width",
+]
+
+[[package]]
+name = "color-print"
+version = "0.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3aa954171903797d5623e047d9ab69d91b493657917bdfb8c2c80ecaf9cdb6f4"
+dependencies = [
+ "color-print-proc-macro",
+]
+
+[[package]]
+name = "color-print-proc-macro"
+version = "0.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "692186b5ebe54007e45a59aea47ece9eb4108e141326c304cdc91699a7118a22"
+dependencies = [
+ "nom",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.114",
 ]
 
 [[package]]

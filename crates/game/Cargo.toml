@@ -23,7 +23,7 @@ toml = "0.8"
 bevy_common_assets = { version = "0.14", features = ["toml"] }
 log = { version = "*", features = ["max_level_debug", "release_max_level_warn"] }
 rayon = "1.11.0"
-bevy_console = "0.16"
+bevy_console = { path = "../../vendor/bevy_console" }
 clap = { version = "4.5", features = ["derive"] }
 bevy-yoleck = { version = "0.29", optional = true, features = ["vpeol_2d"] }
 

@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy_console::ConsoleOpen;
 use bevy_yoleck::prelude::YoleckEditorState;
 
 use crate::core::camera::GameCamera;
@@ -6,8 +7,14 @@ use crate::core::camera::GameCamera;
 pub fn editor_keyboard_shortcuts(
   keys: Res<ButtonInput<KeyCode>>,
   editor_state: Res<State<YoleckEditorState>>,
+  console_open: Res<ConsoleOpen>,
   mut next_state: ResMut<NextState<YoleckEditorState>>,
 ) {
+  // Skip if console is open - let it handle Escape
+  if console_open.open {
+    return;
+  }
+
   match editor_state.get() {
     YoleckEditorState::EditorActive => {
       if keys.just_pressed(KeyCode::F5) {
