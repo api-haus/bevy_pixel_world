@@ -1,5 +1,4 @@
 use bevy::prelude::*;
-use bevy_pixel_world::CollisionQueryPoint;
 use bevy_rapier2d::prelude::*;
 
 use super::components::{
@@ -8,6 +7,7 @@ use super::components::{
 };
 use crate::config::ConfigLoaded;
 use crate::input::{PlayerInput, player_input_actions};
+use crate::pixel_world::CollisionQueryPoint;
 
 /// Spawn player at a fixed position (non-editor mode)
 #[cfg(not(feature = "editor"))]

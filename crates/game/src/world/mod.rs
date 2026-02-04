@@ -3,11 +3,11 @@
 use std::path::PathBuf;
 
 use bevy::prelude::*;
-use bevy_pixel_world::{
+
+use crate::pixel_world::{
   BrushUiPlugin, MaterialSeeder, Materials, MaterialsConfig, PersistenceConfig,
   PixelWorldFullBundle, SpawnPixelWorld,
 };
-
 use crate::platform::{EmbeddedAssets, PlatformConfig};
 
 /// Configuration for the world plugin.
@@ -50,9 +50,9 @@ impl Plugin for WorldPlugin {
     app
       .insert_resource(Materials::from(config))
       .add_plugins(PixelWorldFullBundle::new(PersistenceConfig::at(save_path)))
-      .add_plugins(bevy_pixel_world::PixelDebugControllerPlugin)
+      .add_plugins(crate::pixel_world::PixelDebugControllerPlugin)
       .add_plugins(BrushUiPlugin)
-      .add_plugins(bevy_pixel_world::BasicPersistencePlugin)
+      .add_plugins(crate::pixel_world::BasicPersistencePlugin)
       .add_systems(Startup, spawn_world);
   }
 }

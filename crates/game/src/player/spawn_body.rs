@@ -2,12 +2,12 @@
 
 use bevy::prelude::*;
 use bevy_enhanced_input::prelude::*;
-use bevy_pixel_world::pixel_body::SpawnPixelBody;
-use bevy_pixel_world::{Bomb, PixelBody, material_ids};
 use rand::Rng;
 
 use super::components::Player;
 use crate::input::actions::{PlayerInput, SpawnBody};
+use crate::pixel_world::pixel_body::SpawnPixelBody;
+use crate::pixel_world::{Bomb, PixelBody, material_ids};
 
 /// Tracks whether we've spawned a body this press to avoid repeat spawns.
 #[derive(Resource, Default)]

@@ -11,17 +11,18 @@ mod ui;
 
 use bevy::prelude::*;
 #[cfg(feature = "editor")]
-use bevy_pixel_world::{
-  FreshReseedAllChunks, MaterialSeeder, PersistenceControl, PersistenceHandle, ReloadAllChunks,
-  SimulationState, UpdateSeeder,
-};
-#[cfg(feature = "editor")]
 use bevy_yoleck::YoleckEditorLevelsDirectoryPath;
 #[cfg(feature = "editor")]
 use bevy_yoleck::prelude::YoleckSyncWithEditorState;
 use bevy_yoleck::prelude::*;
 use bevy_yoleck::vpeol::prelude::*;
 pub use entities::{PlayerSpawnPoint, WorldConfigData};
+
+#[cfg(feature = "editor")]
+use crate::pixel_world::{
+  FreshReseedAllChunks, MaterialSeeder, PersistenceControl, PersistenceHandle, ReloadAllChunks,
+  SimulationState, UpdateSeeder,
+};
 
 /// Pending reseed after save completes.
 ///
@@ -120,7 +121,7 @@ fn on_enter_editing(
   mut commands: Commands,
   simulation: Option<ResMut<SimulationState>>,
   mut persistence: Option<ResMut<PersistenceControl>>,
-  brush: Option<ResMut<bevy_pixel_world::BrushState>>,
+  brush: Option<ResMut<crate::pixel_world::BrushState>>,
 ) {
   // Trigger save BEFORE disabling persistence.
   // Store the handle so we can reseed AFTER save completes.
@@ -145,7 +146,8 @@ fn on_enter_editing(
   info!("Edit mode: simulation paused, persistence disabled, brush disabled");
 }
 
-/// System: Polls for pending save completion, then reseeds with correct noise profile.
+/// System: Polls for pending save completion, then reseeds with correct noise
+/// profile.
 #[cfg(feature = "editor")]
 fn poll_pending_reseed(
   mut commands: Commands,
@@ -183,7 +185,7 @@ fn poll_pending_reseed(
 fn on_enter_playing(
   simulation: Option<ResMut<SimulationState>>,
   persistence: Option<ResMut<PersistenceControl>>,
-  brush: Option<ResMut<bevy_pixel_world::BrushState>>,
+  brush: Option<ResMut<crate::pixel_world::BrushState>>,
   mut reload: bevy::ecs::message::MessageWriter<ReloadAllChunks>,
 ) {
   if let Some(mut pers) = persistence {

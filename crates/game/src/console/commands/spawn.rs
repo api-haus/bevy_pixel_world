@@ -2,10 +2,10 @@
 
 use bevy::prelude::*;
 use bevy_console::{ConsoleCommand, reply};
-use bevy_pixel_world::pixel_body::SpawnPixelBody;
-use bevy_pixel_world::{Bomb, material_ids};
 use clap::Parser;
 
+use crate::pixel_world::pixel_body::SpawnPixelBody;
+use crate::pixel_world::{Bomb, material_ids};
 use crate::player::components::Player;
 
 #[derive(Parser, ConsoleCommand)]

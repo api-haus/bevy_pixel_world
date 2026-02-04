@@ -11,10 +11,10 @@
 use std::sync::Arc;
 
 use bevy::prelude::*;
-use bevy_pixel_world::{MaterialSeeder, UpdateSeeder};
 use noise_ipc::NoiseIpc;
 
 use super::entities::WorldConfigData;
+use crate::pixel_world::{MaterialSeeder, UpdateSeeder};
 
 /// Current noise profile being edited.
 ///
@@ -38,7 +38,7 @@ pub struct NoiseProfile {
 impl Default for NoiseProfile {
   fn default() -> Self {
     Self {
-      ent: bevy_pixel_world::noise_presets::SIMPLEX.to_string(),
+      ent: crate::pixel_world::noise_presets::SIMPLEX.to_string(),
       world_seed: 42,
       threshold: 0.0,
       dirty: false,
@@ -104,7 +104,8 @@ fn sync_profile_from_world_config(
         }
 
         info!(
-          "Synced noise profile from level: seed={}, threshold={}, ent={} (first_sync={}, edit_mode={})",
+          "Synced noise profile from level: seed={}, threshold={}, ent={} (first_sync={}, \
+           edit_mode={})",
           config.world_seed,
           config.threshold,
           &config.noise_ent[..config.noise_ent.len().min(20)],

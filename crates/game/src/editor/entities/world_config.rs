@@ -24,7 +24,7 @@ pub struct WorldConfigData {
 impl Default for WorldConfigData {
   fn default() -> Self {
     Self {
-      noise_ent: bevy_pixel_world::noise_presets::SIMPLEX.to_string(),
+      noise_ent: crate::pixel_world::noise_presets::SIMPLEX.to_string(),
       world_seed: 42,
       threshold: 0.0,
     }

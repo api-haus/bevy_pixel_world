@@ -2,10 +2,11 @@
 
 use bevy::prelude::*;
 use bevy_console::{ConsoleCommand, PrintConsoleLine, reply};
-use bevy_pixel_world::{
+use clap::Parser;
+
+use crate::pixel_world::{
   ClearPersistence, PersistenceComplete, ReloadAllChunks, RequestPersistence, ReseedAllChunks,
 };
-use clap::Parser;
 
 #[derive(Parser, ConsoleCommand)]
 #[command(name = "save")]

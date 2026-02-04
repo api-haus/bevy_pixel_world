@@ -12,6 +12,7 @@ mod visual_debug;
 mod world;
 
 use bevy::{asset::AssetMetaCheck, prelude::*, window::WindowResolution};
+use game::pixel_world;
 
 fn main() {
   let (platform_config, embedded_assets) = platform::init();
