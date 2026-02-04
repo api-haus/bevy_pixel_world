@@ -34,6 +34,11 @@ pub struct PixelBlitMaterial {
 
 impl Material2d for PixelBlitMaterial {
   fn fragment_shader() -> ShaderRef {
-    "embedded://sim2d/pixel_world/pixel_camera/shaders/blit.wgsl".into()
+    concat!(
+      "embedded://",
+      env!("CARGO_CRATE_NAME"),
+      "/pixel_world/pixel_camera/shaders/blit.wgsl"
+    )
+    .into()
   }
 }

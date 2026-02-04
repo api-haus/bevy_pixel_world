@@ -28,7 +28,12 @@ pub struct ChunkMaterial {
 
 impl Material2d for ChunkMaterial {
   fn fragment_shader() -> ShaderRef {
-    "embedded://sim2d/pixel_world/render/shaders/chunk.wgsl".into()
+    concat!(
+      "embedded://",
+      env!("CARGO_CRATE_NAME"),
+      "/pixel_world/render/shaders/chunk.wgsl"
+    )
+    .into()
   }
 
   fn alpha_mode(&self) -> AlphaMode2d {
